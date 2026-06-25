@@ -16,8 +16,11 @@
         <button id="refresh" type="button">Refresh</button>
       </header>
 
-      <section class="panel">
-        <h2>Provider Settings</h2>
+      <details class="panel settings-panel">
+        <summary>
+          <span>Provider Settings</span>
+          <small>API keys, model defaults, and TTS defaults.</small>
+        </summary>
         <form id="settings-form" class="grid-form">
           <label>
             OpenAI API key
@@ -56,7 +59,7 @@
           </div>
         </form>
         <div id="settings-status" class="status-list"></div>
-      </section>
+      </details>
 
       <section class="panel">
         <div class="section-heading">
@@ -79,6 +82,27 @@
           </div>
         </div>
         <div id="series-status" class="diagnostics-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="panel command-center">
+        <div class="section-heading">
+          <h2>Studio Command Center</h2>
+          <p>Readiness, next actions, package coverage, and latest generation state.</p>
+        </div>
+        <div class="command-layout">
+          <div>
+            <h3>Build Flow</h3>
+            <div id="studio-flow" class="flow-list" aria-live="polite"></div>
+          </div>
+          <div>
+            <h3>Next Actions</h3>
+            <div id="next-actions" class="action-list" aria-live="polite"></div>
+          </div>
+          <div>
+            <h3>Generation Console</h3>
+            <div id="job-console" class="job-console" aria-live="polite"></div>
+          </div>
+        </div>
       </section>
 
       <section class="panel">
@@ -188,6 +212,7 @@
           </div>
         </form>
         <div id="package-status" class="status-list"></div>
+        <div id="package-radar" class="package-radar" aria-live="polite"></div>
         <details id="role-package-panel" class="editor-panel" open>
           <summary>
             <span>Role Package Editor</span>

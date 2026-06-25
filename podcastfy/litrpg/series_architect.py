@@ -480,6 +480,18 @@ def _adjusted_geometry(arc_style: str, length_mode: str) -> list[dict[str, Any]]
 
 
 def _phase_counts(total_chapters: int, weights: Sequence[float]) -> list[int]:
+    if total_chapters <= 0:
+        return [0 for _ in weights]
+    if total_chapters < len(weights):
+        counts = [0 for _ in weights]
+        if total_chapters == 1:
+            counts[0] = 1
+            return counts
+        last_index = len(weights) - 1
+        for chapter_index in range(total_chapters):
+            phase_index = round(chapter_index * last_index / (total_chapters - 1))
+            counts[phase_index] += 1
+        return counts
     raw = [max(1, int(total_chapters * weight)) for weight in weights]
     while sum(raw) < total_chapters:
         index = max(range(len(raw)), key=lambda idx: (total_chapters * weights[idx]) - raw[idx])

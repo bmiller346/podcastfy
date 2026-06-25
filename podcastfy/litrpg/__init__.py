@@ -45,6 +45,11 @@ from podcastfy.litrpg.package_generator import save_generated_series_package
 from podcastfy.litrpg.package_generator import validate_series_package
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
+from podcastfy.litrpg.premise_intake import PremiseIntakeResult
+from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
+from podcastfy.litrpg.premise_intake import extract_premise_intake_json
+from podcastfy.litrpg.premise_intake import run_premise_intake
+from podcastfy.litrpg.premise_intake import save_premise_intake_payload
 from podcastfy.litrpg.qa import build_chapter_qa, parse_part_qa_artifacts
 from podcastfy.litrpg.models import CharacterState, EpisodeBundle, EpisodeConfig
 from podcastfy.litrpg.models import QuestState, ScriptLine, SeriesState
@@ -104,6 +109,7 @@ __all__ = [
     "ForeshadowLedger",
     "OpenAIResponsesGenerator",
     "OllamaGenerator",
+    "PremiseIntakeResult",
     "QuestState",
     "RoleScriptRenderer",
     "ScriptLine",
@@ -129,6 +135,7 @@ __all__ = [
     "build_hook_context",
     "build_local_sfx_prompt",
     "build_mix_plan",
+    "build_premise_intake_prompt",
     "build_reader_proxy_prompt",
     "build_role_tts_instructions",
     "build_series_package_prompt",
@@ -143,6 +150,7 @@ __all__ = [
     "delete_episode",
     "export_voices_for_litrpg_config",
     "extract_mechanics_events",
+    "extract_premise_intake_json",
     "extract_state_delta",
     "extract_series_package_json",
     "find_bundle_by_cache_key",
@@ -198,12 +206,14 @@ __all__ = [
     "parse_verdict_and_scores",
     "promote_generated_asset_request",
     "run_litrpg_task",
+    "run_premise_intake",
     "roll_wandering_event",
     "save_asset_manifest_file",
     "save_continuity_ledger",
     "save_emotional_arcs",
     "save_foreshadow_ledger",
     "save_generated_series_package",
+    "save_premise_intake_payload",
     "save_series_state",
     "save_series_shape",
     "save_story_bible",

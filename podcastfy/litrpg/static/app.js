@@ -26,6 +26,10 @@ const diagnosticsSummary = document.querySelector("#diagnostics-summary");
 const diagnosticsOutput = document.querySelector("#diagnostics-output");
 const refreshDiagnosticsButton = document.querySelector("#refresh-diagnostics");
 const copyDiagnosticsButton = document.querySelector("#copy-diagnostics");
+const studioFlow = document.querySelector("#studio-flow");
+const nextActions = document.querySelector("#next-actions");
+const jobConsole = document.querySelector("#job-console");
+const packageRadar = document.querySelector("#package-radar");
 const library = document.querySelector("#library");
 const runTaskButton = document.querySelector("#run-task");
 const refreshButton = document.querySelector("#refresh");
@@ -37,6 +41,7 @@ let latestJob = null;
 let latestPackage = null;
 let activeSeriesId = "";
 let lastSyncedPackageSeriesId = "";
+let packageRevision = 0;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -181,7 +186,7 @@ function renderSeriesWorkspace() {
   const libraryItem = librarySeries.find((item) => String(item.series_id) === selectedSeries);
   const packageInfo = summarizeSeriesPackage(latestPackage);
   const selectedPackage = latestPackage && latestPackage.series_id === selectedSeries ? packageInfo : null;
-  const packageState = selectedPackage && selectedPackage.available ? "ready" : "missing";
+  const packageState = selectedPackage && selectedPackage.available ? selectedPackage.status || "ready" : "missing";
   const roleCount = selectedPackage ? selectedPackage.role_count : 0;
   const bestiaryCount = selectedPackage ? selectedPackage.bestiary_count : 0;
   const encounterCount = selectedPackage ? selectedPackage.encounter_count : 0;
@@ -337,6 +342,7 @@ function renderSeriesPackage(data) {
   packageSummary.textContent = data.summary || "No saved package summary yet.";
   packageOutput.textContent = JSON.stringify(data.package || {}, null, 2);
   renderRoleEditor(data.package || buildPackageDraft());
+  renderPackageRadar(summarizeSeriesPackage(data));
   updateDiagnostics();
 }
 
@@ -465,6 +471,7 @@ function removeRole(index) {
   packageValue.characters.splice(index, 1);
   renderRoleEditor(packageValue);
   packageOutput.textContent = JSON.stringify(packageValue, null, 2);
+  packageRevision += 1;
   latestPackage = { ...(latestPackage || {}), package: packageValue, available: true };
   updateDiagnostics();
 }
@@ -487,6 +494,7 @@ function syncPackageOutputFromRoleEditor() {
   if (!packageOutput) return;
   const packageValue = packageFromRoleEditor(currentPackageJson());
   packageOutput.textContent = JSON.stringify(packageValue, null, 2);
+  packageRevision += 1;
   latestPackage = { ...(latestPackage || {}), package: packageValue, available: true };
   updateDiagnostics();
 }
@@ -527,7 +535,14 @@ function statusItem(label, value) {
 async function loadSeriesPackage() {
   syncPackageSeriesId({ force: true });
   const seriesId = packageSeriesId();
+  const requestRevision = packageRevision;
   const data = await api(`/api/series-package?series_id=${encodeURIComponent(seriesId)}`);
+  if (requestRevision !== packageRevision) {
+    return latestPackage;
+  }
+  if (!data.available && latestPackage && latestPackage.available && latestPackage.series_id === seriesId) {
+    return latestPackage;
+  }
   renderSeriesPackage(data);
   return data;
 }
@@ -536,6 +551,7 @@ async function saveSeriesPackage() {
   syncPackageSeriesId({ force: true });
   const seriesId = packageSeriesId();
   const packageValue = packageFromRoleEditor(currentPackageJson());
+  const requestRevision = packageRevision;
   const data = await api("/api/series-package", {
     method: "POST",
     body: JSON.stringify({
@@ -545,11 +561,15 @@ async function saveSeriesPackage() {
       package: packageValue,
     }),
   });
+  if (requestRevision !== packageRevision) {
+    return latestPackage;
+  }
   renderSeriesPackage(data);
   return data;
 }
 
 async function generateSeriesPackage() {
+  const requestRevision = packageRevision;
   const data = await api("/api/series-package/generate", {
     method: "POST",
     body: JSON.stringify({
@@ -560,6 +580,9 @@ async function generateSeriesPackage() {
       save: true,
     }),
   });
+  if (requestRevision !== packageRevision) {
+    return latestPackage;
+  }
   renderSeriesPackage(data);
   return data;
 }
@@ -615,6 +638,8 @@ function updateDiagnostics() {
   const report = buildDiagnosticsReport();
   diagnosticsOutput.textContent = JSON.stringify(report, null, 2);
   diagnosticsSummary.innerHTML = renderDiagnosticsSummary(report);
+  renderCommandCenter(report);
+  renderPackageRadar(report.series_package);
 }
 
 function renderDiagnosticsSummary(report) {
@@ -644,6 +669,174 @@ function renderDiagnosticsSummary(report) {
 
 function diagnosticsItem(label, value) {
   return `<div class="diagnostic-item"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`;
+}
+
+function renderCommandCenter(report) {
+  if (studioFlow) {
+    studioFlow.innerHTML = buildFlowSteps(report).map(renderFlowStep).join("");
+  }
+  if (nextActions) {
+    const actions = buildNextActions(report);
+    nextActions.innerHTML = actions.length
+      ? actions.map(renderActionButton).join("")
+      : `<div class="quiet-box">Ready for a short text-only chapter test.</div>`;
+  }
+  if (jobConsole) {
+    jobConsole.innerHTML = renderJobConsole(report.latest_job);
+  }
+}
+
+function buildFlowSteps(report) {
+  const configured = Object.values(report.settings.api_keys || {}).filter(Boolean).length;
+  const hasPremise = Boolean(report.task.premise);
+  const packageReady = Boolean(report.series_package.available);
+  const hasRoles = report.series_package.role_count >= 3;
+  const hasThreats = report.series_package.bestiary_count || report.series_package.encounter_count;
+  const canRun = hasPremise && packageReady && hasRoles;
+  const hasEpisode = report.library.episode_count > 0;
+  return [
+    {
+      label: "Premise",
+      state: hasPremise ? report.premise_analysis.strength : "missing",
+      detail: hasPremise ? `${report.premise_analysis.word_count} words, ${report.premise_analysis.analysis_mode}` : "Add a premise first.",
+      done: hasPremise,
+    },
+    {
+      label: "Provider",
+      state: configured ? `${configured} configured` : "missing",
+      detail: configured ? "Generation can reach at least one provider." : "Save an API key or use a stub/test task.",
+      done: configured > 0,
+    },
+    {
+      label: "Series Package",
+      state: packageReady ? report.series_package.status : "missing",
+      detail: packageReady ? report.series_package.path || "Loaded draft package." : "Create, paste, or generate reusable context.",
+      done: packageReady,
+    },
+    {
+      label: "Cast",
+      state: `${report.series_package.role_count} roles`,
+      detail: hasRoles ? "Enough role scaffolding for early tests." : "Add main cast plus announcer/familiar/side characters.",
+      done: hasRoles,
+    },
+    {
+      label: "Threats",
+      state: `${report.series_package.bestiary_count + report.series_package.encounter_count} entries`,
+      detail: hasThreats ? "Reusable conflict material is available." : "Add mobs, hazards, bosses, factions, or setpieces.",
+      done: Boolean(hasThreats),
+    },
+    {
+      label: "First Run",
+      state: canRun ? "ready" : "blocked",
+      detail: canRun ? "Queue a short test before spending on audio." : "Finish the missing setup items above.",
+      done: canRun,
+    },
+    {
+      label: "Replay",
+      state: hasEpisode ? `${report.library.episode_count} saved` : "empty",
+      detail: hasEpisode ? `${report.library.replay_ready_count} replay-ready audio files.` : "Successful runs will appear in the library.",
+      done: hasEpisode,
+    },
+  ];
+}
+
+function renderFlowStep(step) {
+  const stateClass = step.done ? "done" : "todo";
+  return `<div class="flow-step ${stateClass}">
+    <div class="flow-dot" aria-hidden="true"></div>
+    <div>
+      <strong>${escapeHtml(step.label)}</strong>
+      <span>${escapeHtml(step.state)}</span>
+      <p>${escapeHtml(step.detail)}</p>
+    </div>
+  </div>`;
+}
+
+function buildNextActions(report) {
+  const actions = [];
+  if (!report.task.premise) {
+    actions.push({ label: "Add Premise", action: "focus-premise", tone: "primary" });
+  }
+  if (!report.series_package.available) {
+    actions.push({ label: "New Package Draft", action: "new-package", tone: "primary" });
+    if (report.series_package.modules.generator) {
+      actions.push({ label: "Generate Package", action: "generate-package", tone: "secondary" });
+    }
+  }
+  if (report.series_package.available && !report.series_package.role_count) {
+    actions.push({ label: "Add Role", action: "add-role", tone: "primary" });
+  }
+  if (report.series_package.available && report.series_package.role_count && !report.series_package.bestiary_count && !report.series_package.encounter_count) {
+    actions.push({ label: "Open Package JSON", action: "open-package-json", tone: "secondary" });
+  }
+  if (report.task.render_audio) {
+    actions.push({ label: "Text-Only Test", action: "queue-text", tone: "secondary" });
+  }
+  if (!report.latest_job || report.latest_job.status !== "running") {
+    actions.push({ label: "Queue Current Task", action: "queue-current", tone: "primary" });
+  }
+  actions.push({ label: "Copy Diagnostics", action: "copy-diagnostics", tone: "secondary" });
+  return actions.slice(0, 6);
+}
+
+function renderActionButton(action) {
+  return `<button type="button" class="quick-action ${escapeClass(action.tone || "secondary")}" data-action="${escapeHtml(action.action)}">${escapeHtml(action.label)}</button>`;
+}
+
+function renderJobConsole(job) {
+  if (!job) {
+    return `<div class="quiet-box">No generation job has run in this session.</div>`;
+  }
+  const status = job.error ? "failed" : job.status || "unknown";
+  const summary = job.task_summary || {};
+  const checkpoints = (job.checkpoint_paths || []).length;
+  const error = job.error ? `<div class="job-error">${escapeHtml(job.error)}</div>` : "";
+  return `<div class="job-status status-${escapeClass(status)}">
+    <strong>${escapeHtml(status)}</strong>
+    <span>${escapeHtml(job.phase || "")}</span>
+  </div>
+  <dl class="job-facts">
+    <div><dt>Series</dt><dd>${escapeHtml(summary.series_id || "unknown")}</dd></div>
+    <div><dt>Mode</dt><dd>${escapeHtml(summary.mode || "unknown")}</dd></div>
+    <div><dt>Checkpoints</dt><dd>${escapeHtml(String(checkpoints))}</dd></div>
+  </dl>
+  ${error}`;
+}
+
+function renderPackageRadar(seriesPackage) {
+  if (!packageRadar) return;
+  const roles = seriesPackage.roles || [];
+  const bestiary = seriesPackage.bestiary || [];
+  const encounters = seriesPackage.encounters || [];
+  packageRadar.innerHTML = [
+    renderRadarColumn("Cast", roles, (role) => [
+      role.name || role.role || "Unnamed role",
+      role.class || role.voice || "needs class/voice",
+    ]),
+    renderRadarColumn("Bestiary", bestiary, (entry) => [
+      entry.name || "Unnamed threat",
+      [entry.type, entry.recurrence].filter(Boolean).join(" / ") || "needs type",
+    ]),
+    renderRadarColumn("Encounters", encounters, (entry) => [
+      entry.name || "Unnamed encounter",
+      [entry.type, entry.location, entry.status].filter(Boolean).join(" / ") || "needs arena/status",
+    ]),
+  ].join("");
+}
+
+function renderRadarColumn(title, items, formatter) {
+  const content = items.length
+    ? items.slice(0, 5).map((item) => {
+        const [name, detail] = formatter(item);
+        return `<li><strong>${escapeHtml(name)}</strong><span>${escapeHtml(detail)}</span></li>`;
+      }).join("")
+    : `<li class="empty-radar"><strong>Nothing yet</strong><span>Add reusable context before long runs.</span></li>`;
+  const overflow = items.length > 5 ? `<div class="radar-overflow">+${items.length - 5} more saved</div>` : "";
+  return `<section class="radar-column">
+    <h3>${escapeHtml(title)}</h3>
+    <ul>${content}</ul>
+    ${overflow}
+  </section>`;
 }
 
 function analyzePremise(premise, genre = "") {
@@ -962,6 +1155,7 @@ if (newSeriesPackageButton) {
   newSeriesPackageButton.addEventListener("click", () => {
     setActiveSeriesId(currentSeriesId(), { syncTask: true, syncPackage: true });
     const draft = buildPackageDraft();
+    packageRevision += 1;
     latestPackage = {
       ok: true,
       series_id: draft.series_id,
@@ -1129,6 +1323,57 @@ copyDiagnosticsButton.addEventListener("click", () => {
     taskOutput.textContent = error.message;
   });
 });
+
+if (nextActions) {
+  nextActions.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!target || !target.dataset || !target.dataset.action) return;
+    runQuickAction(target.dataset.action).catch((error) => {
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+async function runQuickAction(action) {
+  if (action === "focus-premise") {
+    taskForm.elements.premise.focus();
+    taskOutput.textContent = "Premise field focused.";
+    return;
+  }
+  if (action === "new-package") {
+    newSeriesPackageButton.click();
+    return;
+  }
+  if (action === "generate-package") {
+    generatePackageButton.click();
+    return;
+  }
+  if (action === "add-role") {
+    addRoleButton.click();
+    return;
+  }
+  if (action === "open-package-json") {
+    const panel = packageOutput && packageOutput.closest("details");
+    if (panel) panel.open = true;
+    if (packageOutput) packageOutput.focus();
+    taskOutput.textContent = "Package JSON opened for editing.";
+    return;
+  }
+  if (action === "queue-text") {
+    const renderField = taskForm.elements.render_audio;
+    if (renderField) renderField.checked = false;
+    updateTaskPreview({ syncSeries: false });
+    taskForm.requestSubmit();
+    return;
+  }
+  if (action === "queue-current") {
+    taskForm.requestSubmit();
+    return;
+  }
+  if (action === "copy-diagnostics") {
+    await copyDiagnostics();
+  }
+}
 
 refreshAll().catch((error) => {
   taskOutput.textContent = error.message;

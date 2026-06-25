@@ -65,6 +65,22 @@ def test_tempo_map_changes_compression_by_length():
     )
 
 
+def test_tempo_map_supports_tiny_smoke_books():
+    tiny = generate_tempo_map(
+        BookPlan(
+            book=1,
+            role="Smoke outline",
+            major_change="Prove intake can bootstrap.",
+            power_ceiling="level 3",
+            chapter_count=3,
+            arc_style="escalating_floor_survival",
+        )
+    )
+
+    assert len(tiny) == 3
+    assert [beat.chapter for beat in tiny] == [1, 2, 3]
+
+
 def test_chapter_contract_merges_tempo_book_and_outline(tmp_path):
     shape = SeriesShape(
         target_books=1,

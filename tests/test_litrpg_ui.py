@@ -75,6 +75,9 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="load-active-series"' in html
     assert 'id="new-series-package"' in html
     assert 'id="series-status"' in html
+    assert 'id="studio-flow"' in html
+    assert 'id="next-actions"' in html
+    assert 'id="job-console"' in html
     assert 'id="task-form"' in html
     assert 'name="series_id"' in html
     assert 'name="premise"' in html
@@ -100,6 +103,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="save-package"' in html
     assert 'id="generate-package"' in html
     assert 'id="copy-package"' in html
+    assert 'id="package-radar"' in html
     assert 'id="package-output"' in html
     assert 'id="role-package-panel"' in html
     assert 'id="role-list"' in html

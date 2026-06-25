@@ -112,6 +112,188 @@ h2 {
   padding: 18px;
 }
 
+.settings-panel summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  color: #26323d;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.settings-panel summary small {
+  color: #66717d;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.settings-panel form {
+  margin-top: 16px;
+}
+
+.command-center {
+  border-color: #cfd8e3;
+}
+
+.command-layout {
+  display: grid;
+  grid-template-columns: 1.35fr 0.9fr 0.9fr;
+  gap: 14px;
+}
+
+.command-layout h3,
+.radar-column h3 {
+  margin: 0 0 10px;
+  color: #26323d;
+  font-size: 14px;
+}
+
+.flow-list,
+.action-list,
+.job-console {
+  display: grid;
+  gap: 8px;
+}
+
+.flow-step {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid #e1e5ea;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 9px 10px;
+}
+
+.flow-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border: 2px solid #c8d0d9;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.flow-step.done .flow-dot {
+  border-color: #2f7d46;
+  background: #2f7d46;
+}
+
+.flow-step strong,
+.flow-step span {
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.flow-step span {
+  color: #506170;
+  font-size: 12px;
+}
+
+.flow-step p,
+.quiet-box,
+.job-facts,
+.radar-column li span,
+.radar-overflow {
+  color: #66717d;
+  font-size: 13px;
+}
+
+.flow-step p {
+  margin-top: 3px;
+}
+
+.quick-action {
+  width: 100%;
+  min-height: 36px;
+  text-align: left;
+}
+
+.quick-action.secondary {
+  border-color: #cbd4de;
+  background: #f7f9fb;
+  color: #26323d;
+}
+
+.quiet-box {
+  border: 1px dashed #cbd4de;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 10px;
+}
+
+.job-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d4dae1;
+  border-radius: 6px;
+  background: #f7f9fb;
+  padding: 8px 10px;
+}
+
+.job-status span {
+  color: #66717d;
+  font-size: 12px;
+}
+
+.job-status.status-succeeded,
+.job-status.status-complete {
+  border-color: #9ac8a6;
+  background: #eef8f0;
+  color: #286237;
+}
+
+.job-status.status-failed {
+  border-color: #e2a29a;
+  background: #fff1ef;
+  color: #8a3328;
+}
+
+.job-status.status-running,
+.job-status.status-queued {
+  border-color: #90b9df;
+  background: #eef6ff;
+  color: #1f5d96;
+}
+
+.job-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.job-facts div {
+  border: 1px solid #e1e5ea;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.job-facts dt {
+  margin-bottom: 2px;
+  color: #38424c;
+  font-weight: 700;
+}
+
+.job-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.job-error {
+  border: 1px solid #e2a29a;
+  border-radius: 6px;
+  background: #fff1ef;
+  color: #8a3328;
+  padding: 8px 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .grid-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -248,6 +430,52 @@ label {
 
 .package-output {
   max-height: 420px;
+}
+
+.package-radar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.radar-column {
+  border: 1px solid #e1e5ea;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.radar-column ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.radar-column li {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid #e7eaee;
+  padding-top: 8px;
+}
+
+.radar-column li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.radar-column li strong {
+  overflow-wrap: anywhere;
+}
+
+.empty-radar strong {
+  color: #506170;
+}
+
+.radar-overflow {
+  margin-top: 8px;
 }
 
 .editor-panel {
@@ -454,6 +682,7 @@ audio {
   .topbar,
   .section-heading,
   .output-header,
+  .settings-panel summary,
   .editor-panel summary,
   .series-header,
   .episode-heading {
@@ -462,9 +691,15 @@ audio {
 
   .grid-form,
   .series-workspace,
+  .command-layout,
   .role-grid,
   .status-list,
+  .package-radar,
   .diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .job-facts {
     grid-template-columns: 1fr;
   }
 

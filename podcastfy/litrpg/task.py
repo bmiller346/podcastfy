@@ -22,6 +22,7 @@ from podcastfy.litrpg.llm import StageRouting
 from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
+from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
 from podcastfy.litrpg.series_architect import SeriesArchitect, format_chapter_contract_context
 from podcastfy.litrpg.showrunner import build_showrunner_payload, format_showrunner_context
@@ -89,7 +90,17 @@ def run_litrpg_task_data(
     )
     resolved_llm = llm or _llm_from_task(task, settings=settings)
 
-    if str(task.get("mode") or "episode") == "chapter":
+    mode = str(task.get("mode") or "episode")
+    if mode == "premise_intake":
+        result = _run_premise_intake_task(
+            resolved_base_dir,
+            task,
+            llm=resolved_llm,
+        ).to_dict()
+        _write_result_if_requested(resolved_base_dir, task, result)
+        return result
+
+    if mode == "chapter":
         chapter_task = _chapter_task_with_paths(resolved_base_dir, task)
         result = generate_litrpg_chapter(chapter_task, llm=resolved_llm)
         _save_chapter_state_if_requested(resolved_base_dir, chapter_task, result)
@@ -119,6 +130,40 @@ def run_litrpg_task_data(
     )
     _write_result_if_requested(resolved_base_dir, task, result)
     return result
+
+
+def _run_premise_intake_task(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    *,
+    llm: Any,
+):
+    premise = str(
+        task.get("premise")
+        or task.get("source_text")
+        or task.get("premise_dump")
+        or ""
+    ).strip()
+    if not premise and task.get("premise_path"):
+        premise_path = _resolve_task_path(base_dir, task["premise_path"])
+        premise = premise_path.read_text(encoding="utf-8").strip()
+    if not premise:
+        raise ValueError("premise_intake mode requires premise, source_text, premise_dump, or premise_path")
+    return run_premise_intake(
+        storage_dir=_resolve_task_path(base_dir, task.get("storage_dir", "data/litrpg")),
+        series_id=str(task.get("series_id") or "default-series"),
+        premise=premise,
+        llm=llm,
+        target_books=int(task.get("target_books") or 1),
+        chapters_per_book=int(task.get("chapters_per_book") or 30),
+        book_length_mode=str(task.get("book_length_mode") or "tight"),
+        arc_style=str(task.get("arc_style") or "escalating_floor_survival"),
+        series_title=str(task.get("series_title") or ""),
+        series_promise=str(task.get("series_promise") or ""),
+        endgame_direction=str(task.get("endgame_direction") or ""),
+        power_curve=str(task.get("power_curve") or "logarithmic"),
+        merge_existing=bool(task.get("merge_existing", True)),
+    )
 
 
 def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> Any:
