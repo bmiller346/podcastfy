@@ -73,6 +73,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="series_id"' in html
     assert 'name="premise"' in html
     assert 'name="mode"' in html
+    assert 'name="genre"' in html
     assert 'name="generation_provider"' in html
     assert 'name="generation_model"' in html
     assert 'name="tts_provider"' in html
@@ -164,12 +165,13 @@ def test_series_package_generate_uses_generator_when_available(
 ):
     calls = []
 
-    def fake_generate_series_package(*, series_id, premise, baseline_text, storage_dir):
-        calls.append((series_id, premise, baseline_text, storage_dir))
+    def fake_generate_series_package(*, series_id, premise, genre="", baseline_text, storage_dir):
+        calls.append((series_id, premise, genre, baseline_text, storage_dir))
         return {
             "schema_version": "generated-v1",
             "series_id": series_id,
             "premise": premise,
+            "metadata": {"genre": genre},
             "system_announcer": {"name": "Announcer", "tone": baseline_text},
             "characters": [{"name": "Edward"}],
         }
@@ -183,6 +185,7 @@ def test_series_package_generate_uses_generator_when_available(
         {
             "series_id": "catamaran-crawlers",
             "premise": "Edward and Kelli get absorbed into a dungeon with a boat.",
+            "genre": "Retirement heist",
             "baseline_text": "fine print against its will",
         },
     )
@@ -205,10 +208,12 @@ def test_series_package_generate_uses_generator_when_available(
         (
             "catamaran-crawlers",
             "Edward and Kelli get absorbed into a dungeon with a boat.",
+            "Retirement heist",
             "fine print against its will",
             ui.DATA_DIR,
         )
     ]
+    assert saved["metadata"]["genre"] == "Retirement heist"
 
 
 def test_series_package_generate_reports_unavailable_without_generator(ui_server):

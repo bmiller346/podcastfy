@@ -47,6 +47,19 @@ def test_build_series_package_prompt_includes_baseline_and_required_shape():
     assert "Return only one JSON object" in prompt
 
 
+def test_build_series_package_prompt_can_target_non_litrpg_styles():
+    prompt = build_series_package_prompt(
+        premise="A village baker solves murders through pastry gossip.",
+        series_id="crumb-trail",
+        genre="cozy mystery",
+    )
+
+    assert "Create a reusable cozy mystery audio series package" in prompt
+    assert "Genre/style: cozy mystery" in prompt
+    assert "genre-specific story function" in prompt
+    assert "If the chosen genre has no System" in prompt
+
+
 def test_extract_series_package_json_accepts_fenced_or_prefaced_response():
     fenced = """```json
 {"series_id": "catamaran-crawlers", "characters": []}
@@ -94,6 +107,17 @@ def test_coerce_series_package_fills_safe_defaults_and_minimum_cast():
     assert package["characters"][0]["voice"]["delivery"] == "low, tired, practical"
     assert package["faction_map"][0]["name"] == "boardwalk-kings"
     assert package["validation_metadata"]["valid"] is True
+
+
+def test_coerce_series_package_preserves_non_litrpg_genre_metadata():
+    package = coerce_series_package(
+        {"series_id": "crumb-trail", "characters": []},
+        premise="A village baker solves murders through pastry gossip.",
+        genre="cozy mystery",
+    )
+
+    assert package["metadata"]["genre"] == "cozy mystery"
+    assert package["metadata"]["generator"] == "audio-series-package"
 
 
 def test_generate_series_package_uses_injected_llm_and_coerces_partial_json():

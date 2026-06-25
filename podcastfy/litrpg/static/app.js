@@ -66,7 +66,7 @@ function renderTasks(data) {
     .map((task) => `<option value="${escapeHtml(task.path)}">${escapeHtml(task.name)}</option>`)
     .join("");
   if (!tasks.length) {
-    taskSelect.innerHTML = `<option value="">No usage/litrpg*.json tasks found</option>`;
+    taskSelect.innerHTML = `<option value="">No task JSON files found</option>`;
   }
 }
 
@@ -88,7 +88,7 @@ function renderLibrary(data) {
   latestLibrary = data;
   const series = data.library || [];
   if (!series.length) {
-    library.innerHTML = `<p class="muted">No saved episodes found under data/litrpg.</p>`;
+    library.innerHTML = `<p class="muted">No saved episodes found in local story storage.</p>`;
     return;
   }
   library.innerHTML = series
@@ -182,6 +182,7 @@ function buildTaskPayload() {
     storage_dir: cleanValue(formData.get("storage_dir")) || "../data/litrpg",
   };
 
+  maybeAssign(task, "genre", cleanValue(formData.get("genre")));
   maybeAssign(task, "result_path", cleanValue(formData.get("result_path")));
   maybeAssign(task, "checkpoint_dir", cleanValue(formData.get("checkpoint_dir")));
 
@@ -223,6 +224,7 @@ function buildPackageDraft() {
     series_id: seriesId,
     metadata: {
       source: "ui",
+      genre: task.genre || "",
       updated_at: new Date().toISOString(),
     },
     premise: task.premise || "",
@@ -318,6 +320,10 @@ function packageFromRoleEditor(basePackage) {
   packageValue.series_id = packageSeriesId();
   packageValue.premise = packageValue.premise || buildTaskPayload().premise || "";
   packageValue.baseline_text = baselinePackageText() || packageValue.baseline_text || "";
+  packageValue.metadata = {
+    ...(packageValue.metadata || {}),
+    genre: buildTaskPayload().genre || (packageValue.metadata && packageValue.metadata.genre) || "",
+  };
   packageValue.characters = readRolesFromEditor();
   return packageValue;
 }
@@ -462,6 +468,7 @@ async function generateSeriesPackage() {
     body: JSON.stringify({
       series_id: packageSeriesId(),
       premise: buildTaskPayload().premise || "",
+      genre: buildTaskPayload().genre || "",
       baseline_text: baselinePackageText(),
       save: true,
     }),
@@ -489,7 +496,7 @@ async function pollJob(jobId) {
 function buildDiagnosticsReport() {
   const task = buildTaskPayload();
   const premise = task.premise || "";
-  const premiseAnalysis = analyzePremise(premise);
+  const premiseAnalysis = analyzePremise(premise, task.genre || "");
   const settings = summarizeSettings(latestSettings);
   const librarySummary = summarizeLibrary(latestLibrary);
   const seriesPackage = summarizeSeriesPackage(latestPackage);
@@ -528,12 +535,15 @@ function renderDiagnosticsSummary(report) {
   const hooks = Object.entries(report.premise_analysis.hooks || {})
     .filter(([, present]) => present)
     .length;
+  const hookTotal = Object.keys(report.premise_analysis.hooks || {}).length || 0;
   const audio = report.task.render_audio ? "audio on" : "audio off";
   const packageState = report.series_package.available ? "ready" : "missing";
   return [
     diagnosticsItem("Readiness", readiness),
-    diagnosticsItem("Premise hooks", `${hooks}/7`),
+    diagnosticsItem("Premise hooks", `${hooks}/${hookTotal}`),
     diagnosticsItem("Series package", packageState),
+    diagnosticsItem("Genre", report.series_package.genre || report.task.genre || "unspecified"),
+    diagnosticsItem("Role packages", String(report.series_package.role_count || 0)),
     diagnosticsItem("Configured keys", String(configured)),
     diagnosticsItem("Mode", report.task.mode || "episode"),
     diagnosticsItem("Audio", audio),
@@ -545,18 +555,30 @@ function diagnosticsItem(label, value) {
   return `<div class="diagnostic-item"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`;
 }
 
-function analyzePremise(premise) {
+function analyzePremise(premise, genre = "") {
   const lower = premise.toLowerCase();
+  const genreText = genre.toLowerCase();
   const words = premise.trim() ? premise.trim().split(/\s+/).length : 0;
-  const hooks = {
-    reluctant_protagonist: /\b(retired|leave me alone|alone|reluctant|exhausted|wants? .{0,20} alone|stop having tasks)\b/i.test(premise),
-    chaos_partner: /\b(chaos|volatile|all-in|risk|odds|gambl|bet|wildcard)\b/i.test(premise),
-    nonhuman_cast: /\b(macaw|familiar|pet|animal|bird|parrot|pedro)\b/i.test(premise),
-    home_base: /\b(catamaran|boat|ship|home base|base|hull|rigging)\b/i.test(premise),
-    mechanics: /\b(class|system|quest|xp|floor boss|stat|familiar|dungeon)\b/i.test(premise),
-    setting_flavor: /\b(atlantic city|south jersey|pine barrens|philadelphia|union|boardwalk|marina|west berlin)\b/i.test(premise),
-    problem_solving: /\b(carpentry|structural|repair|improvise|load-bearing|rigger|assessor|code)\b/i.test(premise),
-  };
+  const isLitrpg = /\b(litrpg|dungeon|system|xp|quest|stats?)\b/i.test(`${genre} ${premise}`);
+  const hooks = isLitrpg
+    ? {
+        reluctant_protagonist: /\b(retired|leave me alone|alone|reluctant|exhausted|wants? .{0,20} alone|stop having tasks)\b/i.test(premise),
+        chaos_partner: /\b(chaos|volatile|all-in|risk|odds|gambl|bet|wildcard)\b/i.test(premise),
+        nonhuman_cast: /\b(macaw|familiar|pet|animal|bird|parrot|pedro)\b/i.test(premise),
+        home_base: /\b(catamaran|boat|ship|home base|base|hull|rigging)\b/i.test(premise),
+        mechanics: /\b(class|system|quest|xp|floor boss|stat|familiar|dungeon)\b/i.test(premise),
+        setting_flavor: /\b(atlantic city|south jersey|pine barrens|philadelphia|union|boardwalk|marina|west berlin)\b/i.test(premise),
+        problem_solving: /\b(carpentry|structural|repair|improvise|load-bearing|rigger|assessor|code)\b/i.test(premise),
+      }
+    : {
+        clear_protagonist: /\b(who|protagonist|hero|lead|detective|captain|clerk|retired|sold|discovers?)\b/i.test(premise),
+        concrete_setting: /\b(city|town|station|ship|marina|office|school|house|island|planet|kingdom|hotel|road)\b/i.test(premise),
+        central_conflict: /\b(must|wants?|needs?|against|discovers?|trapped|haunted|missing|murder|war|secret|threat)\b/i.test(premise),
+        relationship_pressure: /\b(family|partner|crew|friend|rival|enemy|marriage|kids|team|neighbor)\b/i.test(premise),
+        tonal_identity: /\b(comedy|dark|cozy|romantic|grim|absurd|satire|horror|mystery|thriller|hopeful)\b/i.test(`${genre} ${premise}`),
+        audio_cast_potential: /\b(announcer|host|narrator|voice|cast|interview|podcast|radio|trial|council|crew)\b/i.test(premise),
+        serial_engine: /\b(book|chapter|episode|season|case|floor|mission|arc|quest|investigation|journey)\b/i.test(premise),
+      };
   const sensitive_terms = [];
   if (lower.includes("bipolar")) sensitive_terms.push("bipolar portrayal");
   if (lower.includes("mental")) sensitive_terms.push("mental health portrayal");
@@ -565,6 +587,8 @@ function analyzePremise(premise) {
     .map(([name]) => name);
   return {
     characters: findCharacterNames(premise),
+    genre: genre || (genreText.includes("litrpg") ? "LitRPG" : ""),
+    analysis_mode: isLitrpg ? "litrpg" : "general_story",
     word_count: words,
     hooks,
     missing_hooks,
@@ -618,11 +642,25 @@ function summarizeLibrary(data) {
 
 function summarizeSeriesPackage(data) {
   const modules = (data && data.modules) || {};
+  const packageValue = data && data.package && typeof data.package === "object" ? data.package : {};
+  const metadata = packageValue.metadata && typeof packageValue.metadata === "object" ? packageValue.metadata : {};
+  const roles = roleArrayFromPackage(packageValue).map((role) => ({
+    role: role.role || role.role_id || "",
+    name: role.name || "",
+    class: role.character_class || role.class_candidate || role.class_or_mechanic || "",
+    voice: roleScalarValue(role.voice || role.voice_profile),
+  }));
   return {
     series_id: data ? data.series_id : "",
     available: Boolean(data && data.available),
     status: data ? data.status : "unknown",
     path: data ? data.path : "",
+    genre: metadata.genre || metadata.style || "",
+    role_count: roles.length,
+    roles,
+    has_system_announcer: Boolean(packageValue.system_announcer && Object.keys(packageValue.system_announcer).length),
+    has_familiar: Boolean(packageValue.familiar && Object.keys(packageValue.familiar).length),
+    package_keys: Object.keys(packageValue),
     modules: {
       packages: Boolean(modules.packages),
       generator: Boolean(modules.generator),
@@ -649,7 +687,11 @@ function diagnosticRecommendations({ task, premiseAnalysis, settings, seriesPack
     recommendations.push("Add a premise before queueing generation.");
   }
   if (premiseAnalysis.strength === "thin") {
-    recommendations.push("Premise looks thin; add character tension, mechanics, setting flavor, or a concrete first boss problem.");
+    if (premiseAnalysis.analysis_mode === "litrpg") {
+      recommendations.push("Premise looks thin; add character tension, mechanics, setting flavor, or a concrete first boss problem.");
+    } else {
+      recommendations.push("Premise looks thin; add a clear lead, setting, conflict, relationship pressure, and a repeatable story engine.");
+    }
   }
   if (premiseAnalysis.missing_hooks.length) {
     recommendations.push(`Missing premise hooks: ${premiseAnalysis.missing_hooks.join(", ")}.`);
@@ -670,6 +712,9 @@ function diagnosticRecommendations({ task, premiseAnalysis, settings, seriesPack
   }
   if (!seriesPackage.available) {
     recommendations.push("No series package is loaded yet; create or save a package before serious chapter tests.");
+  }
+  if (seriesPackage.available && !seriesPackage.role_count) {
+    recommendations.push("Series package has no editable role packages yet; add cast roles or generate a first draft.");
   }
   if (!seriesPackage.modules.generator) {
     recommendations.push("Series package generator is unavailable; save a draft package or wait for the generator lane.");

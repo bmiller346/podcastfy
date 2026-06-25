@@ -228,7 +228,10 @@ def save_series_package_request(payload: dict[str, Any]) -> dict[str, Any]:
         package = {
             "schema_version": "ui-draft-v1",
             "series_id": series_id,
-            "metadata": {"source": "ui"},
+            "metadata": {
+                "source": "ui",
+                "genre": str(payload.get("genre") or payload.get("style") or "").strip(),
+            },
             "premise": str(payload.get("premise") or "").strip(),
             "baseline_text": str(payload.get("baseline_text") or "").strip(),
             "system_announcer": {},
@@ -246,6 +249,7 @@ def generate_series_package_request(payload: dict[str, Any]) -> dict[str, Any]:
     """Generate and optionally save a series package when the generator is installed."""
     series_id = _safe_series_id(str(payload.get("series_id") or ""))
     premise = str(payload.get("premise") or "").strip()
+    genre = str(payload.get("genre") or payload.get("style") or "").strip()
     baseline_text = str(payload.get("baseline_text") or "").strip()
     if not premise:
         raise ValueError("premise is required")
@@ -253,6 +257,7 @@ def generate_series_package_request(payload: dict[str, Any]) -> dict[str, Any]:
         generated = generate_series_package(
             series_id=series_id,
             premise=premise,
+            genre=genre,
             baseline_text=baseline_text,
             storage_dir=DATA_DIR,
         )
@@ -315,6 +320,7 @@ def generate_series_package(
     *,
     series_id: str,
     premise: str,
+    genre: str = "",
     baseline_text: str = "",
     storage_dir: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -341,6 +347,23 @@ def generate_series_package(
         verbosity="medium",
     )
     for kwargs in (
+        {
+            "series_id": series_id,
+            "premise": premise,
+            "genre": genre,
+            "baseline_text": baseline_text,
+            "llm": llm,
+            "storage_dir": storage_dir or DATA_DIR,
+            "save": False,
+        },
+        {
+            "series_id": series_id,
+            "premise": premise,
+            "genre": genre,
+            "baseline_text": baseline_text,
+            "llm": llm,
+        },
+        {"premise": premise, "genre": genre, "baseline_text": baseline_text, "llm": llm},
         {
             "series_id": series_id,
             "premise": premise,

@@ -1,4 +1,4 @@
-"""LLM-driven series package generation for LitRPG audio serials."""
+"""LLM-driven series package generation for local audio serials."""
 
 from __future__ import annotations
 
@@ -18,20 +18,40 @@ def build_series_package_prompt(
     *,
     premise: str,
     series_id: str = "",
+    genre: str = "",
     baseline_text: str = "",
     target_character_count: int = MINIMUM_CHARACTER_PACKAGES,
 ) -> str:
     """Build the prompt that turns a premise into reusable series artifacts."""
 
     role_tags = ", ".join(ROLE_TAGS)
+    genre_label = genre.strip() or "audio serial"
+    is_litrpg = "litrpg" in genre_label.casefold()
+    mechanics_note = (
+        "LitRPG class, skill, stat, loot, or mechanic hook"
+        if is_litrpg
+        else "genre-specific story function, ability, job, social role, or recurring hook"
+    )
+    package_name = (
+        "LitRPG audio series package" if is_litrpg else f"{genre_label} audio series package"
+    )
+    generator_name = (
+        "litrpg-series-package" if is_litrpg else "audio-series-package"
+    )
+    mechanics_requirement = (
+        "Make mechanics practical and story-driving: class hooks, home-base rules, faction leverage, and bizarre loot logic."
+        if is_litrpg
+        else "Make story rules practical and reusable: character constraints, setting rules, faction or relationship leverage, recurring set pieces, and escalation logic."
+    )
     baseline_section = (
         baseline_text.strip()
         if baseline_text.strip()
         else "No baseline package was provided. Invent a fresh but reusable style bible."
     )
-    return f"""Create a reusable LitRPG audio series package from this premise.
+    return f"""Create a reusable {package_name} from this premise.
 
 Series id: {series_id or "derive a short stable slug from the premise"}
+Genre/style: {genre_label}
 Premise:
 {premise.strip()}
 
@@ -46,7 +66,8 @@ Required top-level shape:
   "series_id": "short-series-id",
   "premise": "clean premise summary",
   "metadata": {{
-    "generator": "litrpg-series-package",
+    "generator": "{generator_name}",
+    "genre": "{genre_label}",
     "baseline_used": true,
     "notes": []
   }},
@@ -63,7 +84,7 @@ Required top-level shape:
       "role": "HERO",
       "name": "Character name",
       "function": "story function",
-      "class_or_mechanic": "LitRPG class, skill, or mechanic hook",
+      "class_or_mechanic": "{mechanics_note}",
       "personality": [],
       "voice": {{
         "archetype": "distinct acoustic/personality profile",
@@ -111,9 +132,10 @@ Required top-level shape:
 Generation requirements:
 - Create at least {target_character_count} character or role packages.
 - Include the major premise leads plus useful recurring roles, rivals, factions, vendors, bosses, and game-show/audience voices.
-- Keep the SYSTEM announcer distinct from direct Dungeon Crawler Carl imitation.
+- If the chosen genre has no System, announcer, stats, or game-show layer, keep those fields empty or reinterpret them as narrator/showrunner/audio-production guidance.
+- Keep any announcer or system voice distinct from direct imitation of existing performers or franchises.
 - If baseline text is provided, preserve its useful structure and performance intent, but adapt it to this original series.
-- Make mechanics practical and story-driving: class hooks, home-base rules, faction leverage, and bizarre loot logic.
+- {mechanics_requirement}
 - Write for audio production: sample lines, timing, delivery, and reusable voice direction.
 - Use preferred role tags where useful: {role_tags}.
 """
@@ -124,6 +146,7 @@ def generate_series_package(
     premise: str,
     llm: Any,
     series_id: str = "",
+    genre: str = "",
     baseline_text: str = "",
     storage_dir: str | None = None,
     save: bool = False,
@@ -133,6 +156,7 @@ def generate_series_package(
     prompt = build_series_package_prompt(
         premise=premise,
         series_id=series_id,
+        genre=genre,
         baseline_text=baseline_text,
     )
     raw_response = llm.generate(prompt=prompt, stage=PACKAGE_GENERATOR_STAGE)
@@ -141,6 +165,7 @@ def generate_series_package(
         draft,
         premise=premise,
         series_id=series_id,
+        genre=genre,
         baseline_text=baseline_text,
     )
     if save:
@@ -170,6 +195,7 @@ def coerce_series_package(
     *,
     premise: str = "",
     series_id: str = "",
+    genre: str = "",
     baseline_text: str = "",
 ) -> dict[str, Any]:
     """Coerce a partial or loose model response into the package draft shape."""
@@ -184,7 +210,7 @@ def coerce_series_package(
         ),
         "series_id": clean_series_id,
         "premise": clean_premise,
-        "metadata": _coerce_metadata(values.get("metadata"), baseline_text),
+        "metadata": _coerce_metadata(values.get("metadata"), baseline_text, genre),
         "system_announcer": _coerce_system_announcer(
             values.get("system_announcer"), baseline_text=baseline_text
         ),
@@ -497,9 +523,17 @@ def _strip_json_fence(text: str) -> str:
     return text
 
 
-def _coerce_metadata(value: Any, baseline_text: str) -> dict[str, Any]:
+def _coerce_metadata(value: Any, baseline_text: str, genre: str = "") -> dict[str, Any]:
     metadata = dict(value) if isinstance(value, Mapping) else {}
-    metadata.setdefault("generator", "litrpg-series-package")
+    clean_genre = str(metadata.get("genre") or genre or "").strip()
+    metadata.setdefault(
+        "generator",
+        "litrpg-series-package"
+        if "litrpg" in clean_genre.casefold()
+        else "audio-series-package",
+    )
+    if clean_genre:
+        metadata["genre"] = clean_genre
     metadata["baseline_used"] = bool(baseline_text.strip()) or bool(
         metadata.get("baseline_used")
     )

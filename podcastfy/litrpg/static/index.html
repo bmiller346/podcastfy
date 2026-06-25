@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LitRPG Local Studio</title>
+    <title>Local Audio Story Studio</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
         <div>
-          <h1>LitRPG Local Studio</h1>
-          <p>Settings, task runs, and saved episode audio.</p>
+          <h1>Local Audio Story Studio</h1>
+          <p>Settings, task runs, reusable cast packages, and saved episode audio.</p>
         </div>
         <button id="refresh" type="button">Refresh</button>
       </header>
@@ -61,7 +61,7 @@
       <section class="panel">
         <div class="section-heading">
           <h2>Create Task</h2>
-          <p>Build a local LitRPG run without hand-editing task JSON.</p>
+          <p>Build a local audio story run without hand-editing task JSON.</p>
         </div>
         <form id="task-form" class="grid-form task-form">
           <label>
@@ -78,6 +78,10 @@
               <option value="episode">episode</option>
               <option value="chapter">chapter</option>
             </select>
+          </label>
+          <label>
+            Genre / style
+            <input name="genre" type="text" placeholder="LitRPG, cozy mystery, space opera, workplace satire">
           </label>
           <label>
             Generation provider
