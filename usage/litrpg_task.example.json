@@ -1,0 +1,42 @@
+{
+  "series_id": "paper-cuts-replay",
+  "premise": "A night-shift clerk discovers the office basement is a procedural dungeon.",
+  "storage_dir": "../data/litrpg",
+  "result_path": "../data/litrpg/paper-cuts-replay/episode-001.json",
+  "settings_path": "../settings.local.json",
+  "render_audio": true,
+  "replay_existing": true,
+  "tts": {
+    "provider": "openai",
+    "model": "gpt-4o-mini-tts",
+    "format": "mp3"
+  },
+  "litrpg_config": {
+    "minutes": 4,
+    "tone": "funny, dangerous, fast-paced, audio-first",
+    "voices": {
+      "NARRATOR": {
+        "voice": "marin",
+        "instructions": "Warm, cinematic narration with crisp action clarity."
+      },
+      "HERO": {
+        "voice": "cedar",
+        "instructions": "Grounded, dry, slightly overwhelmed but brave."
+      },
+      "SYSTEM": {
+        "voice": "coral",
+        "instructions": "Hostile game-show announcer energy with clean punchlines."
+      },
+      "SIDEKICK": {
+        "voice": "shimmer",
+        "instructions": "Fast, bright, and anxious without becoming shrill."
+      },
+      "BOSS": {
+        "voice": "onyx",
+        "instructions": "Low, controlled menace with theatrical pauses."
+      }
+    }
+  },
+  "outline": "1. NARRATOR opens in the basement stairwell. 2. SYSTEM assigns a survival quest. 3. HERO finds a cursed stapler. 4. SIDEKICK calls from the elevator speaker. 5. BOSS interrupts with a policy violation. 6. Cliffhanger: the break room becomes Floor Two.",
+  "script": "<NARRATOR>The basement stairs went down farther than the building was tall.</NARRATOR><SYSTEM style=\"hostile announcer\">NEW QUEST: Survive onboarding. Reward: one cursed stapler and dental coverage of unknown origin.</SYSTEM><HERO>I knew unpaid overtime was a trap, but this feels legally distinct.</HERO><SIDEKICK>The elevator says you are now an essential employee. That seems bad.</SIDEKICK><BOSS>Violation detected: unauthorized courage.</BOSS><SYSTEM>CLIFFHANGER: The break room has unlocked Floor Two.</SYSTEM>"
+}

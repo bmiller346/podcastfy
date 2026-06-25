@@ -4,7 +4,13 @@
   "premise": "A junior office clerk discovers the company's basement is a dungeon that promotes employees through combat reviews.",
   "chapter_number": 2,
   "chapter_title": "The Stapler Hungers",
-  "target_minutes": 25,
+  "target_minutes": 8,
+  "storage_dir": "../data/litrpg",
+  "result_path": "../data/litrpg/paper-cuts/chapter-002.json",
+  "checkpoint_dir": "../data/litrpg/paper-cuts/chapter-002_checkpoints",
+  "settings_path": "../settings.local.json",
+  "persist_state": true,
+  "render_audio": false,
   "injected_beats": [
     "The cursed stapler must appear before the first SYSTEM alert.",
     "The copier demands tribute and prints a forbidden map.",
@@ -12,9 +18,31 @@
   ],
   "part_overrides": {
     "cold-open": {
-      "target_minutes": 6,
+      "target_minutes": 2,
+      "required_roles": [
+        "NARRATOR",
+        "HERO",
+        "SYSTEM",
+        "SIDEKICK",
+        "MINION"
+      ],
       "extra_injected_beats": [
         "Open on a failed stealth roll near the time clock."
+      ]
+    },
+    "party-pressure": {
+      "target_minutes": 2,
+      "required_roles": [
+        "NARRATOR",
+        "HERO",
+        "RIVAL",
+        "HEALER",
+        "TANK",
+        "ROGUE",
+        "MAGE"
+      ],
+      "extra_injected_beats": [
+        "The party argues over whether HR policy still matters underground."
       ]
     },
     "boss-setpiece": {
@@ -32,15 +60,19 @@
   "generation": {
     "provider": "openai",
     "model": "gpt-5.5",
-    "reasoning_effort": "medium",
-    "verbosity": "medium"
+    "reasoning_effort": "low",
+    "verbosity": "low",
+    "max_retries": 2,
+    "retry_backoff_seconds": 1,
+    "timeout_seconds": 60
   },
   "reviews": {
-    "enabled": true
+    "enabled": true,
+    "rewrite": true
   },
-  "reuse_ready_parts_from": "data/litrpg/paper-cuts/chapter-002.previous.json",
   "locked_part_scripts": {
-    "cold-open": "<NARRATOR>Optional explicit lock. This wins over reuse_ready_parts_from for the same part.</NARRATOR>"
-  },
-  "result_path": "data/litrpg/paper-cuts/chapter-002.json"
+    "mechanics-reveal": "<NARRATOR>The tutorial display flickered, saving room for a real mechanics pass later.</NARRATOR><SYSTEM>MECHANICS PLACEHOLDER: Reward tables deferred.</SYSTEM><GUIDE>The audience will forgive one temporary mystery.</GUIDE><HERO>I won't.</HERO><MERCHANT>Excellent. Resentment is collectible.</MERCHANT><MENTOR>Keep moving.</MENTOR>",
+    "boss-setpiece": "<NARRATOR>The loading-bay doors shuddered like they were rehearsing for a larger episode.</NARRATOR><HERO>This is where the expensive screaming goes.</HERO><SYSTEM>BOSS PLACEHOLDER ACCEPTED.</SYSTEM><BOSS>Return when the budget allows smoke.</BOSS><BEAST>Rrr.</BEAST><MINION>We respect fiscal restraint.</MINION><SIDEKICK>That is somehow worse.</SIDEKICK>",
+    "fallout-cliffhanger": "<NARRATOR>The dungeon saved the recording and marked the chapter incomplete but alive.</NARRATOR><HERO>I survived the cheap version. That still counts.</HERO><SYSTEM>CLIFFHANGER: Audio rendering remains disabled.</SYSTEM><VILLAIN>For now.</VILLAIN><RIVAL>Do not get smug.</RIVAL><MENTOR>Too late.</MENTOR>"
+  }
 }

@@ -9,6 +9,11 @@ from podcastfy.litrpg.state_store import save_series_state
 from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task, run_litrpg_task_data
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EPISODE_EXAMPLE = REPO_ROOT / "usage" / "litrpg_task.example.json"
+CHAPTER_EXAMPLE = REPO_ROOT / "usage" / "litrpg_chapter_task.example.json"
+
+
 class FakeTTS:
     def __init__(self):
         self.calls = []
@@ -18,6 +23,38 @@ class FakeTTS:
     ):
         self.calls.append((script, output_file, voice_map, role_tags, role_instructions))
         Path(output_file).write_bytes(b"task-audio")
+
+
+class SmokeChapterLLM:
+    def __init__(self):
+        self.calls = []
+        self.script = "".join(
+            f"<{role}>{role} reports XP, loot, quest, skill, and inventory.</{role}>"
+            for role in [
+                "NARRATOR",
+                "HERO",
+                "SYSTEM",
+                "SIDEKICK",
+                "MINION",
+                "RIVAL",
+                "HEALER",
+                "TANK",
+                "ROGUE",
+                "MAGE",
+                "GUIDE",
+                "MERCHANT",
+                "MENTOR",
+                "BOSS",
+                "BEAST",
+                "VILLAIN",
+            ]
+        )
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        if stage.startswith("part:") or stage.startswith("revise:"):
+            return self.script
+        return f"{stage} ok"
 
 
 def _write_task(tmp_path, **overrides):
@@ -187,3 +224,51 @@ def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(
     assert captured["mechanics_context"]["inventory"] == ["mana flask"]
     assert captured["mechanics_context"]["skills"] == ["Paper Cut"]
     assert captured["mechanics_context"]["class"] == "Intern"
+
+
+def test_checked_in_episode_example_replays_with_fake_tts(tmp_path):
+    task = load_litrpg_task(EPISODE_EXAMPLE)
+    task["storage_dir"] = "library"
+    task["result_path"] = "library/paper-cuts-replay/episode-001.json"
+    task["settings_path"] = "settings.local.json"
+    task_path = tmp_path / "episode.task.json"
+    task_path.write_text(json.dumps(task), encoding="utf-8")
+    (tmp_path / "settings.local.json").write_text("{}", encoding="utf-8")
+
+    first_tts = FakeTTS()
+    first = run_litrpg_task(task_path, tts=first_tts)
+    second_tts = FakeTTS()
+    second = run_litrpg_task(task_path, tts=second_tts)
+
+    assert task["render_audio"] is True
+    assert task["replay_existing"] is True
+    assert len(first_tts.calls) == 1
+    assert Path(first["audio_metadata"]["audio_path"]).exists()
+    assert second["replayed"] is True
+    assert second["audio_metadata"]["audio_path"] == first["audio_metadata"]["audio_path"]
+    assert second_tts.calls == []
+
+
+def test_checked_in_chapter_example_runs_with_fake_llm_and_writes_smoke_bundle(tmp_path):
+    task = load_litrpg_task(CHAPTER_EXAMPLE)
+    task["storage_dir"] = "library"
+    task["result_path"] = "library/paper-cuts/chapter-002.json"
+    task["checkpoint_dir"] = "library/paper-cuts/chapter-002_checkpoints"
+    task["settings_path"] = "settings.local.json"
+    task_path = tmp_path / "chapter.task.json"
+    task_path.write_text(json.dumps(task), encoding="utf-8")
+    (tmp_path / "settings.local.json").write_text("{}", encoding="utf-8")
+
+    result = run_litrpg_task(task_path, llm=SmokeChapterLLM())
+
+    checkpoint_dir = tmp_path / "library" / "paper-cuts" / "chapter-002_checkpoints"
+    state_path = tmp_path / "library" / "series" / "paper-cuts" / "series_state.json"
+    result_path = tmp_path / "library" / "paper-cuts" / "chapter-002.json"
+
+    assert task["render_audio"] is False
+    assert result["mode"] == "chapter"
+    assert result["render"]["audio_rendered"] is False
+    assert result_path.exists()
+    assert checkpoint_dir.exists()
+    assert len(list(checkpoint_dir.glob("*_approved.xml"))) == 5
+    assert state_path.exists()

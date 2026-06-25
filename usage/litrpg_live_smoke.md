@@ -1,20 +1,33 @@
 # LitRPG Live Smoke Test
 
-This is the smallest safe workflow for proving that a real provider can generate a chapter artifact without spending enough tokens or TTS minutes to be annoying.
+This is the smallest safe workflow for proving the pipeline can generate, checkpoint, and later replay a LitRPG bundle without burning unnecessary tokens or TTS minutes.
 
-The smoke task is opt-in. It does not render audio by default, and the test suite skips the live network path unless you explicitly enable it.
+The live path is opt-in. The checked-in chapter smoke stays cheap by generating only two live parts, locking the other three parts to placeholders, and leaving audio rendering off by default.
 
-## What It Exercises
+## What To Run
 
-- OpenAI story generation through `run_litrpg_task`.
-- Chapter mode with checkpoints and result JSON.
-- Two live-generated chapter parts.
-- Three locked placeholder parts so the whole chapter shape completes cheaply.
-- No TTS render by default.
+Use these two tasks together:
 
-## Setup
+- `usage/litrpg_chapter_task.example.json`
+  Exercises real chapter generation, reviews, checkpoints, and series-state persistence with a tiny 2-part live chapter.
+- `usage/litrpg_task.example.json`
+  Exercises audio rendering and replay with a fixed inline script so the first run only pays for TTS and the second run should reuse the cached bundle.
 
-Create a local settings file or use environment variables. `settings.local.json` is ignored by git.
+`usage/litrpg_live_smoke.task.example.json` remains the narrow opt-in pytest smoke task if you want a dedicated CI-like manual check.
+
+## Required Environment
+
+Use either `settings.local.json` or environment variables. `settings.local.json` is ignored by git.
+
+Exact variables used by the current pipeline:
+
+- `OPENAI_API_KEY`
+- `GEMINI_API_KEY`
+- `ELEVENLABS_API_KEY`
+- `LITRPG_SETTINGS_PATH`
+- `RUN_LITRPG_LIVE_SMOKE`
+
+Minimal local settings file:
 
 ```json
 {
@@ -22,31 +35,55 @@ Create a local settings file or use environment variables. `settings.local.json`
 }
 ```
 
-You can also set:
+PowerShell equivalents:
 
 ```powershell
 $env:OPENAI_API_KEY = "sk-proj-..."
+$env:GEMINI_API_KEY = "..."
+$env:ELEVENLABS_API_KEY = "..."
+$env:LITRPG_SETTINGS_PATH = "C:\Users\engin\podcastfy\settings.local.json"
 ```
 
-## Run The Smoke Task Manually
+## Step 1: Cheap Chapter Smoke
 
 From the repository root:
 
 ```powershell
-python -m podcastfy.litrpg.task usage/litrpg_live_smoke.task.example.json
+python -m podcastfy.litrpg.task usage/litrpg_chapter_task.example.json
 ```
 
-Expected outputs:
+Expected bundle:
 
-- `data/litrpg/live-smoke/chapter-001.json`
-- `data/litrpg/live-smoke/chapter-001_checkpoints/*.json`
-- `data/litrpg/live-smoke/chapter-001_checkpoints/*_approved.xml`
+- `data/litrpg/paper-cuts/chapter-002.json`
+- `data/litrpg/paper-cuts/chapter-002_checkpoints/*.json`
+- `data/litrpg/paper-cuts/chapter-002_checkpoints/*_approved.xml`
+- `data/litrpg/series/paper-cuts/series_state.json`
 
-The example sets `render_audio` to `false`, so no audio file should be created.
+This task keeps `render_audio` set to `false`, so no audio file should be produced. That is intentional. It proves generation, checkpointing, and state persistence first.
 
-## Run The Opt-In Pytest Smoke
+## Step 2: Audio And Replay Verification
 
-This test is skipped unless both flags are present:
+Then run the replay example:
+
+```powershell
+python -m podcastfy.litrpg.task usage/litrpg_task.example.json
+python -m podcastfy.litrpg.task usage/litrpg_task.example.json
+```
+
+Expected behavior:
+
+- First run writes a result bundle and one audio file.
+- Second run returns the same episode bundle with replay metadata instead of synthesizing audio again.
+
+Look for:
+
+- `data/litrpg/paper-cuts-replay/episode-001.json`
+- an audio path inside the JSON result
+- `replayed: true` on the second run
+
+## Opt-In Pytest Smoke
+
+This smoke test is skipped unless you explicitly enable it:
 
 ```powershell
 $env:RUN_LITRPG_LIVE_SMOKE = "1"
@@ -56,11 +93,19 @@ python -m pytest tests/test_litrpg_live_smoke.py -q
 
 Without those environment variables, the test file only validates config shape, task loading, and skip behavior. It does not call the network.
 
-## Adding TTS Later
+## Cost Control
 
-Keep `render_audio` disabled until generation and checkpoints are stable. Then add a `tts` block and switch to the normal episode/audio render path once the UI can show progress and replay files.
+Use these guardrails before you scale anything up:
 
-OpenAI speech example:
+- Keep chapter smoke at two live parts and lock the rest.
+- Leave `render_audio` off until chapter checkpoints look stable.
+- Use inline `outline` and `script` for replay verification so you only pay for TTS once.
+- Keep `reasoning_effort` and `verbosity` low for smoke tasks.
+- Start with OpenAI speech or Gemini TTS only after the chapter bundle looks right.
+
+## Audio Toggle Examples
+
+OpenAI speech:
 
 ```json
 {
@@ -73,7 +118,7 @@ OpenAI speech example:
 }
 ```
 
-Gemini TTS example:
+Gemini TTS:
 
 ```json
 {
@@ -87,4 +132,4 @@ Gemini TTS example:
 }
 ```
 
-The generation model and speech model are separate decisions. GPT-5.5 can write the chapter while OpenAI or Gemini TTS renders speech later.
+The story model and speech model are separate decisions. GPT-5.5 can write the chapter while OpenAI or Gemini TTS handles speech later.
