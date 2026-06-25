@@ -4,9 +4,18 @@ const taskForm = document.querySelector("#task-form");
 const taskSelect = document.querySelector("#task-select");
 const taskOutput = document.querySelector("#task-output");
 const taskPreview = document.querySelector("#task-preview");
+const diagnosticsSummary = document.querySelector("#diagnostics-summary");
+const diagnosticsOutput = document.querySelector("#diagnostics-output");
+const refreshDiagnosticsButton = document.querySelector("#refresh-diagnostics");
+const copyDiagnosticsButton = document.querySelector("#copy-diagnostics");
 const library = document.querySelector("#library");
 const runTaskButton = document.querySelector("#run-task");
 const refreshButton = document.querySelector("#refresh");
+
+let latestSettings = null;
+let latestTasks = null;
+let latestLibrary = null;
+let latestJob = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -21,6 +30,7 @@ async function api(path, options = {}) {
 }
 
 function renderSettings(data) {
+  latestSettings = data;
   const defaults = data.defaults || {};
   for (const [key, value] of Object.entries(defaults)) {
     const field = settingsForm.elements[key];
@@ -37,6 +47,7 @@ function renderSettings(data) {
 }
 
 function renderTasks(data) {
+  latestTasks = data;
   const tasks = data.tasks || [];
   taskSelect.innerHTML = tasks
     .map((task) => `<option value="${escapeHtml(task.path)}">${escapeHtml(task.name)}</option>`)
@@ -49,9 +60,11 @@ function renderTasks(data) {
 function updateTaskPreview() {
   if (!taskForm || !taskPreview) return;
   taskPreview.textContent = JSON.stringify(buildTaskPayload(), null, 2);
+  updateDiagnostics();
 }
 
 function renderLibrary(data) {
+  latestLibrary = data;
   const series = data.library || [];
   if (!series.length) {
     library.innerHTML = `<p class="muted">No saved episodes found under data/litrpg.</p>`;
@@ -173,6 +186,8 @@ async function pollJob(jobId) {
   while (true) {
     const data = await api(`/api/jobs/${jobId}`);
     const job = data.job || {};
+    latestJob = job;
+    updateDiagnostics();
     taskOutput.textContent = JSON.stringify(job, null, 2);
     if (job.status === "succeeded" || job.status === "failed") {
       return job;
@@ -181,6 +196,185 @@ async function pollJob(jobId) {
       window.setTimeout(resolve, 1200);
     });
   }
+}
+
+function buildDiagnosticsReport() {
+  const task = buildTaskPayload();
+  const premise = task.premise || "";
+  const premiseAnalysis = analyzePremise(premise);
+  const settings = summarizeSettings(latestSettings);
+  const librarySummary = summarizeLibrary(latestLibrary);
+  const job = latestJob ? summarizeJob(latestJob) : null;
+  const recommendations = diagnosticRecommendations({
+    task,
+    premiseAnalysis,
+    settings,
+    librarySummary,
+    job,
+  });
+
+  return {
+    generated_at: new Date().toISOString(),
+    task,
+    premise_analysis: premiseAnalysis,
+    settings,
+    latest_job: job,
+    library: librarySummary,
+    recommendations,
+  };
+}
+
+function updateDiagnostics() {
+  if (!diagnosticsOutput || !diagnosticsSummary || !taskForm) return;
+  const report = buildDiagnosticsReport();
+  diagnosticsOutput.textContent = JSON.stringify(report, null, 2);
+  diagnosticsSummary.innerHTML = renderDiagnosticsSummary(report);
+}
+
+function renderDiagnosticsSummary(report) {
+  const readiness = report.recommendations.length ? "needs review" : "ready to test";
+  const configured = Object.values(report.settings.api_keys || {}).filter(Boolean).length;
+  const hooks = Object.entries(report.premise_analysis.hooks || {})
+    .filter(([, present]) => present)
+    .length;
+  const audio = report.task.render_audio ? "audio on" : "audio off";
+  return [
+    diagnosticsItem("Readiness", readiness),
+    diagnosticsItem("Premise hooks", `${hooks}/7`),
+    diagnosticsItem("Configured keys", String(configured)),
+    diagnosticsItem("Mode", report.task.mode || "episode"),
+    diagnosticsItem("Audio", audio),
+    diagnosticsItem("Library episodes", String(report.library.episode_count || 0)),
+  ].join("");
+}
+
+function diagnosticsItem(label, value) {
+  return `<div class="diagnostic-item"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`;
+}
+
+function analyzePremise(premise) {
+  const lower = premise.toLowerCase();
+  const words = premise.trim() ? premise.trim().split(/\s+/).length : 0;
+  const hooks = {
+    reluctant_protagonist: /\b(retired|leave me alone|alone|reluctant|exhausted|wants? .{0,20} alone|stop having tasks)\b/i.test(premise),
+    chaos_partner: /\b(chaos|volatile|all-in|risk|odds|gambl|bet|wildcard)\b/i.test(premise),
+    nonhuman_cast: /\b(macaw|familiar|pet|animal|bird|parrot|pedro)\b/i.test(premise),
+    home_base: /\b(catamaran|boat|ship|home base|base|hull|rigging)\b/i.test(premise),
+    mechanics: /\b(class|system|quest|xp|floor boss|stat|familiar|dungeon)\b/i.test(premise),
+    setting_flavor: /\b(atlantic city|south jersey|pine barrens|philadelphia|union|boardwalk|marina|west berlin)\b/i.test(premise),
+    problem_solving: /\b(carpentry|structural|repair|improvise|load-bearing|rigger|assessor|code)\b/i.test(premise),
+  };
+  const sensitive_terms = [];
+  if (lower.includes("bipolar")) sensitive_terms.push("bipolar portrayal");
+  if (lower.includes("mental")) sensitive_terms.push("mental health portrayal");
+  const missing_hooks = Object.entries(hooks)
+    .filter(([, present]) => !present)
+    .map(([name]) => name);
+  return {
+    characters: findCharacterNames(premise),
+    word_count: words,
+    hooks,
+    missing_hooks,
+    sensitive_terms,
+    strength: scorePremiseStrength(hooks, words),
+  };
+}
+
+function findCharacterNames(premise) {
+  const names = [];
+  for (const name of ["Edward", "Kelli", "Pedro"]) {
+    if (new RegExp(`\\b${name}\\b`, "i").test(premise)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+function scorePremiseStrength(hooks, words) {
+  const hookCount = Object.values(hooks).filter(Boolean).length;
+  if (hookCount >= 6 && words >= 80) return "strong";
+  if (hookCount >= 4 && words >= 40) return "workable";
+  return "thin";
+}
+
+function summarizeSettings(settings) {
+  const apiKeys = {};
+  for (const [provider, info] of Object.entries((settings && settings.api_keys) || {})) {
+    apiKeys[provider] = Boolean(info.configured);
+  }
+  return {
+    settings_path: settings ? settings.settings_path : "",
+    api_keys: apiKeys,
+    defaults: (settings && settings.defaults) || {},
+  };
+}
+
+function summarizeLibrary(data) {
+  const series = (data && data.library) || [];
+  const episodeCount = series.reduce((total, item) => total + ((item.episodes || []).length), 0);
+  const replayReady = series.reduce(
+    (total, item) => total + (item.episodes || []).filter((episode) => episode.replay && episode.replay.available).length,
+    0,
+  );
+  return {
+    series_count: series.length,
+    episode_count: episodeCount,
+    replay_ready_count: replayReady,
+  };
+}
+
+function summarizeJob(job) {
+  return {
+    job_id: job.job_id,
+    status: job.status,
+    phase: job.phase,
+    task_summary: job.task_summary,
+    result: job.result,
+    error: job.error,
+    checkpoint_paths: job.checkpoint_paths || [],
+  };
+}
+
+function diagnosticRecommendations({ task, premiseAnalysis, settings, job }) {
+  const recommendations = [];
+  if (!task.premise) {
+    recommendations.push("Add a premise before queueing generation.");
+  }
+  if (premiseAnalysis.strength === "thin") {
+    recommendations.push("Premise looks thin; add character tension, mechanics, setting flavor, or a concrete first boss problem.");
+  }
+  if (premiseAnalysis.missing_hooks.length) {
+    recommendations.push(`Missing premise hooks: ${premiseAnalysis.missing_hooks.join(", ")}.`);
+  }
+  if (premiseAnalysis.sensitive_terms.length) {
+    recommendations.push(`Sensitive material detected (${premiseAnalysis.sensitive_terms.join(", ")}); keep the character specific, agentic, and non-caricatured.`);
+  }
+  const generationProvider = (task.generation && task.generation.provider) || settings.defaults.default_generation_provider || "openai";
+  if (generationProvider === "openai" && !settings.api_keys.openai) {
+    recommendations.push("OpenAI generation is selected but no OpenAI API key is configured.");
+  }
+  const ttsProvider = (task.tts && task.tts.provider) || settings.defaults.default_tts_provider || "";
+  if (task.render_audio && ttsProvider && !settings.api_keys[ttsProvider]) {
+    recommendations.push(`${ttsProvider} TTS is selected but no ${ttsProvider} API key is configured.`);
+  }
+  if (task.render_audio) {
+    recommendations.push("For first story tests, consider turning audio off until QA/checkpoints look good.");
+  }
+  if (job && job.error) {
+    recommendations.push(`Latest job failed: ${job.error}`);
+  }
+  return recommendations;
+}
+
+async function copyDiagnostics() {
+  const text = diagnosticsOutput ? diagnosticsOutput.textContent : "";
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    await navigator.clipboard.writeText(text);
+    taskOutput.textContent = "Diagnostics copied.";
+    return;
+  }
+  taskOutput.textContent = text;
 }
 
 async function refreshAll() {
@@ -223,6 +417,8 @@ taskForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({ task: payload }),
     });
     const job = await pollJob(response.job.job_id);
+    latestJob = job;
+    updateDiagnostics();
     taskOutput.textContent = JSON.stringify(job, null, 2);
     await refreshAll();
   } catch (error) {
@@ -254,8 +450,19 @@ refreshButton.addEventListener("click", () => {
   });
 });
 
+refreshDiagnosticsButton.addEventListener("click", () => {
+  updateDiagnostics();
+});
+
+copyDiagnosticsButton.addEventListener("click", () => {
+  copyDiagnostics().catch((error) => {
+    taskOutput.textContent = error.message;
+  });
+});
+
 refreshAll().catch((error) => {
   taskOutput.textContent = error.message;
 });
 
 updateTaskPreview();
+updateDiagnostics();

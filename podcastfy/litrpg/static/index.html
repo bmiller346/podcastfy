@@ -127,6 +127,19 @@
       </section>
 
       <section class="panel">
+        <div class="section-heading">
+          <h2>Diagnostics</h2>
+          <p>Copy this when you want help reading a run.</p>
+        </div>
+        <div id="diagnostics-summary" class="diagnostics-grid" aria-live="polite"></div>
+        <div class="actions diagnostics-actions">
+          <button id="refresh-diagnostics" type="button">Refresh Diagnostics</button>
+          <button id="copy-diagnostics" type="button">Copy Diagnostics</button>
+        </div>
+        <pre id="diagnostics-output" class="output diagnostics-output" aria-live="polite"></pre>
+      </section>
+
+      <section class="panel">
         <h2>Tasks</h2>
         <div class="task-row">
           <select id="task-select"></select>

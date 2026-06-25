@@ -83,6 +83,9 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="checkpoint_dir"' in html
     assert 'name="storage_dir"' in html
     assert 'id="task-preview"' in html
+    assert 'id="diagnostics-summary"' in html
+    assert 'id="diagnostics-output"' in html
+    assert 'id="copy-diagnostics"' in html
 
 
 def wait_for_job(server, job_id, status, timeout=2):

@@ -31,6 +31,12 @@ The Create Task panel is meant for local experimentation without hand-editing a 
 
 The browser builds a JSON payload that matches the LitRPG task schema and submits it to the local jobs API. The preview box shows the exact task object before it is queued.
 
+## Diagnostics
+
+The Diagnostics panel builds a copyable JSON report from the current task, redacted settings status, latest job metadata, and replay-library counts. Paste that report into a review thread when you want help diagnosing generation quality, missing provider keys, checkpoint output, QA status, or replay readiness.
+
+The premise analysis is intentionally lightweight. It checks for useful LitRPG story hooks such as reluctant protagonist, chaos partner, nonhuman cast member, home base, mechanics, setting flavor, and practical problem solving. It also flags sensitive portrayal terms so the story can keep those characters specific and non-caricatured.
+
 ## Job API
 
 The synchronous endpoint is still available:

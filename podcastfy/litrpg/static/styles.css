@@ -181,12 +181,44 @@ label {
   margin-top: 14px;
 }
 
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .status-item {
   border: 1px solid #e1e5ea;
   border-radius: 6px;
   padding: 9px 10px;
   color: #495560;
   font-size: 13px;
+}
+
+.diagnostic-item {
+  display: grid;
+  gap: 4px;
+  min-height: 58px;
+  border: 1px solid #e1e5ea;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 9px 10px;
+  color: #495560;
+  font-size: 13px;
+}
+
+.diagnostic-item span {
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-actions {
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.diagnostics-output {
+  max-height: 360px;
 }
 
 .task-row {
@@ -323,7 +355,8 @@ audio {
   }
 
   .grid-form,
-  .status-list {
+  .status-list,
+  .diagnostics-grid {
     grid-template-columns: 1fr;
   }
 
