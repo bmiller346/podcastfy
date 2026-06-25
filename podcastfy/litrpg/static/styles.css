@@ -141,15 +141,213 @@ h2 {
   border-color: #c7d6e6;
 }
 
-.messy-intake-panel textarea {
-  min-height: 170px;
+.primary-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.primary-flow li {
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 10px;
+  color: #526170;
+  font-size: 13px;
+}
+
+.primary-flow strong {
+  color: #26323d;
+}
+
+.story-workshop-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.75fr) minmax(420px, 1.45fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.messy-intake-panel[data-markdown-layout="split"] .story-workshop-layout {
+  grid-template-columns: minmax(280px, 1fr) minmax(420px, 1fr);
+}
+
+.messy-intake-panel[data-markdown-layout="wide"] .story-workshop-layout {
+  grid-template-columns: minmax(240px, 0.45fr) minmax(520px, 1.55fr);
+}
+
+.messy-intake-panel[data-markdown-layout="focus"] .story-workshop-layout,
+.messy-intake-panel[data-markdown-layout="full"] .story-workshop-layout {
+  grid-template-columns: 1fr;
+}
+
+.messy-intake-panel[data-markdown-layout="focus"] .revision-chat,
+.messy-intake-panel[data-markdown-layout="full"] .revision-chat {
+  display: none;
+}
+
+.messy-intake-panel[data-markdown-layout="full"] .primary-flow,
+.messy-intake-panel[data-markdown-layout="full"] .field-note,
+.messy-intake-panel[data-markdown-layout="full"] #messy-context-summary {
+  display: none;
+}
+
+.revision-chat,
+.markdown-editor {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.revision-chat h3 {
+  margin: 0;
+  color: #26323d;
+  font-size: 14px;
+}
+
+.revision-chat-log {
+  min-height: 104px;
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 10px;
+  color: #526170;
+  font-size: 13px;
+}
+
+.revision-chat-log p {
+  margin: 0;
+}
+
+.editor-title-row,
+.proposal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-size-controls,
+.proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.editor-size-controls button {
+  min-height: 28px;
+  padding: 5px 8px;
+  border-color: #cbd4de;
+  background: #f7f9fb;
+  color: #26323d;
+  font-size: 12px;
+}
+
+.revision-proposal {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d7c48d;
+  border-radius: 6px;
+  background: #fffaf0;
+  padding: 10px;
+}
+
+.revision-proposal.hidden,
+.hidden {
+  display: none;
+}
+
+.proposal-header span {
+  color: #70613b;
+  font-size: 12px;
+}
+
+.revision-proposal pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid #eadcae;
+  border-radius: 5px;
+  background: #fffdf7;
+  padding: 8px;
+  color: #3d3420;
+  font-size: 12px;
+}
+
+.messy-intake-panel textarea,
+.revision-chat textarea {
+  min-height: 420px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  line-height: 1.45;
+  resize: both;
+}
+
+.revision-chat textarea {
+  min-height: 180px;
+}
+
+.messy-intake-panel[data-markdown-layout="focus"] #messy-context {
+  min-height: 62vh;
+}
+
+.messy-intake-panel[data-markdown-layout="full"] #messy-context {
+  min-height: 78vh;
 }
 
 .intake-actions {
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 10px;
   margin-top: 12px;
+}
+
+.workshop-actions {
+  margin: 0 0 14px;
+}
+
+.story-file-bar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.85fr);
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.story-seed-status {
+  min-height: 38px;
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 9px 10px;
+  color: #526170;
+  font-size: 13px;
+}
+
+.story-seed-status[data-state="loaded"],
+.story-seed-status[data-state="saved"] {
+  border-color: #9ac8a6;
+  background: #eef8f0;
+  color: #286237;
+}
+
+.story-seed-status[data-state="missing"] {
+  border-color: #e0c47a;
+  background: #fff8dc;
+  color: #715a13;
+}
+
+.story-seed-status[data-state="error"] {
+  border-color: #e2a29a;
+  background: #fff1ef;
+  color: #8a3328;
+}
+
+.chat-actions {
+  justify-content: flex-start;
 }
 
 .command-layout {
@@ -237,6 +435,12 @@ h2 {
   border-radius: 6px;
   background: #fbfcfd;
   padding: 10px;
+}
+
+.field-note {
+  margin: 0;
+  color: #5e6b77;
+  font-size: 13px;
 }
 
 .job-status {
@@ -706,6 +910,9 @@ audio {
 
   .grid-form,
   .series-workspace,
+  .primary-flow,
+  .story-file-bar,
+  .story-workshop-layout,
   .command-layout,
   .role-grid,
   .status-list,

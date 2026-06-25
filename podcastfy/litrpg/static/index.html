@@ -61,33 +61,78 @@
         <div id="settings-status" class="status-list"></div>
       </details>
 
-      <section class="panel">
+      <section class="panel messy-intake-panel">
         <div class="section-heading">
-          <h2>Series Workspace</h2>
-          <p>Select the active series before editing packages, running chapters, or replaying audio.</p>
+          <h2>1. Story Workshop</h2>
+          <p>Start here: load the markdown seed, edit it like a readable story brief, save it, then queue intake to derive JSON artifacts.</p>
         </div>
-        <div class="series-workspace">
-          <label>
-            Active Series ID
-            <input id="active-series-id" type="text" placeholder="catamaran-crawlers">
-          </label>
-          <label>
-            Saved series
-            <select id="series-select"></select>
-          </label>
-          <div class="actions series-actions">
-            <button id="use-task-series" type="button">Use Task Series</button>
-            <button id="load-active-series" type="button">Load Series</button>
-            <button id="new-series-package" type="button">New Package Draft</button>
-          </div>
+        <ol class="primary-flow">
+          <li><strong>Load</strong> `usage/litrpg_messy_context_seed.md`.</li>
+          <li><strong>Edit or chat</strong> until the markdown says what you mean.</li>
+          <li><strong>Save</strong> the markdown so you can close and return later.</li>
+          <li><strong>Queue Intake Agent</strong> to generate the structured series workspace.</li>
+        </ol>
+        <div class="actions intake-actions workshop-actions">
+          <button id="load-story-seed" type="button">Load Seed Markdown</button>
+          <button id="save-story-seed" type="button">Save Seed Markdown</button>
+          <button id="queue-premise-intake" type="button">Queue Intake Agent</button>
+          <button id="copy-mcp-context" type="button">Copy MCP Payload</button>
+          <button id="apply-messy-context" type="button">Optional Rough Autofill</button>
         </div>
-        <div id="series-status" class="diagnostics-grid" aria-live="polite"></div>
+        <div class="story-file-bar">
+          <label>
+            Story file
+            <input id="story-seed-path" type="text" value="usage/litrpg_messy_context_seed.md">
+          </label>
+          <div id="story-seed-status" class="story-seed-status" aria-live="polite">Not loaded yet.</div>
+        </div>
+        <div class="story-workshop-layout">
+          <aside class="revision-chat" aria-label="Story revision chat">
+            <h3>Revision Chat</h3>
+            <div id="revision-chat-log" class="revision-chat-log" aria-live="polite">
+              <p>Describe a change like: "Make the boat Sophie II and make the cockatoo backstory a guilt anchor." Propose it, review the markdown change, then accept or discard.</p>
+            </div>
+            <label>
+              Change note
+              <textarea id="revision-chat-input" rows="7" placeholder="Tell the story seed what should change..."></textarea>
+            </label>
+            <div class="actions chat-actions">
+              <button id="append-revision-note" type="button">Propose Markdown Change</button>
+              <button id="clear-revision-note" type="button">Clear</button>
+            </div>
+            <div id="revision-proposal" class="revision-proposal hidden" aria-live="polite">
+              <div class="proposal-header">
+                <strong>Proposed markdown change</strong>
+                <span>Review before applying</span>
+              </div>
+              <pre id="revision-proposal-preview"></pre>
+              <div class="actions proposal-actions">
+                <button id="accept-revision-proposal" type="button">Accept Proposal</button>
+                <button id="discard-revision-proposal" type="button">Discard</button>
+              </div>
+            </div>
+          </aside>
+          <label class="markdown-editor" id="markdown-editor-panel">
+            <span class="editor-title-row">
+              <span>Story seed markdown</span>
+              <span class="editor-size-controls" aria-label="Markdown editor size controls">
+                <button id="markdown-split" type="button">Split</button>
+                <button id="markdown-wide" type="button">Wide</button>
+                <button id="markdown-focus" type="button">Focus</button>
+                <button id="markdown-full" type="button">Full</button>
+              </span>
+            </span>
+            <textarea id="messy-context" rows="18" spellcheck="true" placeholder="Paste or edit the full story seed markdown here. The intake agent will read this raw text directly; you do not need to split it into fields first."></textarea>
+          </label>
+        </div>
+        <p class="field-note">This markdown is the readable source of truth. Queue Intake Agent derives structured JSON/artifacts from it; Optional Rough Autofill only guesses title, series id, and a short premise in the browser.</p>
+        <div id="messy-context-summary" class="diagnostics-grid" aria-live="polite"></div>
       </section>
 
       <section class="panel command-center">
         <div class="section-heading">
-          <h2>Studio Command Center</h2>
-          <p>Readiness, next actions, package coverage, and latest generation state.</p>
+          <h2>2. Intake Status</h2>
+          <p>After queueing intake, watch generation state and inspect what artifacts were written.</p>
         </div>
         <div class="command-layout">
           <div>
@@ -105,27 +150,34 @@
         </div>
       </section>
 
-      <section class="panel messy-intake-panel">
+      <section class="panel">
         <div class="section-heading">
-          <h2>Messy Context Intake</h2>
-          <p>Paste raw notes, chat dumps, character ideas, outlines, rules, or MCP context here.</p>
+          <h2>3. Series Workspace</h2>
+          <p>Use this after intake to inspect a generated series, package, or saved audio. It is not the first step for creating a seed.</p>
         </div>
-        <label class="wide">
-          Raw story context
-          <textarea id="messy-context" rows="8" placeholder="Paste the messy context here. The studio will keep the raw text and copy useful pieces into the story fields below."></textarea>
-        </label>
-        <div class="actions intake-actions">
-          <button id="apply-messy-context" type="button">Fill Story Fields</button>
-          <button id="queue-premise-intake" type="button">Queue Intake Agent</button>
-          <button id="copy-mcp-context" type="button">Copy MCP Context</button>
+        <div class="series-workspace">
+          <label>
+            Active Series ID
+            <input id="active-series-id" type="text" placeholder="catamaran-crawlers">
+          </label>
+          <label>
+            Saved series
+            <select id="series-select"></select>
+          </label>
+          <div class="actions series-actions">
+            <button id="use-task-series" type="button">Use Task Series</button>
+            <button id="load-active-series" type="button">Load Series</button>
+            <button id="new-series-package" type="button">New Package Draft</button>
+          </div>
         </div>
-        <div id="messy-context-summary" class="diagnostics-grid" aria-live="polite"></div>
+        <p class="field-note">New Package Draft is only for manual package editing. The normal path is Story Workshop -> Queue Intake Agent -> Load Series.</p>
+        <div id="series-status" class="diagnostics-grid" aria-live="polite"></div>
       </section>
 
       <section class="panel">
         <div class="section-heading">
-          <h2>Create Task</h2>
-          <p>Build a local audio story run without hand-editing task JSON.</p>
+          <h2>Advanced Task Builder</h2>
+          <p>Manual task controls for overrides, debugging, and chapter/audio runs after the story seed exists.</p>
         </div>
         <form id="task-form" class="grid-form task-form">
           <label>

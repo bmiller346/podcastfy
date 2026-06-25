@@ -3,14 +3,19 @@
 Run the small local LitRPG UI from the repository root:
 
 ```bash
-python -m podcastfy.litrpg.ui --host 127.0.0.1 --port 8765
+python -m podcastfy.litrpg.ui --host 127.0.0.1 --port 8765 --reload
 ```
 
 Then open http://127.0.0.1:8765/.
 
+`--reload` is recommended during development. It watches the local LitRPG Python,
+HTML, CSS, and JavaScript files and restarts the server when they change, which
+prevents the browser from talking to stale API handlers after edits.
+
 The UI can:
 
 - Save local provider keys and default provider/model settings.
+- Edit a readable story seed markdown file and derive structured story artifacts from it.
 - Build a local LitRPG task payload with series, premise, provider, TTS, and storage settings.
 - Save, load, or generate a reusable series package/style bible for a premise.
 - List `usage/litrpg*.json` task files.
@@ -20,6 +25,17 @@ The UI can:
 - Query series, episode, and replay metadata through JSON endpoints.
 
 ## Task Builder
+
+For normal story development, start in **1. Story Workshop**, not the task
+builder and not New Package Draft. The first-pass test flow is:
+
+1. Load `usage/litrpg_messy_context_seed.md`.
+2. Edit the markdown or add a revision note.
+3. Save the seed markdown.
+4. Queue Intake Agent.
+5. Use **3. Series Workspace** only after intake succeeds, to load or inspect the generated series artifacts.
+
+The task builder is an advanced/manual surface for overrides, chapter runs, and debugging.
 
 The Create Task panel is meant for local experimentation without hand-editing a task file first. It covers:
 
@@ -34,13 +50,26 @@ The browser builds a JSON payload that matches the LitRPG task schema and submit
 
 ## Messy Context Intake
 
-Use the Messy Context Intake panel when you have a rough notes dump, copied chat context, chapter outline, character list, or half-structured premise. Paste the whole thing there first.
+Use the Story Workshop as the readable story seed workspace. It can load and save `usage/litrpg_messy_context_seed.md`, so your normal editing loop can be a markdown conversation with the project instead of a scavenger hunt through scattered story fields.
 
-- **Fill Story Fields** infers a title/series id, switches the task to `premise_intake`, fills the visible premise summary, disables audio, and copies the full raw dump into the Series Package baseline text.
-- **Queue Intake Agent** does the same setup and immediately submits the `premise_intake` job. The queued task includes the full raw dump as `source_text`, so the intake pass sees more than the shortened visible premise field.
-- **Copy MCP Context** copies a `bootstrap_from_premise` tool payload for MCP clients or agent shells. Use this when another agent is driving the MCP server directly instead of clicking through the local UI.
+The workshop is split into two surfaces:
 
-In normal use, you do not paste messy notes into MCP by hand. MCP is the tool layer agents call. The local UI is the human-friendly paste surface, and both paths end up calling the same premise-intake code.
+- **Revision Chat** is for natural-language change notes. It proposes markdown changes first; review the proposal, then accept or discard it before saving.
+- **Story Seed Markdown** is the canonical human-readable source. Read and edit it directly when you want to understand the story state. The editor can be resized manually and switched between Split, Wide, Focus, and Full layouts.
+- **Story file** controls where the markdown loads from and saves to. For now, keep story seed files under `usage/`; the default is `usage/litrpg_messy_context_seed.md`.
+
+- **Load Seed Markdown** loads the current seed document into the editor.
+- **Save Seed Markdown** writes the editor text back to the current Story file path.
+- **Queue Intake Agent** submits the `premise_intake` job with the full raw dump as `source_text`. This is the primary path; it does not require splitting the notes into fields first.
+- **Copy MCP Payload** copies a `bootstrap_from_premise` tool payload for MCP clients or agent shells. Use this when another agent is driving the MCP server directly instead of clicking through the local UI.
+- **Optional Rough Autofill** infers a title/series id and short visible premise in the browser. It is only a convenience guess for editing the form by hand, not the authoritative intake pass.
+
+In normal use, you do not paste messy notes into MCP by hand. MCP is the tool layer agents call. The local UI is the human-friendly editing surface, and both paths end up calling the same premise-intake code. The scattered task fields are still available for explicit overrides and debugging, but they are downstream of the markdown source.
+
+The markdown seed is intentionally stored in the repo under `usage/` so you can
+close the browser, restart the server, reload the seed, and keep editing. The
+generated structured story artifacts are written under the configured
+`storage_dir`, normally `data/litrpg/series/<series_id>/`.
 
 ## Series Package Workflow
 

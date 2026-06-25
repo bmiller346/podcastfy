@@ -6,6 +6,10 @@ import argparse
 import importlib
 import json
 import mimetypes
+import os
+import re
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -25,7 +29,7 @@ from podcastfy.litrpg.settings import (
     redacted_litrpg_settings_status,
     save_litrpg_settings,
 )
-from podcastfy.litrpg.task import run_litrpg_task, run_litrpg_task_data
+from podcastfy.litrpg.task import _llm_from_task, run_litrpg_task, run_litrpg_task_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 USAGE_DIR = PROJECT_ROOT / "usage"
@@ -33,6 +37,7 @@ DATA_DIR = PROJECT_ROOT / "data" / "litrpg"
 SETTINGS_PATH = DEFAULT_SETTINGS_PATH
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 TASK_FILE_PREFIXES = ("litrpg", "story", "audio_story")
+DEFAULT_STORY_SEED_PATH = "usage/litrpg_messy_context_seed.md"
 
 
 @dataclass
@@ -57,10 +62,16 @@ _JOBS: dict[str, TaskJob] = {}
 _JOBS_LOCK = threading.Lock()
 
 
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    """HTTP server that releases the local dev port quickly after reload."""
+
+    allow_reuse_address = True
+
+
 def run_server(host: str = "127.0.0.1", port: int = 8765) -> None:
     """Run the LitRPG local UI until interrupted."""
     handler = partial(LitRPGUIHandler, directory=str(STATIC_DIR))
-    server = ThreadingHTTPServer((host, port), handler)
+    server = ReusableThreadingHTTPServer((host, port), handler)
     print(f"LitRPG UI running at http://{host}:{port}/")
     try:
         server.serve_forever()
@@ -68,6 +79,77 @@ def run_server(host: str = "127.0.0.1", port: int = 8765) -> None:
         print("\nLitRPG UI stopped.")
     finally:
         server.server_close()
+
+
+def run_server_with_reload(host: str = "127.0.0.1", port: int = 8765) -> None:
+    """Run the local UI in a restart-on-change development loop."""
+
+    print(f"LitRPG UI reload watcher running at http://{host}:{port}/")
+    process: subprocess.Popen[str] | None = None
+    snapshot = _reload_snapshot()
+    try:
+        while True:
+            if process is None or process.poll() is not None:
+                process = _start_reload_child(host=host, port=port)
+            time.sleep(1.0)
+            next_snapshot = _reload_snapshot()
+            if next_snapshot != snapshot:
+                snapshot = next_snapshot
+                print("Change detected. Restarting LitRPG UI...")
+                _stop_reload_child(process)
+                process = _start_reload_child(host=host, port=port)
+    except KeyboardInterrupt:
+        print("\nLitRPG UI reload watcher stopped.")
+    finally:
+        if process is not None:
+            _stop_reload_child(process)
+
+
+def _start_reload_child(*, host: str, port: int) -> subprocess.Popen[str]:
+    env = dict(os.environ)
+    env["LITRPG_UI_RELOAD_CHILD"] = "1"
+    return subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "podcastfy.litrpg.ui",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ],
+        cwd=str(PROJECT_ROOT),
+        env=env,
+        text=True,
+    )
+
+
+def _stop_reload_child(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _reload_snapshot() -> tuple[tuple[str, int, int], ...]:
+    watched_roots = (PROJECT_ROOT / "podcastfy" / "litrpg",)
+    watched_suffixes = {".py", ".html", ".js", ".css"}
+    records: list[tuple[str, int, int]] = []
+    for root in watched_roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and path.suffix.lower() in watched_suffixes:
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                records.append((_display_path(path), stat.st_mtime_ns, stat.st_size))
+    return tuple(sorted(records))
 
 
 class LitRPGUIHandler(SimpleHTTPRequestHandler):
@@ -89,6 +171,12 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
             return self._send_json(settings_status())
         if parsed.path == "/api/tasks":
             return self._send_json({"tasks": list_tasks()})
+        if parsed.path == "/api/story-seed":
+            params = parse_qs(parsed.query)
+            try:
+                return self._send_json(story_seed_response(params.get("path", [""])[0]))
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/api/jobs":
             return self._send_json({"jobs": list_jobs()})
         if parsed.path.startswith("/api/jobs/"):
@@ -154,6 +242,10 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
                     {"ok": True, "job": serialize_job(job)},
                     HTTPStatus.ACCEPTED,
                 )
+            if parsed.path == "/api/story-seed":
+                return self._send_json(save_story_seed_request(payload))
+            if parsed.path == "/api/story-seed/propose":
+                return self._send_json(propose_story_seed_revision_request(payload))
             if parsed.path == "/api/series-package":
                 result = save_series_package_request(payload)
                 return self._send_json(result)
@@ -217,6 +309,195 @@ def settings_status() -> dict[str, Any]:
 def write_settings(payload: dict[str, Any]) -> None:
     """Write allowed local settings fields to the local ignored settings file."""
     save_litrpg_settings(payload, SETTINGS_PATH)
+
+
+def story_seed_response(path_value: str = "") -> dict[str, Any]:
+    """Return a markdown story seed file for human editing in the local UI."""
+    path = resolve_story_seed_path(path_value or DEFAULT_STORY_SEED_PATH)
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    return {
+        "ok": True,
+        "path": _display_path(path),
+        "text": text,
+        "exists": path.exists(),
+    }
+
+
+def save_story_seed_request(payload: dict[str, Any]) -> dict[str, Any]:
+    """Save a markdown story seed file from the local UI."""
+    path = resolve_story_seed_path(str(payload.get("path") or DEFAULT_STORY_SEED_PATH))
+    text = str(payload.get("text") or "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return {
+        "ok": True,
+        "path": _display_path(path),
+        "text": text,
+        "exists": True,
+    }
+
+
+def propose_story_seed_revision_request(payload: dict[str, Any]) -> dict[str, Any]:
+    """Ask the configured LLM to propose a markdown seed revision."""
+    current_markdown = str(payload.get("markdown") or "")
+    instruction = str(payload.get("instruction") or "").strip()
+    if not current_markdown.strip():
+        raise ValueError("markdown is required")
+    if not instruction:
+        raise ValueError("instruction is required")
+    generation = payload.get("generation")
+    if not isinstance(generation, dict):
+        generation = _default_story_revision_generation()
+    settings = load_litrpg_settings(SETTINGS_PATH)
+    llm = _llm_from_task({"generation": generation}, settings=settings)
+    prompt = build_story_seed_revision_prompt(
+        markdown=current_markdown,
+        instruction=instruction,
+    )
+    print(
+        "Story seed AI proposal started "
+        f"(provider={generation.get('provider', '')}, "
+        f"model={generation.get('ollama_model') or generation.get('local_model') or generation.get('model') or ''}, "
+        f"chars={len(current_markdown)}, prompt_chars={len(prompt)}, instruction={instruction[:80]!r})",
+        flush=True,
+    )
+    raw = str(llm.generate(prompt=prompt, stage="story_seed_revision"))
+    proposal = extract_story_seed_revision(raw)
+    revised_markdown = proposal["revised_markdown"]
+    if proposal.get("patch_markdown") and revised_markdown == proposal["patch_markdown"]:
+        revised_markdown = f"{current_markdown.rstrip()}\n\n{proposal['patch_markdown']}\n"
+    print(
+        "Story seed AI proposal finished "
+        f"(revised_chars={len(revised_markdown)})",
+        flush=True,
+    )
+    return {
+        "ok": True,
+        "summary": proposal["summary"],
+        "revised_markdown": revised_markdown,
+        "patch_markdown": proposal.get("patch_markdown", ""),
+        "raw": raw,
+        "provider": generation.get("provider", ""),
+        "model": generation.get("ollama_model")
+        or generation.get("local_model")
+        or generation.get("model")
+        or "",
+    }
+
+
+def build_story_seed_revision_prompt(*, markdown: str, instruction: str) -> str:
+    """Build a focused prompt for proposing markdown seed edits."""
+    excerpt = _story_seed_revision_excerpt(markdown, instruction)
+    return f"""You are an AI story development editor for a LitRPG story seed.
+
+Propose a focused markdown patch according to the user's instruction. Preserve
+the document's concrete names, continuity rules, and production details. Do not
+rewrite the whole document. Do not return generic advice. Make the patch ready
+to insert into the story seed as canon guidance or an AI Notes section.
+The patch must be additive or surgical: 80-700 words, no full-file replacement,
+no repeated intake instructions, and no copy of the whole seed.
+
+Return ONLY a JSON object with these keys:
+- summary: one sentence describing what changed.
+- patch_markdown: a concise markdown block containing the proposed change.
+
+User instruction:
+{instruction}
+
+Relevant current markdown excerpts:
+{excerpt}
+"""
+
+
+def extract_story_seed_revision(text: str) -> dict[str, str]:
+    """Extract a story seed revision JSON object from model output."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                data = json.loads(stripped[start : end + 1])
+            except json.JSONDecodeError:
+                data = _extract_loose_story_revision_json(stripped[start : end + 1])
+        else:
+            data = {"summary": "Model returned markdown without JSON.", "patch_markdown": stripped}
+    if not isinstance(data, dict):
+        raise ValueError("Story revision model must return a JSON object")
+    revised = str(data.get("revised_markdown") or "").strip()
+    patch = str(data.get("patch_markdown") or "").strip()
+    if not revised and not patch:
+        raise ValueError("Story revision model did not return revised_markdown or patch_markdown")
+    if not revised:
+        revised = patch
+    return {
+        "summary": str(data.get("summary") or "Proposed markdown revision.").strip(),
+        "revised_markdown": revised,
+        "patch_markdown": patch,
+    }
+
+
+def _extract_loose_story_revision_json(text: str) -> dict[str, str]:
+    """Recover common model JSON with unescaped markdown newlines."""
+    fields: dict[str, str] = {}
+    for key in ("summary", "patch_markdown", "revised_markdown"):
+        pattern = rf'"{key}"\s*:\s*"(?P<value>.*?)(?:"\s*,\s*"(?:summary|patch_markdown|revised_markdown)"|"\s*\}})'
+        match = re.search(pattern, text, flags=re.DOTALL)
+        if match:
+            value = match.group("value")
+            fields[key] = value.replace('\\"', '"').replace("\\n", "\n").strip()
+    if fields:
+        return fields
+    return {"summary": "Model returned markdown without strict JSON.", "patch_markdown": text.strip()}
+
+
+def _story_seed_revision_excerpt(markdown: str, instruction: str) -> str:
+    """Return compact context for a local model patch proposal."""
+    normalized = markdown.replace("\r\n", "\n")
+    sections = normalized.split("\n## ")
+    terms = {
+        term.lower()
+        for term in instruction.replace("-", " ").replace("_", " ").split()
+        if len(term.strip(".,:;!?\"'()[]{}")) >= 4
+        for term in [term.strip(".,:;!?\"'()[]{}")]
+    }
+    selected: list[str] = []
+    if sections:
+        selected.append(sections[0][:1800])
+    for section in sections[1:]:
+        section_text = "## " + section
+        lower = section_text.lower()
+        if any(term in lower for term in terms):
+            selected.append(section_text[:1800])
+        if len("\n\n".join(selected)) >= 5200:
+            break
+    if len(selected) == 1:
+        selected.append(normalized[:3800])
+    excerpt = "\n\n---\n\n".join(dict.fromkeys(selected))
+    return excerpt[:6500]
+
+
+def _default_story_revision_generation() -> dict[str, Any]:
+    return {
+        "provider": "ollama",
+        "ollama_model": "hermes3:latest",
+        "ollama_timeout_seconds": 120,
+        "ollama_options": {
+            "temperature": 0.25,
+            "top_p": 0.9,
+            "num_ctx": 4096,
+            "num_predict": 700,
+        },
+    }
 
 
 def series_package_response(series_id: str) -> dict[str, Any]:
@@ -694,6 +975,21 @@ def resolve_task_path(value: Any) -> Path:
     return resolved
 
 
+def resolve_story_seed_path(value: Any) -> Path:
+    if not value:
+        raise ValueError("Story seed path is required")
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    resolved = path.resolve()
+    usage_root = USAGE_DIR.resolve()
+    if not _is_relative_to(resolved, usage_root):
+        raise ValueError("Story seed path must stay inside usage/")
+    if resolved.suffix.lower() not in {".md", ".markdown", ".txt"}:
+        raise ValueError("Story seed must be a markdown or text file")
+    return resolved
+
+
 def _is_supported_task_file(path: Path) -> bool:
     name = path.name.lower()
     return path.suffix.lower() == ".json" and any(
@@ -1003,7 +1299,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the local LitRPG HTTP UI.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8765, type=int)
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Restart the local UI automatically when Python, HTML, CSS, or JS files change.",
+    )
     args = parser.parse_args()
+    if args.reload and not os.getenv("LITRPG_UI_RELOAD_CHILD"):
+        run_server_with_reload(host=args.host, port=args.port)
+        return
     run_server(host=args.host, port=args.port)
 
 

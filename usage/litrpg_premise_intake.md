@@ -61,7 +61,10 @@ python -m podcastfy.litrpg.task usage/litrpg_premise_intake.example.json
 ```
 
 The Knotty Buoy seed package keeps the large premise in a Markdown file and
-points intake at it with `premise_path`:
+points intake at it with `premise_path`. The upgraded paste-ready seed is
+`usage/litrpg_messy_context_seed.md`; it includes the family-distance rule,
+floor biome chassis rule, boat specs, Pedro phrase manifest, and Floor 1 world
+register:
 
 ```bash
 python -m podcastfy.litrpg.task usage/knotty_buoy_premise_intake.example.json

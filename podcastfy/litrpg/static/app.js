@@ -34,10 +34,28 @@ const library = document.querySelector("#library");
 const runTaskButton = document.querySelector("#run-task");
 const refreshButton = document.querySelector("#refresh");
 const messyContextInput = document.querySelector("#messy-context");
+const revisionChatLog = document.querySelector("#revision-chat-log");
+const revisionChatInput = document.querySelector("#revision-chat-input");
+const appendRevisionNoteButton = document.querySelector("#append-revision-note");
+const clearRevisionNoteButton = document.querySelector("#clear-revision-note");
+const revisionProposal = document.querySelector("#revision-proposal");
+const revisionProposalPreview = document.querySelector("#revision-proposal-preview");
+const acceptRevisionProposalButton = document.querySelector("#accept-revision-proposal");
+const discardRevisionProposalButton = document.querySelector("#discard-revision-proposal");
+const storyWorkshopPanel = document.querySelector(".messy-intake-panel");
+const markdownSplitButton = document.querySelector("#markdown-split");
+const markdownWideButton = document.querySelector("#markdown-wide");
+const markdownFocusButton = document.querySelector("#markdown-focus");
+const markdownFullButton = document.querySelector("#markdown-full");
+const storySeedPathInput = document.querySelector("#story-seed-path");
+const storySeedStatus = document.querySelector("#story-seed-status");
+const loadStorySeedButton = document.querySelector("#load-story-seed");
+const saveStorySeedButton = document.querySelector("#save-story-seed");
 const applyMessyContextButton = document.querySelector("#apply-messy-context");
 const queuePremiseIntakeButton = document.querySelector("#queue-premise-intake");
 const copyMcpContextButton = document.querySelector("#copy-mcp-context");
 const messyContextSummary = document.querySelector("#messy-context-summary");
+const defaultStorySeedPath = "usage/litrpg_messy_context_seed.md";
 
 let latestSettings = null;
 let latestTasks = null;
@@ -47,15 +65,35 @@ let latestPackage = null;
 let activeSeriesId = "";
 let lastSyncedPackageSeriesId = "";
 let packageRevision = 0;
+let pendingRevisionProposal = null;
 
 async function api(path, options = {}) {
+  const { timeoutMs, ...fetchOptions } = options;
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
-    ...options,
+    signal: controller ? controller.signal : undefined,
+    ...fetchOptions,
+  }).catch((error) => {
+    if (error && error.name === "AbortError") {
+      throw new Error("AI proposal timed out. Try a more specific instruction or a smaller markdown seed.");
+    }
+    throw error;
+  }).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
   });
-  const data = await response.json();
+  const contentType = response.headers.get("Content-Type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : { error: await response.text() };
   if (!response.ok) {
-    throw new Error(data.error || `Request failed: ${response.status}`);
+    const staleHint = response.status === 404 && path.startsWith("/api/story-seed")
+      ? " Story seed API is missing; restart the UI with --reload."
+      : "";
+    throw new Error(data.error || `Request failed: ${response.status}.${staleHint}`);
   }
   return data;
 }
@@ -426,26 +464,219 @@ function applyMessyContextToStoryFields({ queueMode = false } = {}) {
   syncPackageOutputFromRoleEditor();
   taskOutput.textContent = queueMode
     ? "Messy context applied. Intake agent is ready to queue."
-    : "Messy context copied into story fields.";
+    : "Rough autofill complete. Review the guessed fields before using them.";
   return analysis;
 }
 
-function buildMcpContextPayload() {
+function buildMessyContextIntakeTask() {
+  const raw = cleanValue(messyContextInput && messyContextInput.value);
+  const analysis = analyzeMessyContext(raw);
+  if (!raw) {
+    renderMessyContextSummary(analysis);
+    throw new Error("Paste messy context first.");
+  }
   const task = buildTaskPayload();
+  task.mode = "premise_intake";
+  task.render_audio = false;
+  task.source_text = raw;
+  task.premise = task.premise || analysis.premise || raw.slice(0, 1200);
+  task.series_id = cleanValue(taskForm.elements.series_id && taskForm.elements.series_id.value) || analysis.series_id || "local-series";
+  task.target_books = task.target_books || 1;
+  task.chapters_per_book = task.chapters_per_book || 30;
+  renderMessyContextSummary(analysis);
+  return task;
+}
+
+function buildMcpContextPayload(task = null) {
+  const intakeTask = task || buildMessyContextIntakeTask();
   return {
     tool: "bootstrap_from_premise",
     arguments: {
-      storage_dir: task.storage_dir || "../data/litrpg",
-      series_id: task.series_id || "local-series",
-      premise: task.source_text || task.premise || "",
-      target_books: task.target_books || 1,
-      chapters_per_book: task.chapters_per_book || 30,
-      series_title: task.series_title || "",
-      series_promise: task.series_promise || "",
-      endgame_direction: task.endgame_direction || "",
-      generation: task.generation || {},
+      storage_dir: intakeTask.storage_dir || "../data/litrpg",
+      series_id: intakeTask.series_id || "local-series",
+      premise: intakeTask.source_text || intakeTask.premise || "",
+      target_books: intakeTask.target_books || 1,
+      chapters_per_book: intakeTask.chapters_per_book || 30,
+      series_title: intakeTask.series_title || "",
+      series_promise: intakeTask.series_promise || "",
+      endgame_direction: intakeTask.endgame_direction || "",
+      generation: intakeTask.generation || {},
     },
   };
+}
+
+function currentStorySeedPath() {
+  return cleanValue(storySeedPathInput && storySeedPathInput.value) || defaultStorySeedPath;
+}
+
+function setStorySeedStatus(message, state = "info") {
+  if (!storySeedStatus) return;
+  storySeedStatus.textContent = message;
+  storySeedStatus.dataset.state = state;
+}
+
+function storyRevisionGenerationConfig() {
+  const task = buildTaskPayload();
+  const generation = task.generation || {};
+  if (generation.provider === "ollama") {
+    return generation;
+  }
+  return {
+    provider: "ollama",
+    ollama_model: "hermes3:latest",
+    ollama_timeout_seconds: 120,
+    ollama_options: {
+      temperature: 0.25,
+      top_p: 0.9,
+      num_ctx: 4096,
+      num_predict: 700,
+    },
+  };
+}
+
+async function proposeRevisionNote() {
+  if (!messyContextInput || !revisionChatInput) return;
+  const note = cleanValue(revisionChatInput.value);
+  if (!note) {
+    taskOutput.textContent = "Write a revision note first.";
+    return;
+  }
+  const markdown = messyContextInput.value || "";
+  if (!cleanValue(markdown)) {
+    taskOutput.textContent = "Load or write markdown before asking for a proposal.";
+    return;
+  }
+  appendRevisionNoteButton.disabled = true;
+  taskOutput.textContent = "Asking AI to propose a markdown change...";
+  if (revisionChatLog) {
+    revisionChatLog.innerHTML = `<p><strong>Thinking:</strong> ${escapeHtml(note)}</p>`;
+  }
+  let data;
+  try {
+    data = await api("/api/story-seed/propose", {
+      method: "POST",
+      body: JSON.stringify({
+        markdown,
+        instruction: note,
+        generation: storyRevisionGenerationConfig(),
+      }),
+      timeoutMs: 130000,
+    });
+  } catch (error) {
+    taskOutput.textContent = error.message;
+    if (revisionChatLog) {
+      revisionChatLog.innerHTML = `<p><strong>Proposal failed:</strong> ${escapeHtml(error.message)}</p>`;
+    }
+    return;
+  } finally {
+    appendRevisionNoteButton.disabled = false;
+  }
+  pendingRevisionProposal = {
+    note,
+    summary: data.summary || "AI proposed a markdown revision.",
+    patch: data.patch_markdown || "",
+    nextText: data.revised_markdown || markdown,
+  };
+  if (revisionProposalPreview) {
+    revisionProposalPreview.textContent = [
+      `Summary: ${pendingRevisionProposal.summary}`,
+      "",
+      pendingRevisionProposal.patch || pendingRevisionProposal.nextText,
+    ].join("\n");
+  }
+  if (revisionProposal) revisionProposal.classList.remove("hidden");
+  if (revisionChatLog) {
+    revisionChatLog.innerHTML = `<p><strong>AI proposal ready:</strong> ${escapeHtml(pendingRevisionProposal.summary)}</p>`;
+  }
+  taskOutput.textContent = "Review the AI proposal, then accept or discard it.";
+}
+
+function acceptRevisionProposal() {
+  if (!pendingRevisionProposal || !messyContextInput) {
+    taskOutput.textContent = "No proposed change to accept.";
+    return;
+  }
+  messyContextInput.value = pendingRevisionProposal.nextText;
+  if (revisionChatInput) revisionChatInput.value = "";
+  if (revisionProposal) revisionProposal.classList.add("hidden");
+  if (revisionChatLog) {
+    revisionChatLog.innerHTML = `<p><strong>Accepted:</strong> ${escapeHtml(pendingRevisionProposal.summary || pendingRevisionProposal.note)}</p>`;
+  }
+  pendingRevisionProposal = null;
+  renderMessyContextSummary(analyzeMessyContext(messyContextInput.value));
+  taskOutput.textContent = "Proposal accepted into the markdown seed. Save when ready.";
+}
+
+function discardRevisionProposal() {
+  pendingRevisionProposal = null;
+  if (revisionProposalPreview) revisionProposalPreview.textContent = "";
+  if (revisionProposal) revisionProposal.classList.add("hidden");
+  if (revisionChatLog) {
+    revisionChatLog.innerHTML = "<p>Proposal discarded. Write another change note when ready.</p>";
+  }
+  taskOutput.textContent = "Proposal discarded.";
+}
+
+function setMarkdownLayout(mode) {
+  if (!storyWorkshopPanel) return;
+  storyWorkshopPanel.dataset.markdownLayout = mode;
+  taskOutput.textContent = `Markdown layout: ${mode}.`;
+}
+
+async function loadStorySeed({ quiet = false } = {}) {
+  const path = currentStorySeedPath();
+  setStorySeedStatus(`Loading ${path}...`);
+  const data = await api(`/api/story-seed?path=${encodeURIComponent(path)}`);
+  if (messyContextInput) {
+    messyContextInput.value = data.text || "";
+    renderMessyContextSummary(analyzeMessyContext(messyContextInput.value));
+  }
+  setStorySeedStatus(
+    data.exists
+      ? `Loaded ${data.path} (${(data.text || "").length.toLocaleString()} chars).`
+      : `New story file: ${data.path}. Save to create it.`,
+    data.exists ? "loaded" : "missing",
+  );
+  if (!quiet) {
+    taskOutput.textContent = data.exists
+      ? `Loaded ${data.path}.`
+      : `Seed file does not exist yet: ${data.path}.`;
+  }
+  return data;
+}
+
+async function saveStorySeed() {
+  const text = messyContextInput ? messyContextInput.value : "";
+  const path = currentStorySeedPath();
+  setStorySeedStatus(`Saving ${path}...`);
+  const data = await api("/api/story-seed", {
+    method: "POST",
+    body: JSON.stringify({ path, text }),
+  });
+  renderMessyContextSummary(analyzeMessyContext(text));
+  setStorySeedStatus(`Saved ${data.path} (${text.length.toLocaleString()} chars).`, "saved");
+  taskOutput.textContent = `Saved ${data.path}.`;
+  return data;
+}
+
+async function submitTaskPayload(payload, { statusText = "Queueing generation...", button = null } = {}) {
+  if (button) button.disabled = true;
+  taskOutput.textContent = statusText;
+  try {
+    const response = await api("/api/jobs", {
+      method: "POST",
+      body: JSON.stringify({ task: payload }),
+    });
+    const job = await pollJob(response.job.job_id);
+    latestJob = job;
+    updateDiagnostics();
+    taskOutput.textContent = JSON.stringify(job, null, 2);
+    await refreshAll();
+  } catch (error) {
+    taskOutput.textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function renderSeriesPackage(data) {
@@ -1201,6 +1432,9 @@ async function refreshAll() {
   renderSettings(settings);
   renderTasks(tasks);
   renderLibrary(episodes);
+  if (messyContextInput && !cleanValue(messyContextInput.value)) {
+    await loadStorySeed({ quiet: true }).catch(() => {});
+  }
   if (packageForm) {
     syncPackageSeriesId({ force: true });
     await loadSeriesPackage().catch((error) => {
@@ -1398,23 +1632,7 @@ taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = buildTaskPayload();
   const submitButton = document.querySelector("#submit-task");
-  submitButton.disabled = true;
-  taskOutput.textContent = "Queueing generation...";
-  try {
-    const response = await api("/api/jobs", {
-      method: "POST",
-      body: JSON.stringify({ task: payload }),
-    });
-    const job = await pollJob(response.job.job_id);
-    latestJob = job;
-    updateDiagnostics();
-    taskOutput.textContent = JSON.stringify(job, null, 2);
-    await refreshAll();
-  } catch (error) {
-    taskOutput.textContent = error.message;
-  } finally {
-    submitButton.disabled = false;
-  }
+  await submitTaskPayload(payload, { button: submitButton });
 });
 
 runTaskButton.addEventListener("click", async () => {
@@ -1465,6 +1683,49 @@ if (messyContextInput) {
   });
 }
 
+if (appendRevisionNoteButton) {
+  appendRevisionNoteButton.addEventListener("click", proposeRevisionNote);
+}
+
+if (acceptRevisionProposalButton) {
+  acceptRevisionProposalButton.addEventListener("click", acceptRevisionProposal);
+}
+
+if (discardRevisionProposalButton) {
+  discardRevisionProposalButton.addEventListener("click", discardRevisionProposal);
+}
+
+if (clearRevisionNoteButton && revisionChatInput) {
+  clearRevisionNoteButton.addEventListener("click", () => {
+    revisionChatInput.value = "";
+    discardRevisionProposal();
+    taskOutput.textContent = "Revision note cleared.";
+  });
+}
+
+if (markdownSplitButton) markdownSplitButton.addEventListener("click", () => setMarkdownLayout("split"));
+if (markdownWideButton) markdownWideButton.addEventListener("click", () => setMarkdownLayout("wide"));
+if (markdownFocusButton) markdownFocusButton.addEventListener("click", () => setMarkdownLayout("focus"));
+if (markdownFullButton) markdownFullButton.addEventListener("click", () => setMarkdownLayout("full"));
+
+if (loadStorySeedButton) {
+  loadStorySeedButton.addEventListener("click", () => {
+    loadStorySeed().catch((error) => {
+      setStorySeedStatus(error.message, "error");
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+if (saveStorySeedButton) {
+  saveStorySeedButton.addEventListener("click", () => {
+    saveStorySeed().catch((error) => {
+      setStorySeedStatus(error.message, "error");
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
 if (applyMessyContextButton) {
   applyMessyContextButton.addEventListener("click", () => {
     applyMessyContextToStoryFields();
@@ -1472,19 +1733,31 @@ if (applyMessyContextButton) {
 }
 
 if (queuePremiseIntakeButton) {
-  queuePremiseIntakeButton.addEventListener("click", () => {
-    const analysis = applyMessyContextToStoryFields({ queueMode: true });
-    if (analysis) taskForm.requestSubmit();
+  queuePremiseIntakeButton.addEventListener("click", async () => {
+    try {
+      const payload = buildMessyContextIntakeTask();
+      await submitTaskPayload(payload, {
+        statusText: "Queueing intake agent with raw messy context...",
+        button: queuePremiseIntakeButton,
+      });
+    } catch (error) {
+      taskOutput.textContent = error.message;
+    }
   });
 }
 
 if (copyMcpContextButton) {
   copyMcpContextButton.addEventListener("click", () => {
-    applyMessyContextToStoryFields();
-    const payload = JSON.stringify(buildMcpContextPayload(), null, 2);
+    let payload;
+    try {
+      payload = JSON.stringify(buildMcpContextPayload(), null, 2);
+    } catch (error) {
+      taskOutput.textContent = error.message;
+      return;
+    }
     navigator.clipboard.writeText(payload).then(
       () => {
-        taskOutput.textContent = "MCP context copied.";
+        taskOutput.textContent = "MCP payload copied with the full raw context.";
       },
       () => {
         taskOutput.textContent = payload;

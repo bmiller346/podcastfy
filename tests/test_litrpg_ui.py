@@ -79,10 +79,43 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="next-actions"' in html
     assert 'id="job-console"' in html
     assert 'id="messy-context"' in html
+    assert 'id="revision-chat-log"' in html
+    assert 'id="revision-chat-input"' in html
+    assert 'id="append-revision-note"' in html
+    assert 'id="clear-revision-note"' in html
+    assert 'id="revision-proposal"' in html
+    assert 'id="accept-revision-proposal"' in html
+    assert 'id="discard-revision-proposal"' in html
+    assert 'id="markdown-split"' in html
+    assert 'id="markdown-wide"' in html
+    assert 'id="markdown-focus"' in html
+    assert 'id="markdown-full"' in html
+    assert 'id="story-seed-path"' in html
+    assert 'id="story-seed-status"' in html
+    assert 'id="load-story-seed"' in html
+    assert 'id="save-story-seed"' in html
     assert 'id="apply-messy-context"' in html
     assert 'id="queue-premise-intake"' in html
     assert 'id="copy-mcp-context"' in html
     assert 'id="messy-context-summary"' in html
+    assert "1. Story Workshop" in html
+    assert "2. Intake Status" in html
+    assert "3. Series Workspace" in html
+    assert "Advanced Task Builder" in html
+    assert "Story Workshop -> Queue Intake Agent -> Load Series" in html
+    assert "Story file" in html
+    assert "usage/litrpg_messy_context_seed.md" in html
+    assert "Revision Chat" in html
+    assert "Propose Markdown Change" in html
+    assert "Accept Proposal" in html
+    assert "Discard" in html
+    assert "Load Seed Markdown" in html
+    assert "Save Seed Markdown" in html
+    assert "Queue Intake Agent" in html
+    assert "Copy MCP Payload" in html
+    assert "Optional Rough Autofill" in html
+    assert "readable source of truth" in html
+    assert "readable source of truth" in html
     assert 'id="task-form"' in html
     assert "Leave blank to keep existing key" in html
     assert 'name="series_id"' in html
@@ -131,6 +164,160 @@ def test_favicon_request_is_ignored_without_404_noise(ui_server):
     assert status == 204
     assert body == b""
     assert content_type is None
+
+
+def test_story_seed_api_loads_and_saves_markdown(ui_server, ui_roots):
+    seed_path = ui_roots / "usage" / "litrpg_messy_context_seed.md"
+    seed_path.write_text("# Seed\n\nSophie II survives.", encoding="utf-8")
+
+    status, data = request_json(
+        ui_server,
+        "GET",
+        "/api/story-seed?path=usage/litrpg_messy_context_seed.md",
+    )
+
+    assert status == 200
+    assert data["exists"] is True
+    assert data["text"] == "# Seed\n\nSophie II survives."
+
+    save_status, save_data = request_json(
+        ui_server,
+        "POST",
+        "/api/story-seed",
+        {
+            "path": "usage/litrpg_messy_context_seed.md",
+            "text": "# Updated\n\nThe System remembers Sophie.",
+        },
+    )
+
+    assert save_status == 200
+    assert save_data["ok"] is True
+    assert seed_path.read_text(encoding="utf-8") == "# Updated\n\nThe System remembers Sophie."
+
+
+def test_story_seed_api_rejects_paths_outside_usage(ui_server):
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/story-seed",
+        {"path": "../outside.md", "text": "nope"},
+    )
+
+    assert status == 400
+    assert "inside usage" in data["error"]
+
+
+def test_story_seed_propose_uses_llm_and_returns_revised_markdown(ui_server, monkeypatch):
+    captured = {}
+
+    class FakeLLM:
+        def generate(self, *, prompt, stage):
+            captured["prompt"] = prompt
+            captured["stage"] = stage
+            return json.dumps(
+                {
+                    "summary": "Renamed the boat.",
+                    "revised_markdown": "# Seed\n\nCanonical vessel name: Sophie II",
+                }
+            )
+
+    def fake_llm_from_task(task, *, settings):
+        captured["task"] = task
+        return FakeLLM()
+
+    monkeypatch.setattr(ui, "_llm_from_task", fake_llm_from_task)
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/story-seed/propose",
+        {
+            "markdown": "# Seed\n\nCanonical vessel name: Old Name",
+            "instruction": "Rename the boat to Sophie II.",
+            "generation": {"provider": "ollama", "ollama_model": "test-model"},
+        },
+    )
+
+    assert status == 200
+    assert data["summary"] == "Renamed the boat."
+    assert data["revised_markdown"] == "# Seed\n\nCanonical vessel name: Sophie II"
+    assert data["provider"] == "ollama"
+    assert data["model"] == "test-model"
+    assert captured["stage"] == "story_seed_revision"
+    assert "Rename the boat to Sophie II." in captured["prompt"]
+    assert captured["task"]["generation"]["ollama_model"] == "test-model"
+
+
+def test_story_seed_propose_appends_patch_markdown(ui_server, monkeypatch):
+    class FakeLLM:
+        def generate(self, *, prompt, stage):
+            return json.dumps(
+                {
+                    "summary": "Added Sophie guilt anchor.",
+                    "patch_markdown": "## AI Notes\n\nStrengthen Sophie's death as a guilt anchor.",
+                }
+            )
+
+    monkeypatch.setattr(ui, "_llm_from_task", lambda task, *, settings: FakeLLM())
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/story-seed/propose",
+        {
+            "markdown": "# Seed\n\nExisting canon.",
+            "instruction": "Add Sophie guilt anchor.",
+            "generation": {"provider": "ollama", "ollama_model": "test-model"},
+        },
+    )
+
+    assert status == 200
+    assert data["patch_markdown"] == "## AI Notes\n\nStrengthen Sophie's death as a guilt anchor."
+    assert data["revised_markdown"] == (
+        "# Seed\n\nExisting canon.\n\n"
+        "## AI Notes\n\nStrengthen Sophie's death as a guilt anchor.\n"
+    )
+
+
+def test_story_seed_default_revision_model_uses_hermes():
+    generation = ui._default_story_revision_generation()
+
+    assert generation["provider"] == "ollama"
+    assert generation["ollama_model"] == "hermes3:latest"
+    assert generation["ollama_options"]["temperature"] == 0.25
+    assert generation["ollama_options"]["num_predict"] == 700
+
+
+def test_story_seed_revision_extracts_loose_json_with_markdown_newlines():
+    raw = '{\n  "summary": "Added Sophie pressure.",\n  "patch_markdown": "## AI Notes\n\nSophie now echoes through Kelli guilt."\n}'
+
+    proposal = ui.extract_story_seed_revision(raw)
+
+    assert proposal["summary"] == "Added Sophie pressure."
+    assert proposal["patch_markdown"] == "## AI Notes\n\nSophie now echoes through Kelli guilt."
+
+
+def test_story_seed_propose_treats_raw_markdown_as_patch(ui_server, monkeypatch):
+    class FakeLLM:
+        def generate(self, *, prompt, stage):
+            return "## AI Notes\n\nRaw model markdown patch."
+
+    monkeypatch.setattr(ui, "_llm_from_task", lambda task, *, settings: FakeLLM())
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/story-seed/propose",
+        {
+            "markdown": "# Seed\n\nExisting canon.",
+            "instruction": "Add a note.",
+            "generation": {"provider": "ollama", "ollama_model": "test-model"},
+        },
+    )
+
+    assert status == 200
+    assert data["patch_markdown"] == "## AI Notes\n\nRaw model markdown patch."
+    assert data["revised_markdown"] == "# Seed\n\nExisting canon.\n\n## AI Notes\n\nRaw model markdown patch.\n"
 
 
 def test_series_package_save_and_load_uses_local_storage_fallback(ui_server, ui_roots):

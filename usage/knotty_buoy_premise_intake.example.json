@@ -11,7 +11,7 @@
   "arc_style": "escalating_floor_survival",
   "power_curve": "logarithmic",
   "merge_existing": true,
-  "premise_path": "usage/knotty_buoy_premise.md",
+  "premise_path": "usage/litrpg_messy_context_seed.md",
   "generation": {
     "provider": "hybrid",
     "ollama_model": "dolphin3",
