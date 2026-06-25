@@ -145,7 +145,7 @@ Content-Type: application/json
     "storage_dir": "../data/litrpg",
     "generation": {
       "provider": "openai",
-      "model": "gpt-5.5"
+      "model": "gpt-5.4"
     },
     "tts": {
       "provider": "openai",

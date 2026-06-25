@@ -631,7 +631,7 @@ def generate_series_package(
 
     llm = OpenAIResponsesGenerator(
         api_key=api_key,
-        model=str(settings.get("default_model") or "gpt-5.5"),
+        model=str(settings.get("default_model") or "gpt-5.4"),
         reasoning_effort="low",
         verbosity="medium",
     )

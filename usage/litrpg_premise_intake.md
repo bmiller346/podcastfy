@@ -49,7 +49,7 @@ Create a task with:
   "generation": {
     "provider": "hybrid",
     "ollama_model": "dolphin3",
-    "commercial_model": "gpt-5.5"
+    "commercial_model": "gpt-5.4"
   }
 }
 ```
@@ -82,7 +82,7 @@ Use `premise_path` instead of `premise` when the notes are too large for the tas
   "chapters_per_book": 30,
   "generation": {
     "provider": "openai",
-    "model": "gpt-5.5"
+    "model": "gpt-5.4"
   }
 }
 ```
@@ -96,7 +96,7 @@ fallback:
   "generation": {
     "provider": "hybrid",
     "ollama_model": "dolphin3",
-    "commercial_model": "gpt-5.5",
+    "commercial_model": "gpt-5.4",
     "local_exact_stages": ["script"],
     "local_stage_prefixes": ["part:", "revise:"]
   }

@@ -40,7 +40,7 @@
           </label>
           <label>
             Default generation provider
-            <input name="default_generation_provider" type="text" placeholder="openai">
+            <input name="default_generation_provider" type="text" placeholder="hybrid">
           </label>
           <label>
             Default TTS provider
@@ -48,7 +48,7 @@
           </label>
           <label>
             Default model
-            <input name="default_model" type="text" placeholder="gpt-5.5">
+            <input name="default_model" type="text" placeholder="gpt-5.4">
           </label>
           <label>
             Default TTS model
@@ -226,11 +226,15 @@
           </label>
           <label>
             Generation provider
-            <input name="generation_provider" type="text" placeholder="openai">
+            <input name="generation_provider" type="text" placeholder="hybrid">
           </label>
           <label>
             Generation model
-            <input name="generation_model" type="text" placeholder="gpt-5.5">
+            <input name="generation_model" type="text" placeholder="gpt-5.4">
+          </label>
+          <label class="toggle">
+            <input name="auto_model_routing" type="checkbox" checked>
+            <span>Auto-route OpenAI model by intent</span>
           </label>
           <label>
             TTS provider

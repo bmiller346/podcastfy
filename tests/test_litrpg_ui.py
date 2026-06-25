@@ -102,6 +102,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "2. Intake Status" in html
     assert "3. Series Workspace" in html
     assert "Advanced Task Builder" in html
+    assert "Auto-route OpenAI model by intent" in html
     assert "Story Workshop -> Queue Intake Agent -> Load Series" in html
     assert "Story file" in html
     assert "usage/litrpg_messy_context_seed.md" in html
@@ -131,6 +132,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="genre"' in html
     assert 'name="generation_provider"' in html
     assert 'name="generation_model"' in html
+    assert 'name="auto_model_routing"' in html
     assert 'name="tts_provider"' in html
     assert 'name="tts_model"' in html
     assert 'name="tts_format"' in html
@@ -490,7 +492,7 @@ def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypa
             "openai_api_key": "sk-file",
             "gemini_api_key": "",
             "default_tts_provider": "edge",
-            "default_model": "gpt-5.5",
+            "default_model": "gpt-5.4",
             "default_tts_model": "gpt-4o-mini-tts",
             "default_tts_format": "mp3",
             "unexpected": "ignored",
@@ -501,7 +503,7 @@ def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypa
     stored = json.loads(settings_path.read_text(encoding="utf-8"))
     assert status == 200
     assert stored == {
-        "default_model": "gpt-5.5",
+        "default_model": "gpt-5.4",
         "default_tts_format": "mp3",
         "default_tts_model": "gpt-4o-mini-tts",
         "default_tts_provider": "edge",
@@ -510,7 +512,7 @@ def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypa
     assert data["settings_path"] == str(settings_path)
     assert data["api_keys"]["openai"]["configured"] is True
     assert data["api_keys"]["openai"]["value"] == "redacted"
-    assert data["defaults"]["default_model"] == "gpt-5.5"
+    assert data["defaults"]["default_model"] == "gpt-5.4"
     assert data["defaults"]["default_tts_model"] == "gpt-4o-mini-tts"
     assert data["defaults"]["default_tts_format"] == "mp3"
     assert "sk-file" not in json.dumps(data)
@@ -545,7 +547,7 @@ def test_settings_post_can_clear_non_secret_defaults_without_clearing_saved_keys
         json.dumps(
             {
                 "openai_api_key": "sk-openai-secret",
-                "default_model": "gpt-5.5",
+                "default_model": "gpt-5.4",
                 "default_tts_format": "wav",
             }
         ),
@@ -746,7 +748,7 @@ def test_submit_inline_task_job_tracks_summary_and_status(
                 "premise": "A clerk descends into the office basement.",
                 "mode": "episode",
                 "render_audio": True,
-                "generation": {"provider": "openai", "model": "gpt-5.5"},
+                "generation": {"provider": "openai", "model": "gpt-5.4"},
                 "tts": {"provider": "openai", "model": "gpt-4o-mini-tts"},
             }
         },

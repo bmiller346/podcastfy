@@ -31,7 +31,11 @@
     "local_model": "litrpg-writer",
     "ollama_host": "http://127.0.0.1:11434",
     "commercial_provider": "openai",
-    "commercial_model": "gpt-5.5",
+    "commercial_model": "gpt-5.4",
+    "auto_model_routing": true,
+    "cheap_model": "gpt-5.4-mini",
+    "nano_model": "gpt-5.4-nano",
+    "strong_reasoning_effort": "medium",
     "local_stage_prefixes": [
       "part:",
       "revise:"

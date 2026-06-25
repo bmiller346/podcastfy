@@ -2,8 +2,9 @@ import json
 
 import pytest
 
-from podcastfy.litrpg.llm import OllamaGenerator, OpenAIResponsesGenerator
+from podcastfy.litrpg.llm import IntentRoutingOpenAI, OllamaGenerator, OpenAIResponsesGenerator
 from podcastfy.litrpg.llm import StageRouterLLM, StageRouting
+from podcastfy.litrpg.llm import classify_openai_intent
 
 
 class FakeResponses:
@@ -36,11 +37,11 @@ class FlakyClient:
         self.responses = FlakyResponses()
 
 
-def test_openai_responses_generator_uses_gpt55_and_stage_metadata():
+def test_openai_responses_generator_uses_gpt54_and_stage_metadata():
     client = FakeClient()
     generator = OpenAIResponsesGenerator(
         client=client,
-        model="gpt-5.5",
+        model="gpt-5.4",
         reasoning_effort="low",
         verbosity="low",
     )
@@ -49,7 +50,7 @@ def test_openai_responses_generator_uses_gpt55_and_stage_metadata():
 
     assert text == "generated script"
     call = client.responses.calls[0]
-    assert call["model"] == "gpt-5.5"
+    assert call["model"] == "gpt-5.4"
     assert call["reasoning"] == {"effort": "low"}
     assert call["text"] == {"verbosity": "low"}
     assert call["metadata"] == {"litrpg_stage": "script"}
@@ -70,6 +71,46 @@ def test_openai_responses_generator_retries_transient_failures(monkeypatch):
     assert text == "recovered"
     assert client.responses.calls == 3
     assert sleeps == [0.5, 1.0]
+
+
+class RecordingGenerator:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+        self.calls = []
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        return f"{self.model}:{stage}"
+
+
+def test_openai_intent_classifier_routes_structural_work_to_stronger_model():
+    assert classify_openai_intent(stage="premise_intake", prompt="short") == "strong"
+    assert classify_openai_intent(stage="mechanics:cold-open", prompt="short") == "strong"
+    assert classify_openai_intent(stage="review:cold-open", prompt="short") == "cheap"
+    assert classify_openai_intent(stage="smoke", prompt="short") == "nano"
+    assert classify_openai_intent(stage="unknown", prompt="Build a continuity ledger") == "strong"
+
+
+def test_intent_routing_openai_selects_models_by_stage():
+    router = IntentRoutingOpenAI(
+        api_key="sk-test",
+        strong_model="gpt-5.4",
+        cheap_model="gpt-5.4-mini",
+        nano_model="gpt-5.4-nano",
+        generator_factory=RecordingGenerator,
+    )
+
+    assert router.generate(prompt="audit", stage="mechanics:cold-open") == "gpt-5.4:mechanics:cold-open"
+    assert router.generate(prompt="review", stage="review:cold-open") == "gpt-5.4-mini:review:cold-open"
+    assert router.generate(prompt="ping", stage="smoke") == "gpt-5.4-nano:smoke"
+
+    assert router.calls == [
+        {"stage": "mechanics:cold-open", "intent": "strong", "model": "gpt-5.4"},
+        {"stage": "review:cold-open", "intent": "cheap", "model": "gpt-5.4-mini"},
+        {"stage": "smoke", "intent": "nano", "model": "gpt-5.4-nano"},
+    ]
+    assert router.generators[("gpt-5.4", "medium")].reasoning_effort == "medium"
+    assert router.generators[("gpt-5.4-mini", "low")].reasoning_effort == "low"
 
 
 class FakeHTTPResponse:

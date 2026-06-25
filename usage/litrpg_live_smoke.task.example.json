@@ -13,7 +13,7 @@
   "render_audio": false,
   "generation": {
     "provider": "openai",
-    "model": "gpt-5.5",
+    "model": "gpt-5.4",
     "reasoning_effort": "low",
     "verbosity": "low",
     "max_retries": 2,

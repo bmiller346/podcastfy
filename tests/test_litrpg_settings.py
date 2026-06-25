@@ -40,7 +40,7 @@ def test_save_litrpg_settings_writes_allowed_fields_to_local_path(tmp_path):
             "openai_api_key": "sk-test",
             "gemini_api_key": "",
             "default_generation_provider": "openai",
-            "default_model": "gpt-5.5",
+            "default_model": "gpt-5.4",
             "default_tts_provider": "geminiapi",
             "default_tts_model": "gemini-3.1-flash-tts-preview",
             "default_tts_format": "wav",
@@ -52,7 +52,7 @@ def test_save_litrpg_settings_writes_allowed_fields_to_local_path(tmp_path):
     stored = json.loads(settings_path.read_text(encoding="utf-8"))
     assert stored == {
         "default_generation_provider": "openai",
-        "default_model": "gpt-5.5",
+        "default_model": "gpt-5.4",
         "default_tts_provider": "geminiapi",
         "default_tts_format": "wav",
         "default_tts_model": "gemini-3.1-flash-tts-preview",
@@ -65,7 +65,7 @@ def test_redacted_status_never_returns_plaintext_keys(monkeypatch, tmp_path):
     save_litrpg_settings(
         {
             "openai_api_key": "sk-file-secret",
-            "default_model": "gpt-5.5",
+            "default_model": "gpt-5.4",
         },
         settings_path,
     )
@@ -77,7 +77,7 @@ def test_redacted_status_never_returns_plaintext_keys(monkeypatch, tmp_path):
     assert status["api_keys"]["openai"]["file"] is True
     assert status["api_keys"]["openai"]["value"] == "redacted"
     assert status["api_keys"]["gemini"]["env"] is True
-    assert status["defaults"]["default_model"] == "gpt-5.5"
+    assert status["defaults"]["default_model"] == "gpt-5.4"
     assert "sk-file-secret" not in encoded
     assert "env-secret" not in encoded
 
@@ -87,7 +87,7 @@ def test_save_litrpg_settings_keeps_blank_secrets_but_clears_blank_defaults(tmp_
     save_litrpg_settings(
         {
             "openai_api_key": "sk-file-secret",
-            "default_model": "gpt-5.5",
+            "default_model": "gpt-5.4",
             "default_tts_format": "mp3",
         },
         settings_path,

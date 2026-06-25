@@ -17,7 +17,7 @@ from podcastfy.litrpg.continuity import load_emotional_arcs
 from podcastfy.litrpg.continuity import load_world_register
 from podcastfy.litrpg.foreshadowing import format_foreshadow_context
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger
-from podcastfy.litrpg.llm import OllamaGenerator, OpenAIResponsesGenerator, StageRouterLLM
+from podcastfy.litrpg.llm import IntentRoutingOpenAI, OllamaGenerator, OpenAIResponsesGenerator, StageRouterLLM
 from podcastfy.litrpg.llm import StageRouting
 from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
@@ -208,7 +208,7 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
 
 def _openai_generator_from_config(
     generation: Mapping[str, Any], *, settings: Mapping[str, Any]
-) -> OpenAIResponsesGenerator:
+) -> OpenAIResponsesGenerator | IntentRoutingOpenAI:
     api_key = get_provider_api_key(str(generation.get("provider") or "openai"), settings) or get_provider_api_key(
         "openai", settings
     )
@@ -217,19 +217,37 @@ def _openai_generator_from_config(
             "OpenAI generation requires a valid API key. Set OPENAI_API_KEY or save "
             "openai_api_key in the LitRPG UI settings."
         )
+    base_url = (
+        str(generation.get("base_url") or generation.get("api_base_url"))
+        if generation.get("base_url") or generation.get("api_base_url")
+        else None
+    )
+    default_model = str(
+        generation.get("model")
+        or generation.get("commercial_model")
+        or settings.get("default_model")
+        or "gpt-5.4"
+    )
+    if bool(generation.get("auto_model_routing")):
+        return IntentRoutingOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            default_model=str(generation.get("default_model") or generation.get("cheap_model") or "gpt-5.4-mini"),
+            strong_model=str(generation.get("strong_model") or generation.get("commercial_model") or default_model),
+            cheap_model=str(generation.get("cheap_model") or generation.get("mini_model") or "gpt-5.4-mini"),
+            nano_model=str(generation.get("nano_model") or "gpt-5.4-nano"),
+            reasoning_effort=str(generation.get("reasoning_effort") or "low"),
+            strong_reasoning_effort=str(generation.get("strong_reasoning_effort") or "medium"),
+            verbosity=str(generation.get("verbosity") or "medium"),
+            max_retries=int(generation.get("max_retries") or 3),
+            retry_backoff_seconds=float(generation.get("retry_backoff_seconds") or 2.0),
+            timeout_seconds=_optional_timeout(generation, default=120.0),
+            prompt_char_threshold=int(generation.get("strong_prompt_char_threshold") or 12000),
+        )
     return OpenAIResponsesGenerator(
         api_key=api_key,
-        model=str(
-            generation.get("model")
-            or generation.get("commercial_model")
-            or settings.get("default_model")
-            or "gpt-5.5"
-        ),
-        base_url=(
-            str(generation.get("base_url") or generation.get("api_base_url"))
-            if generation.get("base_url") or generation.get("api_base_url")
-            else None
-        ),
+        model=default_model,
+        base_url=base_url,
         reasoning_effort=str(generation.get("reasoning_effort") or "medium"),
         verbosity=str(generation.get("verbosity") or "medium"),
         max_retries=int(generation.get("max_retries") or 3),

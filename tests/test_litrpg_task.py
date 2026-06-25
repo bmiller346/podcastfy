@@ -198,7 +198,7 @@ def test_llm_from_task_builds_hybrid_router_with_custom_stage_rules(monkeypatch)
             "generation": {
                 "provider": "hybrid",
                 "local_model": "dolphin3",
-                "commercial_model": "gpt-5.5",
+                "commercial_model": "gpt-5.4",
                 "local_exact_stages": ["script", "announcer_lines"],
                 "local_stage_prefixes": ["part:", "revise:", "voice:"],
                 "allow_local_fallback": True,
@@ -208,10 +208,40 @@ def test_llm_from_task_builds_hybrid_router_with_custom_stage_rules(monkeypatch)
     )
 
     assert llm.local.model == "dolphin3"
-    assert llm.default.model == "gpt-5.5"
+    assert llm.default.model == "gpt-5.4"
     assert llm.routing.local_exact == ("script", "announcer_lines")
     assert llm.routing.local_prefixes == ("part:", "revise:", "voice:")
     assert llm.allow_local_fallback is True
+
+
+def test_llm_from_task_builds_hybrid_router_with_openai_intent_routing(monkeypatch):
+    class FakeOpenAIResponsesGenerator:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    monkeypatch.setattr(
+        "podcastfy.litrpg.llm.OpenAIResponsesGenerator",
+        FakeOpenAIResponsesGenerator,
+    )
+
+    llm = _llm_from_task(
+        {
+            "generation": {
+                "provider": "hybrid",
+                "local_model": "litrpg-writer",
+                "commercial_model": "gpt-5.4",
+                "auto_model_routing": True,
+                "cheap_model": "gpt-5.4-mini",
+                "nano_model": "gpt-5.4-nano",
+            }
+        },
+        settings={"openai_api_key": "sk-test"},
+    )
+
+    assert llm.local.model == "litrpg-writer"
+    assert llm.default.strong_model == "gpt-5.4"
+    assert llm.default.cheap_model == "gpt-5.4-mini"
+    assert llm.default.nano_model == "gpt-5.4-nano"
 
 
 def test_llm_from_task_requires_valid_openai_key_for_hybrid():
@@ -221,7 +251,7 @@ def test_llm_from_task_requires_valid_openai_key_for_hybrid():
                 "generation": {
                     "provider": "hybrid",
                     "local_model": "litrpg-writer",
-                    "commercial_model": "gpt-5.5",
+                    "commercial_model": "gpt-5.4",
                 }
             },
             settings={"openai_api_key": "not a real key"},

@@ -27,7 +27,7 @@ def test_live_smoke_example_loads_and_defaults_to_no_audio():
     assert task["series_id"] == "live-smoke"
     assert task["render_audio"] is False
     assert task["generation"]["provider"] == "openai"
-    assert task["generation"]["model"] == "gpt-5.5"
+    assert task["generation"]["model"] == "gpt-5.4"
     assert task["generation"]["max_retries"] == 2
     assert task["reviews"]["enabled"] is False
     assert task["reviews"]["rewrite"] is False

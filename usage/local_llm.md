@@ -73,7 +73,7 @@ Then configure a LitRPG task with a hybrid generation block:
     "local_model": "litrpg-writer",
     "ollama_host": "http://127.0.0.1:11434",
     "commercial_provider": "openai",
-    "commercial_model": "gpt-5.5",
+    "commercial_model": "gpt-5.4",
     "local_stage_prefixes": ["part:", "revise:"],
     "local_exact_stages": ["script"],
     "reasoning_effort": "low",

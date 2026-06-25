@@ -1,6 +1,6 @@
 # LitRPG Provider Names
 
-LitRPG task files use separate providers for story generation and text-to-speech. The default story generation path can use GPT-5.5, while OpenAI speech generation uses the TTS speech model configured under `tts.model` and defaults to `gpt-4o-mini-tts`.
+LitRPG task files use separate providers for story generation and text-to-speech. The default story generation path can use GPT-5.4, while OpenAI speech generation uses the TTS speech model configured under `tts.model` and defaults to `gpt-4o-mini-tts`.
 
 ## Story Generation Providers
 
@@ -27,7 +27,7 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
 ```json
 {
   "default_generation_provider": "openai",
-  "default_model": "gpt-5.5",
+  "default_model": "gpt-5.4",
   "default_tts_provider": "openai",
   "default_tts_model": "gpt-4o-mini-tts",
   "default_tts_format": "mp3",
@@ -42,7 +42,7 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
 {
   "generation": {
     "provider": "openai",
-    "model": "gpt-5.5"
+    "model": "gpt-5.4"
   },
   "tts": {
     "provider": "geminiapi",
@@ -63,7 +63,11 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
     "local_model": "litrpg-writer",
     "ollama_host": "http://127.0.0.1:11434",
     "commercial_provider": "openai",
-    "commercial_model": "gpt-5.5",
+    "commercial_model": "gpt-5.4",
+    "auto_model_routing": true,
+    "cheap_model": "gpt-5.4-mini",
+    "nano_model": "gpt-5.4-nano",
+    "strong_reasoning_effort": "medium",
     "local_stage_prefixes": ["part:", "revise:"],
     "local_exact_stages": ["script"],
     "reasoning_effort": "low",

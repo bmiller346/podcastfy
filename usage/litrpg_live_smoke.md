@@ -150,4 +150,4 @@ Gemini TTS:
 }
 ```
 
-The story model and speech model are separate decisions. GPT-5.5 can write the chapter while OpenAI or Gemini TTS handles speech later.
+The story model and speech model are separate decisions. GPT-5.4 can write the chapter while OpenAI or Gemini TTS handles speech later.
