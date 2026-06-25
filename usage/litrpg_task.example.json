@@ -1,6 +1,7 @@
 {
   "series_id": "paper-cuts-replay",
   "premise": "A night-shift clerk discovers the office basement is a procedural dungeon.",
+  "series_package_path": "litrpg_catamaran_crawlers_package.example.json",
   "storage_dir": "../data/litrpg",
   "result_path": "../data/litrpg/paper-cuts-replay/episode-001.json",
   "settings_path": "../settings.local.json",

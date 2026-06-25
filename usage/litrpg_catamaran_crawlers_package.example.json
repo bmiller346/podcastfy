@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "series_id": "catamaran-crawlers",
+    "title": "The Catamaran Crawlers",
+    "artifact_type": "series_package",
+    "status": "style_bible_seed",
+    "source": "Catamaran Crawlers premise plus generated System Announcer package",
+    "usage": "Regression fixture and prompt baseline for package generation. Not final story prose.",
+    "created_for": "local LitRPG audio serial pipeline",
+    "sensitive_portrayal_notes": [
+      "Kelli's bipolar traits should be written as human character context, not as a joke, diagnosis gimmick, or magical power by itself.",
+      "Her risk-taking class rewards volatility and odds-reading in dungeon mechanics while preserving agency, competence, and consequences.",
+      "Edward and Kelli should read like specific working-class South Jersey people, not broad regional stereotypes."
+    ]
+  },
+  "premise": {
+    "logline": "Edward and Kelli Marsh sell the house, ghost their kids, and sail out of Atlantic City with Pedro, their 4-year-old macaw, only for the World Dungeon to absorb their catamaran hull-first.",
+    "core_tension": "Edward retired to stop having tasks. The System is now nothing but tasks. Kelli sees every dungeon risk as a live betting market. Pedro keeps repeating phrases that become mechanically relevant.",
+    "book_one_shape": "They arrive after crawler factions have already formed. The catamaran becomes a valuable mobile base, Kelli immediately creates political trouble, Edward keeps trying to fix the rigging, and Pedro accidentally reveals how to exploit the first Floor Boss lair."
+  },
+  "system_announcer": {
+    "role_id": "SYSTEM_ANNOUNCER",
+    "display_name": "The Interface",
+    "concept": "An ancient, sarcastic administrative entity that has run dungeon absorptions for longer than recorded human history and is professionally exhausted by the paperwork.",
+    "voice_pillars": [
+      "Bureaucratically enthusiastic",
+      "Passive-aggressively helpful",
+      "Faintly disgusted by humans specifically",
+      "Unable to stop giving status updates"
+    ],
+    "performance": {
+      "tone": "Bureaucratic authority with suppressed exhaustion. Slightly too loud.",
+      "delivery": "PA system cadence with punchy declarative sentences, brief pauses between status items, and dry emphasis on absurdity.",
+      "pace": "1.05x",
+      "pitch": "-0.5",
+      "audio_effect": "Light slapback reverb with subtle hall ambience, as if coming from everywhere and nowhere.",
+      "emphasis_rules": [
+        "ALL-CAPS terms get a slight punch.",
+        "Quest titles get full delivery weight.",
+        "Parenthetical notes are quieter and faster, like fine print being read aloud against the speaker's will."
+      ]
+    },
+    "sample_lines": [
+      {
+        "label": "absorption_event",
+        "text": "ATTENTION REGISTERED VESSEL. You have been successfully integrated into WORLD DUNGEON SECTOR 7, TIER OMEGA, FLOOR ONE. Your catamaran has been flagged as a STRUCTURAL ANOMALY and assigned temporary MOBILE ASSET status. This is unprecedented. Congratulations, I suppose. Please do not do anything with that."
+      },
+      {
+        "label": "edward_profile",
+        "text": "CRAWLER PROFILE: EDWARD MARSH. Age 62. Class assigned: STRUCTURAL ASSESSOR. Passive ability: Load Bearing Intuition. Active ability: That's Not Up To Code. The System acknowledges your retirement and would like to inform you that retirement is not recognized as a valid exemption from participation. We checked. Twice."
+      },
+      {
+        "label": "kelli_profile",
+        "text": "CRAWLER PROFILE: KELLI MARSH. Age 61. Class assigned: ALL-IN. Passive ability: Variance Tolerance. Active ability: Double Down. WARNING: Behavioral volatility index is in the 97th percentile of all absorbed crawlers across fourteen civilizations. The System finds this either promising or catastrophic. Probability split is currently 50/50. We will update you."
+      },
+      {
+        "label": "pedro_profile",
+        "text": "FAMILIAR REGISTERED: PEDRO. Species: Ara chloropterus, green-winged macaw. Age 4. Familiar tier: UNCLASSIFIED. Vocabulary scan: 47 phrases detected. Twelve are usable. Six are concerning. One has been flagged for review by upper administration. Do not teach him anything else."
+      },
+      {
+        "label": "quest_popup",
+        "text": "NEW QUEST: Don't Die On Floor One. Reward: Continued existence. Difficulty: Should be easy. Historically has not been. Accept / Decline. Note: Decline is not functional. It is included for psychological comfort only."
+      },
+      {
+        "label": "pedro_structural_event",
+        "text": "FAMILIAR EVENT DETECTED. Pedro has vocalized: THAT'S NOT CODE. Structural weakness identified in Floor Boss lair: NORTHEAST LOAD-BEARING PILLAR. Critical hit modifier applied. The System would like to clarify that it did not plan this and takes no credit. The System is also mildly unsettled."
+      }
+    ]
+  },
+  "characters": [
+    {
+      "role_id": "EDWARD",
+      "name": "Edward Marsh",
+      "age": 62,
+      "narrative_function": "Reluctant protagonist and practical problem solver",
+      "class_candidate": "Structural Assessor",
+      "baseline_voice": "Low, tired, dry, pragmatic, and allergic to drama.",
+      "core_skills": [
+        "Union carpentry",
+        "structural assessment",
+        "improvised repairs",
+        "job-site triage",
+        "outlasting younger people"
+      ],
+      "mechanics": {
+        "passive": "Load Bearing Intuition",
+        "active": "That's Not Up To Code",
+        "combat_style": "Finds structural failure points and turns the room itself into a weapon."
+      },
+      "do": [
+        "Treat stakes seriously even when the System is absurd.",
+        "Respond to quests as interruptions.",
+        "Use regional, working-person pragmatism instead of heroic speeches."
+      ],
+      "avoid": [
+        "Making him wacky just because the dungeon is wacky.",
+        "Turning carpentry into generic fantasy magic with no physical logic."
+      ]
+    },
+    {
+      "role_id": "KELLI",
+      "name": "Kelli Marsh",
+      "age": 61,
+      "narrative_function": "Chaos engine, odds-reader, social detonator",
+      "class_candidate": "All-In",
+      "baseline_voice": "Fast, sharp, funny, fearless when locked in, and impossible to redirect once committed.",
+      "core_skills": [
+        "Reading odds",
+        "high-pressure improvisation",
+        "social intimidation",
+        "side-quest escalation",
+        "seeing leverage before other people do"
+      ],
+      "mechanics": {
+        "passive": "Variance Tolerance",
+        "active": "Double Down",
+        "combat_style": "Turns bad probabilities into forced commitments that can save them or make everything worse."
+      },
+      "portrayal_guardrail": "Write her volatility with empathy and specificity. The class can reward risk-taking, but bipolar disorder is not the joke and not the power source.",
+      "do": [
+        "Let her be competent, dangerous, loving, and wrong in ways that carry consequences.",
+        "Make her betting instinct about pattern recognition and risk appetite.",
+        "Let Edward and Kelli argue like people with a long marriage and real history."
+      ],
+      "avoid": [
+        "Reducing her to random behavior.",
+        "Using mental health language as a punchline.",
+        "Making her chaos erase her agency."
+      ]
+    }
+  ],
+  "familiar": {
+    "role_id": "PEDRO",
+    "name": "Pedro",
+    "species": "green-winged macaw",
+    "age": 4,
+    "system_registration": "Familiar, tier unclassified",
+    "baseline_voice": "Macaw mimicry, sudden volume spikes, fragments of marital arguments and job-site phrases.",
+    "mechanical_hook": "Pedro's learned phrases can trigger System interpretation, identify structural violations, or accidentally satisfy verbal conditions.",
+    "signature_phrases": [
+      "THAT'S NOT CODE",
+      "WHO APPROVED THIS",
+      "NO REFUNDS",
+      "KELLI, DON'T",
+      "CALL THE HALL"
+    ]
+  },
+  "home_base": {
+    "id": "marsh_catamaran",
+    "name": "The Marsh Catamaran",
+    "system_status": "STRUCTURAL ANOMALY / MOBILE ASSET",
+    "function": "A surviving home base inside the dungeon, giving the party shelter, storage, repairable systems, and faction leverage.",
+    "advantages": [
+      "Mobile defensive position",
+      "Known repairable structure",
+      "Storage for weird loot",
+      "Social bargaining chip among crawlers without stable shelter"
+    ],
+    "liabilities": [
+      "Visible target",
+      "Requires ongoing repair",
+      "System does not understand how to classify it",
+      "Faction leaders want control of it"
+    ]
+  },
+  "floor_rules": {
+    "floor": 1,
+    "tone_contract": "Characters treat survival seriously while the dungeon systems remain absurd and bureaucratic.",
+    "rule_highlights": [
+      "Registered vessels can be assigned temporary MOBILE ASSET status.",
+      "Structural damage can bypass boss defenses if properly justified.",
+      "Quest decline buttons may exist for psychological comfort but do not function.",
+      "Audience interest affects sponsor attention and loot quality."
+    ],
+    "first_boss_vulnerability": "A lair-specific structural weakness in the northeast load-bearing pillar, discoverable through Edward's assessment and Pedro's phrase trigger."
+  },
+  "faction_map": [
+    {
+      "id": "boardwalk_compact",
+      "name": "The Boardwalk Compact",
+      "role": "Largest early crawler faction",
+      "attitude_to_marshes": "Wants access to the catamaran and dislikes Kelli immediately.",
+      "pressure": "Political control, protection offers, resource taxation"
+    },
+    {
+      "id": "bilge_rats",
+      "name": "The Bilge Rats",
+      "role": "Opportunists and smugglers",
+      "attitude_to_marshes": "View Pedro as a potential mascot and the catamaran as a business opportunity.",
+      "pressure": "Bad deals, information trading, stolen supplies"
+    },
+    {
+      "id": "code_inspectors",
+      "name": "The Code Inspectors",
+      "role": "Dungeon cult obsessed with rules and loopholes",
+      "attitude_to_marshes": "Think Edward may be a prophet or a compliance hazard.",
+      "pressure": "Legalistic side quests and dangerous rule exploits"
+    }
+  ],
+  "prompt_summary": {
+    "system": "The Interface is a sarcastic administrative PA announcer: bureaucratically enthusiastic, passive-aggressively helpful, professionally exhausted, and obsessed with status updates.",
+    "party": "Edward is a retired union carpenter who wants no tasks; Kelli is an odds-reading risk engine with empathy-first portrayal guardrails; Pedro is a macaw familiar whose phrases become mechanics.",
+    "setting": "A World Dungeon absorbs an Atlantic catamaran and classifies it as a mobile structural anomaly, making the Marshes useful, targeted, and extremely annoyed.",
+    "tone": "Deadly stakes, absurd systems, practical South Jersey/Philadelphia framing, and audio-first punchlines."
+  }
+}

@@ -12,6 +12,7 @@ The UI can:
 
 - Save local provider keys and default provider/model settings.
 - Build a local LitRPG task payload with series, premise, provider, TTS, and storage settings.
+- Save, load, or generate a reusable series package/style bible for a premise.
 - List `usage/litrpg*.json` task files.
 - Run a selected task through `podcastfy.litrpg.task.run_litrpg_task`.
 - Submit a selected task as a tracked background job and poll status/result metadata.
@@ -31,11 +32,53 @@ The Create Task panel is meant for local experimentation without hand-editing a 
 
 The browser builds a JSON payload that matches the LitRPG task schema and submits it to the local jobs API. The preview box shows the exact task object before it is queued.
 
+## Series Package Workflow
+
+The Series Package panel sits between premise drafting and chapter generation. It is meant for reusable story and performance context such as:
+
+- system announcer voice and sample lines
+- character and familiar packages
+- home base details
+- floor rules
+- faction map
+- baseline text from an external brainstorming pass
+
+Saved packages live under:
+
+```text
+data/litrpg/series/<series_id>/series_package.json
+```
+
+The UI can load and save a draft package even before the full package generator is installed. When `podcastfy.litrpg.package_generator.generate_series_package` is available, the Generate Package button calls it and saves the result.
+
+Package API:
+
+```http
+GET /api/series-package?series_id=catamaran-crawlers
+POST /api/series-package
+POST /api/series-package/generate
+```
+
+Generate payload:
+
+```json
+{
+  "series_id": "catamaran-crawlers",
+  "premise": "Edward and Kelli Marsh get absorbed into the World Dungeon with their catamaran and macaw.",
+  "baseline_text": "Optional announcer package or voice notes.",
+  "save": true
+}
+```
+
+If the generator module is not installed yet, `/api/series-package/generate` returns `503` with `status: "generator_unavailable"`. The diagnostics report also includes package readiness and whether package storage/generation helpers are currently available.
+
 ## Diagnostics
 
 The Diagnostics panel builds a copyable JSON report from the current task, redacted settings status, latest job metadata, and replay-library counts. Paste that report into a review thread when you want help diagnosing generation quality, missing provider keys, checkpoint output, QA status, or replay readiness.
 
 The premise analysis is intentionally lightweight. It checks for useful LitRPG story hooks such as reluctant protagonist, chaos partner, nonhuman cast member, home base, mechanics, setting flavor, and practical problem solving. It also flags sensitive portrayal terms so the story can keep those characters specific and non-caricatured.
+
+Diagnostics include the loaded package summary, package path, and helper availability so you can copy one report that covers both the task and the style-bible state.
 
 ## Job API
 

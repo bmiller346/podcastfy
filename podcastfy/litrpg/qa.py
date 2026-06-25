@@ -18,23 +18,27 @@ SHOWMANSHIP_SCORE_KEYS = (
     "meme_potential",
     "sponsor_appeal",
 )
+DESCRIPTION_SCORE_KEYS = ("score", "description_score")
 
 
 def parse_part_qa_artifacts(
     *,
     director_tags: str = "",
     mechanics_audit: str = "",
+    description_audit: str = "",
     tonal_audit: str = "",
     showmanship_audit: str = "",
 ) -> dict[str, Any]:
     """Parse raw review artifacts into best-effort structured QA data."""
     director = _parse_director(director_tags)
     mechanics = _parse_audit(mechanics_audit, score_keys=())
+    description = _parse_audit(description_audit, score_keys=DESCRIPTION_SCORE_KEYS)
     tonal = _parse_audit(tonal_audit, score_keys=TONAL_SCORE_KEYS)
     showmanship = _parse_audit(showmanship_audit, score_keys=SHOWMANSHIP_SCORE_KEYS)
     return {
         "director": director,
         "mechanics": mechanics,
+        "description": description,
         "tonal": tonal,
         "showmanship": showmanship,
     }
@@ -54,12 +58,13 @@ def build_chapter_qa(parts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         parsed = parse_part_qa_artifacts(
             director_tags=str(part.get("director_tags") or ""),
             mechanics_audit=str(part.get("mechanics_audit") or ""),
+            description_audit=str(part.get("description_audit") or ""),
             tonal_audit=str(part.get("tonal_audit") or ""),
             showmanship_audit=str(part.get("showmanship_audit") or ""),
         )
         verdicts = {
             name: parsed[name].get("verdict")
-            for name in ("mechanics", "tonal", "showmanship")
+            for name in ("mechanics", "description", "tonal", "showmanship")
             if parsed[name].get("verdict")
         }
         is_blocked = any(verdict == "block" for verdict in verdicts.values())
@@ -82,6 +87,7 @@ def build_chapter_qa(parts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 "verdicts": verdicts,
                 "scores": {
                     "tonal": parsed["tonal"].get("scores", {}),
+                    "description": parsed["description"].get("scores", {}),
                     "showmanship": parsed["showmanship"].get("scores", {}),
                 },
                 "blocking_issues": part_blocking,
@@ -238,7 +244,7 @@ def _part_blocking_issues(
     issues: list[str] = []
     for issue in _list_or_text(final_gate.get("issues")):
         issues.append(f"{part_id}: {issue}")
-    for audit_name in ("mechanics", "tonal", "showmanship"):
+    for audit_name in ("mechanics", "description", "tonal", "showmanship"):
         audit = _mapping(parsed.get(audit_name))
         if audit.get("verdict") != "block":
             continue
@@ -256,7 +262,7 @@ def _part_revision_targets(
     parsed: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
-    for audit_name in ("mechanics", "tonal", "showmanship"):
+    for audit_name in ("mechanics", "description", "tonal", "showmanship"):
         audit = _mapping(parsed.get(audit_name))
         verdict = audit.get("verdict")
         fixes = _list_or_text(audit.get("fixes"))

@@ -21,6 +21,8 @@ class FakeChapterLLM:
             return f'{{"summary":"director tags for {stage}","cues":[]}}'
         if stage.startswith("mechanics:"):
             return f"mechanics audit for {stage}: revise missing XP"
+        if stage.startswith("description:"):
+            return f"description audit for {stage}: score 8 verdict pass"
         if stage.startswith("tonal:"):
             return f"tonal audit for {stage}: stakes_seriousness 7 absurdity_pressure 8"
         if stage.startswith("showmanship:"):
@@ -35,6 +37,8 @@ class FakeChapterLLM:
             return blocks
         if stage == "chapter_review":
             return "chapter review: render ready"
+        if stage == "visual_state_update":
+            return '{"characters":{"Hero":{"current_injuries":["paper cut"]}}}'
         raise AssertionError(f"unexpected stage {stage}")
 
 
@@ -99,6 +103,17 @@ class BlockingAuditLLM(AllRolesChapterLLM):
         return super().generate(prompt=prompt, stage=stage)
 
 
+class BlockingDescriptionAuditLLM(AllRolesChapterLLM):
+    def generate(self, *, prompt, stage):
+        if stage.startswith("description:"):
+            return (
+                '{"verdict":"block","score":3,'
+                '"blocking_issues":["Hero dodges on ruined left leg without consequence"],'
+                '"fixes":["Make the left-calf injury alter the dodge."]}'
+            )
+        return super().generate(prompt=prompt, stage=stage)
+
+
 class DirectorCueLLM(AllRolesChapterLLM):
     def generate(self, *, prompt, stage):
         if stage.startswith("director:"):
@@ -136,6 +151,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "review:cold-open",
         "director:cold-open",
         "mechanics:cold-open",
+        "description:cold-open",
         "tonal:cold-open",
         "showmanship:cold-open",
         "revise:cold-open",
@@ -143,6 +159,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "review:party-pressure",
         "director:party-pressure",
         "mechanics:party-pressure",
+        "description:party-pressure",
         "tonal:party-pressure",
         "showmanship:party-pressure",
         "revise:party-pressure",
@@ -150,6 +167,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "review:mechanics-reveal",
         "director:mechanics-reveal",
         "mechanics:mechanics-reveal",
+        "description:mechanics-reveal",
         "tonal:mechanics-reveal",
         "showmanship:mechanics-reveal",
         "revise:mechanics-reveal",
@@ -157,6 +175,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "review:boss-setpiece",
         "director:boss-setpiece",
         "mechanics:boss-setpiece",
+        "description:boss-setpiece",
         "tonal:boss-setpiece",
         "showmanship:boss-setpiece",
         "revise:boss-setpiece",
@@ -164,10 +183,12 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "review:fallout-cliffhanger",
         "director:fallout-cliffhanger",
         "mechanics:fallout-cliffhanger",
+        "description:fallout-cliffhanger",
         "tonal:fallout-cliffhanger",
         "showmanship:fallout-cliffhanger",
         "revise:fallout-cliffhanger",
         "chapter_review",
+        "visual_state_update",
     ]
     assert "The cursed stapler must appear." in llm.calls[0]["prompt"]
     assert result["chapter"]["number"] == 2
@@ -175,6 +196,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     assert result["parts"][0]["review"] == "review for review:cold-open"
     assert result["parts"][0]["director_tags"].startswith('{"summary"')
     assert result["parts"][0]["mechanics_audit"].startswith("mechanics audit")
+    assert result["parts"][0]["description_audit"].startswith("description audit")
     assert result["parts"][0]["gate"]["draft"]["ready"] is False
     assert result["parts"][0]["gate"]["final"]["ready"] is True
     assert result["qa"]["ready"] is True
@@ -182,6 +204,8 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "stakes_seriousness": 7,
         "absurdity_pressure": 8,
     }
+    assert result["qa"]["parts"][0]["verdicts"]["description"] == "pass"
+    assert result["visual_state_update"].startswith('{"characters"')
     assert result["qa"]["parts"][0]["revision_targets"][0]["audit"] == "mechanics"
     assert "NARRATOR logs XP and loot" in result["combined_script"]
     assert result["render"]["ready"] is True
@@ -333,6 +357,16 @@ def test_generate_litrpg_chapter_block_verdict_makes_qa_and_render_not_ready():
     assert any("jokes erase" in issue for issue in result["qa"]["blocking_issues"])
 
 
+def test_generate_litrpg_chapter_description_block_verdict_makes_render_not_ready():
+    result = generate_litrpg_chapter(_chapter_task(), llm=BlockingDescriptionAuditLLM())
+
+    assert result["qa"]["ready"] is False
+    assert result["render"]["ready"] is False
+    assert result["qa"]["parts"][0]["verdicts"]["description"] == "block"
+    assert result["qa"]["parts"][0]["scores"]["description"]["score"] == 3
+    assert any("ruined left leg" in issue for issue in result["qa"]["blocking_issues"])
+
+
 def test_generate_litrpg_chapter_injects_story_bible_summary_into_prompts():
     llm = FakeChapterLLM()
 
@@ -345,6 +379,39 @@ def test_generate_litrpg_chapter_injects_story_bible_summary_into_prompts():
     assert "Hero never jokes about the elevator vow." in llm.calls[0]["prompt"]
     mechanics_call = next(call for call in llm.calls if call["stage"] == "mechanics:cold-open")
     assert "Hero never jokes about the elevator vow." in mechanics_call["prompt"]
+
+
+def test_generate_litrpg_chapter_injects_series_package_summary_into_prompts():
+    llm = FakeChapterLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            series_package={
+                "premise": "Retirees and a macaw hit the dungeon in a boat.",
+                "metadata": {
+                    "title": "The Catamaran Crawlers",
+                },
+                "system_announcer": {
+                    "name": "System Announcer",
+                    "tone": "smug maritime game-show sadist",
+                },
+            }
+        ),
+        llm=llm,
+    )
+
+    package_line = "Retirees and a macaw hit the dungeon in a boat."
+    assert package_line in result["chapter"]["series_package_summary"]
+    assert package_line in llm.calls[0]["prompt"]
+    for stage in [
+        "review:cold-open",
+        "director:cold-open",
+        "mechanics:cold-open",
+        "revise:cold-open",
+        "chapter_review",
+    ]:
+        call = next(call for call in llm.calls if call["stage"] == stage)
+        assert package_line in call["prompt"]
 
 
 def test_generate_litrpg_chapter_uses_mechanics_context_in_final_gate():

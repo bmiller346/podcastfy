@@ -25,6 +25,13 @@ class CharacterBibleEntry:
     favorite_insults: list[str] = field(default_factory=list)
     never_contradict_facts: list[str] = field(default_factory=list)
     voice_rules: list[str] = field(default_factory=list)
+    visual_anchors_static: list[str] = field(default_factory=list)
+    visual_anchors_dynamic: list[str] = field(default_factory=list)
+    current_injuries: list[str] = field(default_factory=list)
+    fatigue_markers: list[str] = field(default_factory=list)
+    equipped_gear: list[str] = field(default_factory=list)
+    gear_absurd_traits: list[str] = field(default_factory=list)
+    description_rules: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -107,6 +114,15 @@ def character_bible_entry_from_dict(
     data: dict[str, Any], fallback_name: str = ""
 ) -> CharacterBibleEntry:
     """Build a character bible entry from loose JSON."""
+    visual_anchors = data.get("visual_anchors") if isinstance(data.get("visual_anchors"), dict) else {}
+    physical_degradation = (
+        data.get("physical_degradation")
+        if isinstance(data.get("physical_degradation"), dict)
+        else {}
+    )
+    gear_silhouette = (
+        data.get("gear_silhouette") if isinstance(data.get("gear_silhouette"), dict) else {}
+    )
 
     return CharacterBibleEntry(
         name=str(data.get("name") or fallback_name),
@@ -119,6 +135,25 @@ def character_bible_entry_from_dict(
         favorite_insults=_string_list(data.get("favorite_insults")),
         never_contradict_facts=_string_list(data.get("never_contradict_facts")),
         voice_rules=_string_list(data.get("voice_rules")),
+        visual_anchors_static=_string_list(
+            data.get("visual_anchors_static") or visual_anchors.get("static")
+        ),
+        visual_anchors_dynamic=_string_list(
+            data.get("visual_anchors_dynamic") or visual_anchors.get("dynamic")
+        ),
+        current_injuries=_string_list(
+            data.get("current_injuries") or physical_degradation.get("current_injuries")
+        ),
+        fatigue_markers=_string_list(
+            data.get("fatigue_markers") or physical_degradation.get("fatigue_markers")
+        ),
+        equipped_gear=_string_list(
+            data.get("equipped_gear") or gear_silhouette.get("equipped")
+        ),
+        gear_absurd_traits=_string_list(
+            data.get("gear_absurd_traits") or gear_silhouette.get("absurd_traits")
+        ),
+        description_rules=_string_list(data.get("description_rules")),
         notes=_string_list(data.get("notes")),
     )
 
@@ -197,6 +232,13 @@ def _merge_character_entry(
     _extend_unique(existing.favorite_insults, update.favorite_insults)
     _extend_unique(existing.never_contradict_facts, update.never_contradict_facts)
     _extend_unique(existing.voice_rules, update.voice_rules)
+    _extend_unique(existing.visual_anchors_static, update.visual_anchors_static)
+    _extend_unique(existing.visual_anchors_dynamic, update.visual_anchors_dynamic)
+    _extend_unique(existing.current_injuries, update.current_injuries)
+    _extend_unique(existing.fatigue_markers, update.fatigue_markers)
+    _extend_unique(existing.equipped_gear, update.equipped_gear)
+    _extend_unique(existing.gear_absurd_traits, update.gear_absurd_traits)
+    _extend_unique(existing.description_rules, update.description_rules)
     _extend_unique(existing.notes, update.notes)
 
 
@@ -226,10 +268,14 @@ def _character_summary_facts(entry: CharacterBibleEntry) -> list[str]:
         ("rivals", entry.rivalries),
         ("promises", entry.unresolved_promises),
         ("insults", entry.favorite_insults),
+        ("visual", [*entry.visual_anchors_static, *entry.visual_anchors_dynamic]),
+        ("body", [*entry.current_injuries, *entry.fatigue_markers]),
+        ("gear", [*entry.equipped_gear, *entry.gear_absurd_traits]),
+        ("description", entry.description_rules),
     ]:
         if values:
             facts.append(f"{label}: " + "; ".join(_compact_items(values, limit=2)))
-    return facts[:4]
+    return facts
 
 
 def _compact_items(items: list[str], limit: int) -> list[str]:

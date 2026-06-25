@@ -11,6 +11,20 @@
   "settings_path": "../settings.local.json",
   "persist_state": true,
   "render_audio": false,
+  "series_package": {
+    "premise": "Office workers survive dungeon performance reviews.",
+    "metadata": {
+      "title": "Paper Cuts"
+    },
+    "system_announcer": {
+      "name": "System Announcer",
+      "tone": "hostile corporate game-show host"
+    },
+    "home_base": {
+      "name": "Break Room Safe Zone",
+      "summary": "A barely legal sanctuary with vending-machine politics."
+    }
+  },
   "injected_beats": [
     "The cursed stapler must appear before the first SYSTEM alert.",
     "The copier demands tribute and prints a forbidden map.",

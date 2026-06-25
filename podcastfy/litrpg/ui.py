@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import mimetypes
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,8 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from podcastfy.litrpg import library as episode_library
 from podcastfy.litrpg.settings import (
     DEFAULT_SETTINGS_PATH,
+    get_provider_api_key,
+    load_litrpg_settings,
     redacted_litrpg_settings_status,
     save_litrpg_settings,
 )
@@ -111,6 +114,12 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
                 return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/api/library":
             return self._send_json({"library": list_library()})
+        if parsed.path == "/api/series-package":
+            params = parse_qs(parsed.query)
+            try:
+                return self._send_json(series_package_response(params.get("series_id", [""])[0]))
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/audio":
             try:
                 return self._serve_audio(parsed.query)
@@ -139,6 +148,13 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
                     {"ok": True, "job": serialize_job(job)},
                     HTTPStatus.ACCEPTED,
                 )
+            if parsed.path == "/api/series-package":
+                result = save_series_package_request(payload)
+                return self._send_json(result)
+            if parsed.path == "/api/series-package/generate":
+                result = generate_series_package_request(payload)
+                status = HTTPStatus.OK if result.get("ok", True) else HTTPStatus.SERVICE_UNAVAILABLE
+                return self._send_json(result, status)
             self.send_error(HTTPStatus.NOT_FOUND)
         except ValueError as exc:
             self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -195,6 +211,168 @@ def settings_status() -> dict[str, Any]:
 def write_settings(payload: dict[str, Any]) -> None:
     """Write allowed local settings fields to the local ignored settings file."""
     save_litrpg_settings(payload, SETTINGS_PATH)
+
+
+def series_package_response(series_id: str) -> dict[str, Any]:
+    """Return package readiness and saved package content for a series."""
+    safe_series_id = _safe_series_id(series_id)
+    package = load_series_package(safe_series_id)
+    return _series_package_payload(safe_series_id, package)
+
+
+def save_series_package_request(payload: dict[str, Any]) -> dict[str, Any]:
+    """Save a series package JSON payload from the local UI."""
+    series_id = _safe_series_id(str(payload.get("series_id") or ""))
+    package = payload.get("package")
+    if not isinstance(package, dict):
+        package = {
+            "schema_version": "ui-draft-v1",
+            "series_id": series_id,
+            "metadata": {"source": "ui"},
+            "premise": str(payload.get("premise") or "").strip(),
+            "baseline_text": str(payload.get("baseline_text") or "").strip(),
+            "system_announcer": {},
+            "characters": [],
+            "familiar": {},
+            "home_base": {},
+            "floor_rules": {},
+            "faction_map": {},
+        }
+    saved = save_series_package(series_id, package)
+    return _series_package_payload(series_id, saved, ok=True)
+
+
+def generate_series_package_request(payload: dict[str, Any]) -> dict[str, Any]:
+    """Generate and optionally save a series package when the generator is installed."""
+    series_id = _safe_series_id(str(payload.get("series_id") or ""))
+    premise = str(payload.get("premise") or "").strip()
+    baseline_text = str(payload.get("baseline_text") or "").strip()
+    if not premise:
+        raise ValueError("premise is required")
+    try:
+        generated = generate_series_package(
+            series_id=series_id,
+            premise=premise,
+            baseline_text=baseline_text,
+            storage_dir=DATA_DIR,
+        )
+    except RuntimeError as exc:
+        return {
+            "ok": False,
+            "series_id": series_id,
+            "status": "generator_unavailable",
+            "error": str(exc),
+            "modules": package_module_status(),
+        }
+    if not isinstance(generated, dict):
+        raise ValueError("Package generator must return a JSON object")
+    if payload.get("save", True):
+        generated = save_series_package(series_id, generated)
+    return _series_package_payload(series_id, generated, ok=True, status="generated")
+
+
+def load_series_package(series_id: str) -> dict[str, Any] | None:
+    """Load a series package through Worker A helpers when available, else fallback."""
+    path = _series_package_path(series_id)
+    if not path.exists():
+        return None
+    package_module = _optional_module("podcastfy.litrpg.packages")
+    if package_module is not None:
+        loader = getattr(package_module, "load_series_package", None)
+        if callable(loader):
+            return _package_to_dict(_call_package_helper(loader, series_id))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Saved series package must be a JSON object")
+    return data
+
+
+def save_series_package(series_id: str, package: dict[str, Any]) -> dict[str, Any]:
+    """Save a series package through Worker A helpers when available, else fallback."""
+    package_module = _optional_module("podcastfy.litrpg.packages")
+    if package_module is not None:
+        saver = getattr(package_module, "save_series_package", None)
+        if callable(saver):
+            saved = _call_package_helper(saver, series_id, package)
+            if saved is not None:
+                return _package_to_dict(saved) or package
+            loaded = load_series_package(series_id)
+            if loaded is not None:
+                return loaded
+    path = _series_package_path(series_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = dict(package)
+    normalized.setdefault("schema_version", "ui-draft-v1")
+    normalized.setdefault("series_id", series_id)
+    path.write_text(
+        json.dumps(normalized, ensure_ascii=True, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return normalized
+
+
+def generate_series_package(
+    *,
+    series_id: str,
+    premise: str,
+    baseline_text: str = "",
+    storage_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Call the package generator with the configured local generation provider."""
+    generator_module = _optional_module("podcastfy.litrpg.package_generator")
+    generator = getattr(generator_module, "generate_series_package", None) if generator_module else None
+    if not callable(generator):
+        raise RuntimeError("Series package generator is not installed yet")
+    settings = load_litrpg_settings(SETTINGS_PATH)
+    provider = str(settings.get("default_generation_provider") or "openai").lower()
+    if provider != "openai":
+        raise RuntimeError(f"Series package generation currently supports openai, not {provider!r}")
+    api_key = get_provider_api_key("openai", settings)
+    if not api_key:
+        raise RuntimeError(
+            "Series package generator is not installed or OpenAI API key is not configured"
+        )
+    from podcastfy.litrpg.llm import OpenAIResponsesGenerator
+
+    llm = OpenAIResponsesGenerator(
+        api_key=api_key,
+        model=str(settings.get("default_model") or "gpt-5.5"),
+        reasoning_effort="low",
+        verbosity="medium",
+    )
+    for kwargs in (
+        {
+            "series_id": series_id,
+            "premise": premise,
+            "baseline_text": baseline_text,
+            "llm": llm,
+            "storage_dir": storage_dir or DATA_DIR,
+            "save": False,
+        },
+        {
+            "series_id": series_id,
+            "premise": premise,
+            "baseline_text": baseline_text,
+            "llm": llm,
+        },
+        {"premise": premise, "baseline_text": baseline_text, "llm": llm},
+    ):
+        try:
+            return generator(**kwargs)
+        except TypeError:
+            continue
+    raise RuntimeError("Series package generator is not installed or has an unsupported signature")
+
+
+def package_module_status() -> dict[str, Any]:
+    """Return package helper/generator readiness without importing secrets or providers."""
+    packages_module = _optional_module("podcastfy.litrpg.packages")
+    generator_module = _optional_module("podcastfy.litrpg.package_generator")
+    return {
+        "packages": packages_module is not None,
+        "generator": generator_module is not None
+        and callable(getattr(generator_module, "generate_series_package", None)),
+    }
 
 
 def list_tasks() -> list[dict[str, str]]:
@@ -495,6 +673,158 @@ def resolve_audio_request(params: dict[str, list[str]]) -> Path:
             raise ValueError("Audio file does not exist")
         return resolve_audio_path(audio_path)
     return resolve_audio_path(params.get("path", [""])[0])
+
+
+def _series_package_payload(
+    series_id: str,
+    package: Any | None,
+    *,
+    ok: bool = True,
+    status: str | None = None,
+) -> dict[str, Any]:
+    package_path = _series_package_path(series_id)
+    package_payload = _package_to_dict(package)
+    exists = package_payload is not None
+    return {
+        "ok": ok,
+        "series_id": series_id,
+        "status": status or ("ready" if exists else "missing"),
+        "available": exists,
+        "package": package_payload,
+        "summary": summarize_series_package(package_payload),
+        "path": _display_path(package_path),
+        "modules": package_module_status(),
+    }
+
+
+def summarize_series_package(package: Any | None) -> str:
+    """Return a compact human-readable summary for diagnostics and copying."""
+    package_payload = _package_to_dict(package)
+    if not package_payload:
+        return ""
+    package_module = _optional_module("podcastfy.litrpg.packages")
+    if package_module is not None:
+        for name in ("format_series_package_summary", "format_package_summary", "package_prompt_summary", "summarize_series_package"):
+            formatter = getattr(package_module, name, None)
+            if callable(formatter):
+                try:
+                    value = formatter(package_payload)
+                except TypeError:
+                    continue
+                return str(value)
+
+    pieces = []
+    metadata = package_payload.get("metadata")
+    if isinstance(metadata, dict):
+        if metadata.get("title"):
+            pieces.append(f"Title: {metadata['title']}")
+        if metadata.get("logline"):
+            pieces.append(f"Logline: {metadata['logline']}")
+    announcer = package_payload.get("system_announcer")
+    if isinstance(announcer, dict):
+        name = announcer.get("name") or announcer.get("role") or "System Announcer"
+        tone = announcer.get("tone") or announcer.get("voice") or announcer.get("style")
+        pieces.append(f"{name}: {tone}" if tone else str(name))
+    characters = package_payload.get("characters")
+    if isinstance(characters, list) and characters:
+        names = [
+            str(item.get("name") or item.get("role"))
+            for item in characters
+            if isinstance(item, dict) and (item.get("name") or item.get("role"))
+        ]
+        if names:
+            pieces.append("Characters: " + ", ".join(names[:8]))
+    familiar = package_payload.get("familiar")
+    if isinstance(familiar, dict) and (familiar.get("name") or familiar.get("role")):
+        pieces.append(f"Familiar: {familiar.get('name') or familiar.get('role')}")
+    home_base = package_payload.get("home_base")
+    if isinstance(home_base, dict) and (home_base.get("name") or home_base.get("type")):
+        pieces.append(f"Home base: {home_base.get('name') or home_base.get('type')}")
+    floor_rules = package_payload.get("floor_rules")
+    if isinstance(floor_rules, dict):
+        rule_count = len(floor_rules.get("rules", [])) if isinstance(floor_rules.get("rules"), list) else len(floor_rules)
+        if rule_count:
+            pieces.append(f"Floor rules: {rule_count}")
+    faction_map = package_payload.get("faction_map")
+    if isinstance(faction_map, dict):
+        faction_count = len(faction_map.get("factions", [])) if isinstance(faction_map.get("factions"), list) else len(faction_map)
+        if faction_count:
+            pieces.append(f"Factions: {faction_count}")
+    return "\n".join(pieces)
+
+
+def _series_package_path(series_id: str) -> Path:
+    return DATA_DIR / "series" / _safe_series_id(series_id) / "series_package.json"
+
+
+def _safe_series_id(series_id: str) -> str:
+    value = str(series_id or "").strip()
+    if not value:
+        raise ValueError("series_id is required")
+    path = Path(value)
+    if value in {"", ".", ".."} or path.name != value:
+        raise ValueError(f"Unsafe path segment: {value}")
+    return value
+
+
+def _optional_module(name: str) -> Any | None:
+    try:
+        return importlib.import_module(name)
+    except ModuleNotFoundError as exc:
+        if exc.name == name:
+            return None
+        raise
+
+
+def _package_to_dict(package: Any | None) -> dict[str, Any] | None:
+    if package is None:
+        return None
+    if isinstance(package, dict):
+        return package
+    package_module = _optional_module("podcastfy.litrpg.packages")
+    converter = getattr(package_module, "series_package_to_dict", None) if package_module else None
+    if callable(converter):
+        try:
+            value = converter(package)
+        except (TypeError, ValueError):
+            value = None
+        if isinstance(value, dict):
+            return value
+    if is_dataclass(package):
+        value = asdict(package)
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def _call_package_helper(
+    helper: Any,
+    series_id: str,
+    package: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    attempts = []
+    if package is None:
+        attempts = [
+            ((), {"series_id": series_id, "storage_dir": DATA_DIR}),
+            ((), {"storage_dir": DATA_DIR, "series_id": series_id}),
+            ((series_id,), {"storage_dir": DATA_DIR}),
+            ((DATA_DIR, series_id), {}),
+        ]
+    else:
+        normalized = dict(package)
+        normalized.setdefault("series_id", series_id)
+        attempts = [
+            ((), {"storage_dir": DATA_DIR, "package": normalized}),
+            ((), {"package": normalized, "storage_dir": DATA_DIR}),
+            ((DATA_DIR, normalized), {}),
+            ((series_id, normalized), {"storage_dir": DATA_DIR}),
+            ((DATA_DIR, series_id, normalized), {}),
+        ]
+    for args, kwargs in attempts:
+        try:
+            return helper(*args, **kwargs)
+        except TypeError:
+            continue
+    raise RuntimeError("Series package helper has an unsupported signature")
 
 
 def _episode_payload(episode: dict[str, Any]) -> dict[str, Any]:

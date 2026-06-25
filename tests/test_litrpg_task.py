@@ -196,6 +196,22 @@ def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(
             ),
         ),
     )
+    series_dir.mkdir(parents=True, exist_ok=True)
+    (series_dir / "series_package.json").write_text(
+        json.dumps(
+            {
+                "premise": "Office workers survive dungeon performance reviews.",
+                "metadata": {
+                    "title": "Paper Cuts",
+                },
+                "system_announcer": {
+                    "name": "System Announcer",
+                    "tone": "hostile corporate game-show host",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     task_path = tmp_path / "chapter_task.json"
     task_path.write_text(
         json.dumps(
@@ -221,6 +237,8 @@ def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(
 
     assert result == {"mode": "chapter", "series_id": "paper-cuts"}
     assert "Hero promised never to trust elevators." in captured["story_bible_summary"]
+    assert "Office workers survive dungeon performance reviews." in captured["series_package_summary"]
+    assert "hostile corporate game-show host" in captured["series_package_summary"]
     assert captured["mechanics_context"]["inventory"] == ["mana flask"]
     assert captured["mechanics_context"]["skills"] == ["Paper Cut"]
     assert captured["mechanics_context"]["class"] == "Intern"

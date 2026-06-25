@@ -140,6 +140,36 @@
       </section>
 
       <section class="panel">
+        <div class="section-heading">
+          <h2>Series Package</h2>
+          <p>Build or review the reusable style bible before chapter generation.</p>
+        </div>
+        <form id="package-form" class="grid-form package-form">
+          <label>
+            Series ID
+            <input name="package_series_id" type="text" placeholder="paper-cuts">
+          </label>
+          <label class="wide">
+            Baseline package text
+            <textarea name="baseline_text" rows="5" placeholder="Paste announcer package, voice notes, class ideas, factions, or other baseline material."></textarea>
+          </label>
+          <div class="actions package-actions">
+            <button id="load-package" type="button">Load Package</button>
+            <button id="save-package" type="button">Save Draft</button>
+            <button id="generate-package" type="button">Generate Package</button>
+            <button id="copy-package" type="button">Copy Package JSON</button>
+          </div>
+        </form>
+        <div id="package-status" class="status-list"></div>
+        <div class="output-header">
+          <h3>Package Summary</h3>
+          <p>Reusable context for announcer, characters, home base, floor rules, and factions.</p>
+        </div>
+        <pre id="package-summary" class="output small-output" aria-live="polite"></pre>
+        <pre id="package-output" class="output package-output" aria-live="polite"></pre>
+      </section>
+
+      <section class="panel">
         <h2>Tasks</h2>
         <div class="task-row">
           <select id="task-select"></select>

@@ -17,6 +17,13 @@ from podcastfy.litrpg.library import list_episodes, list_regenerable_parts, list
 from podcastfy.litrpg.library import mark_episode_status
 from podcastfy.litrpg.llm import OpenAIResponsesGenerator
 from podcastfy.litrpg.mechanics import extract_mechanics_events, validate_mechanics
+from podcastfy.litrpg.package_generator import build_series_package_prompt
+from podcastfy.litrpg.package_generator import coerce_series_package
+from podcastfy.litrpg.package_generator import extract_series_package_json
+from podcastfy.litrpg.package_generator import format_series_package_summary
+from podcastfy.litrpg.package_generator import generate_series_package
+from podcastfy.litrpg.package_generator import save_generated_series_package
+from podcastfy.litrpg.package_generator import validate_series_package
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.qa import build_chapter_qa, parse_part_qa_artifacts
@@ -63,14 +70,19 @@ __all__ = [
     "build_local_sfx_prompt",
     "build_mix_plan",
     "build_role_tts_instructions",
+    "build_series_package_prompt",
     "cast_plan_from_mapping",
+    "coerce_series_package",
     "create_generation_request",
     "delete_episode",
     "export_voices_for_litrpg_config",
     "extract_mechanics_events",
+    "extract_series_package_json",
     "find_bundle_by_cache_key",
     "format_story_bible_summary",
+    "format_series_package_summary",
     "generate_audition_script",
+    "generate_series_package",
     "generate_sfx_candidate",
     "generate_litrpg_audio_episode",
     "generate_litrpg_chapter",
@@ -99,6 +111,7 @@ __all__ = [
     "promote_generated_asset_request",
     "run_litrpg_task",
     "save_asset_manifest_file",
+    "save_generated_series_package",
     "save_series_state",
     "save_story_bible",
     "scan_asset_directory",
@@ -108,6 +121,7 @@ __all__ = [
     "validate_asset_manifest",
     "validate_mechanics",
     "validate_mix_plan",
+    "validate_series_package",
     "validate_cast_plan",
 ]
 

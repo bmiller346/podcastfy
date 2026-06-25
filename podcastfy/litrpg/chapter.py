@@ -16,12 +16,14 @@ from podcastfy.litrpg.production import ChapterPart
 from podcastfy.litrpg.production import build_chapter_part_prompt
 from podcastfy.litrpg.production import build_chapter_plan
 from podcastfy.litrpg.production import build_chapter_review_prompt
+from podcastfy.litrpg.production import build_description_audit_prompt
 from podcastfy.litrpg.production import build_director_pass_prompt
 from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt
 from podcastfy.litrpg.production import build_part_revision_prompt
 from podcastfy.litrpg.production import build_showmanship_audit_prompt
 from podcastfy.litrpg.production import build_tonal_audit_prompt
+from podcastfy.litrpg.production import build_visual_state_extraction_prompt
 from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
 from podcastfy.litrpg.sfx import parse_cue_sheet
@@ -56,6 +58,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     locked_part_scripts = _mapping_or_none(task.get("locked_part_scripts")) or {}
     target_tone = str(task.get("tone") or task.get("target_tone") or "")
     story_bible_summary = str(task.get("story_bible_summary") or "")
+    series_package_summary = _series_package_summary_from_task(task)
     mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
     checkpoint_dir = _checkpoint_dir(task)
@@ -68,6 +71,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             part=part,
             prior_parts_summary=_prior_parts_summary(generated_parts),
             story_bible_summary=story_bible_summary,
+            series_package_summary=series_package_summary,
         )
         locked_script = locked_part_scripts.get(part.part_id)
         script = (
@@ -87,6 +91,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         director_tags = ""
         mechanics_audit_prompt = ""
         mechanics_audit = ""
+        description_audit_prompt = ""
+        description_audit = ""
         tonal_audit_prompt = ""
         tonal_audit = ""
         showmanship_audit_prompt = ""
@@ -102,6 +108,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             review_prompt = build_part_review_prompt(
                 part_script=script,
                 required_roles=part.required_roles,
+                series_package_summary=series_package_summary,
             )
             review = _generate_with_retry(
                 llm,
@@ -112,6 +119,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             director_prompt = build_director_pass_prompt(
                 part_script=script,
                 required_roles=part.required_roles,
+                series_package_summary=series_package_summary,
             )
             director_tags = _generate_with_retry(
                 llm,
@@ -124,11 +132,22 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 chapter_premise=premise,
                 prior_parts_summary=_prior_parts_summary(generated_parts),
                 story_bible_summary=story_bible_summary,
+                series_package_summary=series_package_summary,
             )
             mechanics_audit = _generate_with_retry(
                 llm,
                 prompt=mechanics_audit_prompt,
                 stage=f"mechanics:{part.part_id}",
+                retry_options=retry_options,
+            )
+            description_audit_prompt = build_description_audit_prompt(
+                part_script=script,
+                story_bible_summary=story_bible_summary,
+            )
+            description_audit = _generate_with_retry(
+                llm,
+                prompt=description_audit_prompt,
+                stage=f"description:{part.part_id}",
                 retry_options=retry_options,
             )
             tonal_audit_prompt = build_tonal_audit_prompt(
@@ -156,6 +175,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                     tonal_audit=tonal_audit,
                     showmanship_audit=showmanship_audit,
                     required_roles=part.required_roles,
+                    description_audit=description_audit,
+                    series_package_summary=series_package_summary,
                 )
                 revised_script = _generate_with_retry(
                     llm,
@@ -186,6 +207,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "director_tags": director_tags,
             "mechanics_audit_prompt": mechanics_audit_prompt,
             "mechanics_audit": mechanics_audit,
+            "description_audit_prompt": description_audit_prompt,
+            "description_audit": description_audit,
             "tonal_audit_prompt": tonal_audit_prompt,
             "tonal_audit": tonal_audit,
             "showmanship_audit_prompt": showmanship_audit_prompt,
@@ -214,6 +237,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         chapter_review_prompt = build_chapter_review_prompt(
             part_scripts=part_scripts,
             cast_roles=plan.cast_roles,
+            series_package_summary=series_package_summary,
         )
         chapter_review = _generate_with_retry(
             llm,
@@ -223,6 +247,19 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         )
 
     combined_script = _combine_part_scripts(generated_parts)
+    visual_state_update_prompt = ""
+    visual_state_update = ""
+    if reviews_enabled:
+        visual_state_update_prompt = build_visual_state_extraction_prompt(
+            final_script=combined_script,
+            story_bible_summary=story_bible_summary,
+        )
+        visual_state_update = _generate_with_retry(
+            llm,
+            prompt=visual_state_update_prompt,
+            stage="visual_state_update",
+            retry_options=retry_options,
+        )
     cue_sheet = parse_cue_sheet(combined_script)
     asset_mappings = map_assets_for_cue_sheet(cue_sheet)
     mix_plan = build_mix_plan(cue_sheet, asset_mappings=asset_mappings)
@@ -243,6 +280,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "target_minutes": target_minutes,
             "injected_beats": injected_beats,
             "story_bible_summary": story_bible_summary,
+            "series_package_summary": series_package_summary,
             "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),
@@ -252,6 +290,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "parts": generated_parts,
         "chapter_review_prompt": chapter_review_prompt,
         "chapter_review": chapter_review,
+        "visual_state_update_prompt": visual_state_update_prompt,
+        "visual_state_update": visual_state_update,
         "qa": qa,
         "combined_script": combined_script,
         "render": {
@@ -517,6 +557,81 @@ def _combine_part_scripts(parts: Sequence[Mapping[str, Any]]) -> str:
         script = str(part.get("revised_script") or part["script"])
         sections.append(f"<!-- {part['part_id']}: {part['title']} -->\n{script}")
     return "\n\n".join(sections).strip()
+
+
+def _series_package_summary_from_task(task: Mapping[str, Any]) -> str:
+    summary = str(task.get("series_package_summary") or "").strip()
+    if summary:
+        return summary
+    package = task.get("series_package")
+    if not isinstance(package, Mapping):
+        return ""
+    return _format_series_package_summary(package)
+
+
+def _format_series_package_summary(package: Mapping[str, Any]) -> str:
+    try:
+        from podcastfy.litrpg.packages import format_series_package_summary
+
+        return str(format_series_package_summary(package)).strip()
+    except Exception:
+        pass
+
+    lines: list[str] = []
+    metadata = package.get("metadata")
+    if isinstance(metadata, Mapping):
+        title = metadata.get("title") or metadata.get("series_title")
+        logline = metadata.get("logline")
+        if title:
+            lines.append(f"Title: {title}")
+        if logline:
+            lines.append(f"Logline: {logline}")
+
+    system = package.get("system_announcer")
+    if isinstance(system, Mapping):
+        lines.append(_named_package_line("System announcer", system))
+
+    characters = package.get("characters") or package.get("character_packages")
+    if isinstance(characters, Mapping):
+        character_lines = [
+            _named_package_line(str(name), value)
+            for name, value in characters.items()
+            if isinstance(value, Mapping)
+        ]
+        if character_lines:
+            lines.append("Characters: " + "; ".join(character_lines))
+
+    for key, label in (
+        ("familiar", "Familiar"),
+        ("home_base", "Home base"),
+        ("floor_rules", "Floor rules"),
+        ("faction_map", "Faction map"),
+    ):
+        value = package.get(key)
+        if isinstance(value, Mapping):
+            lines.append(_named_package_line(label, value))
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            values = [str(item) for item in value if str(item).strip()]
+            if values:
+                lines.append(f"{label}: {', '.join(values[:5])}")
+
+    return "\n".join(line for line in lines if line).strip()
+
+
+def _named_package_line(label: str, value: Mapping[str, Any]) -> str:
+    pieces = []
+    name = value.get("name") or value.get("title")
+    if name:
+        pieces.append(str(name))
+    for key in ("voice", "tone", "role", "purpose", "summary", "rules"):
+        raw = value.get(key)
+        if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+            compact = ", ".join(str(item) for item in raw[:3])
+        else:
+            compact = str(raw or "")
+        if compact:
+            pieces.append(compact)
+    return f"{label}: {' | '.join(pieces)}" if pieces else f"{label}: configured"
 
 
 def _mapping_or_none(value: Any) -> Mapping[str, Any] | None:

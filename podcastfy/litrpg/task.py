@@ -11,6 +11,7 @@ from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
 from podcastfy.litrpg.llm import OpenAIResponsesGenerator
+from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
@@ -190,6 +191,16 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         if not chapter_task.get("story_bible_summary"):
             bible = load_story_bible(storage_dir, series_id)
             chapter_task["story_bible_summary"] = format_story_bible_summary(bible)
+    if not chapter_task.get("series_package_summary"):
+        summary = _series_package_summary_from_task(
+            base_dir,
+            task,
+            storage_dir=storage_dir,
+            series_id=series_id,
+        )
+        if summary:
+            chapter_task["series_package_summary"] = summary
+    if storage_dir is not None:
         explicit_mechanics = task.get("mechanics_context")
         if explicit_mechanics is not None and not isinstance(explicit_mechanics, Mapping):
             raise ValueError("mechanics_context must be a JSON object")
@@ -200,6 +211,59 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
             **dict(explicit_mechanics or {}),
         }
     return chapter_task
+
+
+def _series_package_summary_from_task(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    *,
+    storage_dir: Path | None,
+    series_id: str,
+) -> str:
+    summary = str(task.get("series_package_summary") or "").strip()
+    if summary:
+        return summary
+
+    package = task.get("series_package")
+    if package is not None:
+        if not isinstance(package, Mapping):
+            raise ValueError("series_package must be a JSON object")
+        return format_series_package_summary(package)
+
+    package_path_value = (
+        task.get("series_package_path")
+        or task.get("series_package_file")
+        or task.get("package_path")
+    )
+    if package_path_value:
+        package_path = _resolve_task_path(base_dir, package_path_value)
+        return format_series_package_summary(_load_series_package_file(package_path))
+
+    if storage_dir is None:
+        return ""
+
+    default_path = storage_dir / "series" / series_id / "series_package.json"
+    if not default_path.exists():
+        return ""
+
+    try:
+        from podcastfy.litrpg.packages import load_series_package
+
+        loaded = load_series_package(storage_dir, series_id)
+        if loaded:
+            return format_series_package_summary(loaded)
+    except Exception:
+        pass
+
+    return format_series_package_summary(_load_series_package_file(default_path))
+
+
+def _load_series_package_file(path: Path) -> Mapping[str, Any]:
+    with path.open("r", encoding="utf-8") as package_file:
+        package = json.load(package_file)
+    if not isinstance(package, Mapping):
+        raise ValueError("series_package file must contain a JSON object")
+    return package
 
 
 def _save_chapter_state_if_requested(

@@ -126,6 +126,7 @@ def build_chapter_part_prompt(
     part: ChapterPart,
     prior_parts_summary: str = "",
     story_bible_summary: str = "",
+    series_package_summary: str = "",
 ) -> str:
     roles = ", ".join(part.required_roles)
     cast = "\n".join(
@@ -155,6 +156,9 @@ Prior parts summary:
 Story bible continuity:
 {story_bible_summary or "No separate story bible is available yet."}
 
+Series package context:
+{series_package_summary or "No separate series package is available yet."}
+
 Requirements:
 - Use XML-style role blocks only, for example <HERO>...</HERO>.
 - Do not collapse the cast into narrator monologue. Let characters speak.
@@ -165,11 +169,19 @@ Requirements:
 """
 
 
-def build_part_review_prompt(*, part_script: str, required_roles: Sequence[str]) -> str:
+def build_part_review_prompt(
+    *,
+    part_script: str,
+    required_roles: Sequence[str],
+    series_package_summary: str = "",
+) -> str:
     roles = ", ".join(required_roles)
     return f"""Review this LitRPG audio script part before it is rendered.
 
 Required roles: {roles}
+
+Series package context:
+{series_package_summary or "No separate series package is available yet."}
 
 Check for:
 - Missing required role voices.
@@ -186,11 +198,19 @@ Script:
 """
 
 
-def build_director_pass_prompt(*, part_script: str, required_roles: Sequence[str]) -> str:
+def build_director_pass_prompt(
+    *,
+    part_script: str,
+    required_roles: Sequence[str],
+    series_package_summary: str = "",
+) -> str:
     roles = ", ".join(required_roles)
     return f"""Mark performance intent for this LitRPG audio script part.
 
 Required roles: {roles}
+
+Series package context:
+{series_package_summary or "No separate series package is available yet."}
 
 Do not rewrite the prose. Add production intent only.
 
@@ -216,6 +236,7 @@ def build_mechanics_audit_prompt(
     chapter_premise: str,
     prior_parts_summary: str = "",
     story_bible_summary: str = "",
+    series_package_summary: str = "",
 ) -> str:
     return f"""Audit LitRPG mechanics credibility for this chapter part.
 
@@ -225,6 +246,9 @@ Prior parts summary:
 
 Story bible continuity:
 {story_bible_summary or "No separate story bible is available yet."}
+
+Series package context:
+{series_package_summary or "No separate series package is available yet."}
 
 Check:
 - XP totals, loot, inventory, cooldowns, class abilities, stats, quests, and status effects.
@@ -240,6 +264,73 @@ Return:
 
 Script:
 {part_script}
+"""
+
+
+def build_description_audit_prompt(
+    *,
+    part_script: str,
+    story_bible_summary: str = "",
+) -> str:
+    return f"""Audit physical description and character visual continuity for this LitRPG chapter part.
+
+Story bible continuity:
+{story_bible_summary or "No separate story bible is available yet."}
+
+Check as hard constraints, not optional polish:
+- Are static visual anchors, current injuries, fatigue markers, gear condition, and absurd traits respected?
+- Does at least one physical limitation or gear state affect a choice, movement, joke, or consequence?
+- Are emotions shown through body, posture, voice texture, gear behavior, or environmental contact before being named?
+- Does description develop character or plot instead of decorating the scene?
+- Are recurring visual jokes reused with variation rather than copy-pasted?
+- Does any item appear pristine after prior damage or disrepair?
+
+Return compact JSON when possible:
+{{
+  "verdict": "pass|revise|block",
+  "score": 1-10,
+  "checks": {{
+    "anchors_used": true,
+    "degradation_respected": true,
+    "physical_choice_consequence": true,
+    "emotion_shown_physically": true,
+    "visual_joke_callback": true
+  }},
+  "blocking_issues": [],
+  "fixes": []
+}}
+
+Do not rewrite the script. Give strict director notes for revision.
+
+Script:
+{part_script}
+"""
+
+
+def build_visual_state_extraction_prompt(
+    *,
+    final_script: str,
+    story_bible_summary: str = "",
+) -> str:
+    return f"""Extract updates for the character and visual continuity bible from this finalized LitRPG script.
+
+Existing story bible continuity:
+{story_bible_summary or "No separate story bible is available yet."}
+
+Return only JSON compatible with the StoryBible shape. Capture new or changed:
+- visual_anchors_static
+- visual_anchors_dynamic
+- current_injuries
+- fatigue_markers
+- equipped_gear
+- gear_absurd_traits
+- description_rules
+- wounds, traumas, running_jokes, rivalries, unresolved_promises, favorite_insults, never_contradict_facts, voice_rules
+
+Do not remove existing facts. Do not invent facts not supported by the script.
+
+Final script:
+{final_script}
 """
 
 
@@ -297,11 +388,16 @@ def build_part_revision_prompt(
     tonal_audit: str,
     showmanship_audit: str,
     required_roles: Sequence[str],
+    description_audit: str = "",
+    series_package_summary: str = "",
 ) -> str:
     roles = ", ".join(required_roles)
     return f"""Revise this LitRPG audio script part for render readiness.
 
 Allowed role tags: {roles}
+
+Series package context:
+{series_package_summary or "No separate series package is available yet."}
 
 Use the review material below as constraints, not as decorative notes.
 Preserve strong jokes, character choices, and continuity. Fix blocking issues.
@@ -315,6 +411,9 @@ Director pass:
 Mechanics audit:
 {mechanics_audit}
 
+Description and character audit:
+{description_audit or "No description audit was run."}
+
 Tonal audit:
 {tonal_audit}
 
@@ -326,12 +425,20 @@ Draft script:
 """
 
 
-def build_chapter_review_prompt(*, part_scripts: Sequence[str], cast_roles: Mapping[str, str]) -> str:
+def build_chapter_review_prompt(
+    *,
+    part_scripts: Sequence[str],
+    cast_roles: Mapping[str, str],
+    series_package_summary: str = "",
+) -> str:
     cast = ", ".join(cast_roles)
     scripts = "\n\n".join(part_scripts)
     return f"""Review the completed LitRPG audio chapter as a produced audio drama.
 
 Cast roles available: {cast}
+
+Series package context:
+{series_package_summary or "No separate series package is available yet."}
 
 Check:
 - Character voice separation across at least 15 distinct roles where applicable.

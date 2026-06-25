@@ -134,6 +134,11 @@ label {
   grid-column: 1 / -1;
 }
 
+.package-form .wide,
+.package-actions {
+  grid-column: 1 / -1;
+}
+
 .task-form .toggle {
   display: flex;
   align-items: center;
@@ -150,6 +155,12 @@ label {
 
 .task-actions {
   justify-content: flex-end;
+}
+
+.package-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .output-header {
@@ -219,6 +230,15 @@ label {
 
 .diagnostics-output {
   max-height: 360px;
+}
+
+.package-output {
+  max-height: 420px;
+}
+
+.small-output {
+  min-height: 52px;
+  max-height: 140px;
 }
 
 .task-row {
@@ -361,7 +381,16 @@ audio {
   }
 
   .task-form .toggle,
-  .task-actions {
+  .task-actions,
+  .package-actions {
     padding-top: 0;
+  }
+
+  .package-actions {
+    justify-content: stretch;
+  }
+
+  .package-actions button {
+    width: 100%;
   }
 }

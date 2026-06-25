@@ -86,6 +86,152 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="diagnostics-summary"' in html
     assert 'id="diagnostics-output"' in html
     assert 'id="copy-diagnostics"' in html
+    assert 'id="package-form"' in html
+    assert 'name="package_series_id"' in html
+    assert 'name="baseline_text"' in html
+    assert 'id="load-package"' in html
+    assert 'id="save-package"' in html
+    assert 'id="generate-package"' in html
+    assert 'id="copy-package"' in html
+    assert 'id="package-output"' in html
+
+
+def test_series_package_save_and_load_uses_local_storage_fallback(ui_server, ui_roots):
+    package = {
+        "schema_version": "test-v1",
+        "series_id": "catamaran-crawlers",
+        "system_announcer": {"name": "System", "tone": "hostile marina bureaucrat"},
+        "characters": [{"name": "Edward"}, {"name": "Kelli"}],
+        "familiar": {"name": "Pedro"},
+        "home_base": {"name": "The Marsh Boat"},
+        "floor_rules": {"rules": ["No refunds."]},
+        "faction_map": {"factions": [{"name": "Dockside Compact"}]},
+    }
+
+    save_status, save_data = request_json(
+        ui_server,
+        "POST",
+        "/api/series-package",
+        {"series_id": "catamaran-crawlers", "package": package},
+    )
+    load_status, load_data = request_json(
+        ui_server,
+        "GET",
+        "/api/series-package?series_id=catamaran-crawlers",
+    )
+    package_path = (
+        ui_roots
+        / "data"
+        / "litrpg"
+        / "series"
+        / "catamaran-crawlers"
+        / "series_package.json"
+    )
+
+    assert save_status == 200
+    assert save_data["available"] is True
+    assert save_data["modules"]["packages"] is True
+    assert "System: tone: hostile marina bureaucrat" in save_data["summary"]
+    assert "Edward: character package pending detail" in save_data["summary"]
+    assert "Kelli: character package pending detail" in save_data["summary"]
+    assert load_status == 200
+    assert load_data["package"]["familiar"]["name"] == "Pedro"
+    assert load_data["path"] == "data/litrpg/series/catamaran-crawlers/series_package.json"
+    assert json.loads(package_path.read_text(encoding="utf-8"))["series_id"] == "catamaran-crawlers"
+
+
+def test_series_package_load_missing_returns_readiness_payload(ui_server):
+    status, data = request_json(
+        ui_server,
+        "GET",
+        "/api/series-package?series_id=catamaran-crawlers",
+    )
+
+    assert status == 200
+    assert data["available"] is False
+    assert data["status"] == "missing"
+    assert data["package"] is None
+    assert data["modules"]["generator"] is True
+
+
+def test_series_package_generate_uses_generator_when_available(
+    ui_server, ui_roots, monkeypatch
+):
+    calls = []
+
+    def fake_generate_series_package(*, series_id, premise, baseline_text, storage_dir):
+        calls.append((series_id, premise, baseline_text, storage_dir))
+        return {
+            "schema_version": "generated-v1",
+            "series_id": series_id,
+            "premise": premise,
+            "system_announcer": {"name": "Announcer", "tone": baseline_text},
+            "characters": [{"name": "Edward"}],
+        }
+
+    monkeypatch.setattr(ui, "generate_series_package", fake_generate_series_package)
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/series-package/generate",
+        {
+            "series_id": "catamaran-crawlers",
+            "premise": "Edward and Kelli get absorbed into a dungeon with a boat.",
+            "baseline_text": "fine print against its will",
+        },
+    )
+    saved = json.loads(
+        (
+            ui_roots
+            / "data"
+            / "litrpg"
+            / "series"
+            / "catamaran-crawlers"
+            / "series_package.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert status == 200
+    assert data["status"] == "generated"
+    assert data["package"]["schema_version"] == 1
+    assert saved["system_announcer"]["tone"] == "fine print against its will"
+    assert calls == [
+        (
+            "catamaran-crawlers",
+            "Edward and Kelli get absorbed into a dungeon with a boat.",
+            "fine print against its will",
+            ui.DATA_DIR,
+        )
+    ]
+
+
+def test_series_package_generate_reports_unavailable_without_generator(ui_server):
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/series-package/generate",
+        {
+            "series_id": "catamaran-crawlers",
+            "premise": "Edward and Kelli get absorbed into a dungeon with a boat.",
+        },
+    )
+
+    assert status == 503
+    assert data["ok"] is False
+    assert data["status"] == "generator_unavailable"
+    assert "not installed" in data["error"]
+
+
+def test_series_package_rejects_unsafe_series_id(ui_server):
+    status, data = request_json(
+        ui_server,
+        "GET",
+        "/api/series-package?series_id=../secret",
+    )
+
+    assert status == 400
+    assert "Unsafe path segment" in data["error"]
 
 
 def wait_for_job(server, job_id, status, timeout=2):

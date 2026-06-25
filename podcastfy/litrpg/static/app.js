@@ -4,6 +4,14 @@ const taskForm = document.querySelector("#task-form");
 const taskSelect = document.querySelector("#task-select");
 const taskOutput = document.querySelector("#task-output");
 const taskPreview = document.querySelector("#task-preview");
+const packageForm = document.querySelector("#package-form");
+const packageStatus = document.querySelector("#package-status");
+const packageSummary = document.querySelector("#package-summary");
+const packageOutput = document.querySelector("#package-output");
+const loadPackageButton = document.querySelector("#load-package");
+const savePackageButton = document.querySelector("#save-package");
+const generatePackageButton = document.querySelector("#generate-package");
+const copyPackageButton = document.querySelector("#copy-package");
 const diagnosticsSummary = document.querySelector("#diagnostics-summary");
 const diagnosticsOutput = document.querySelector("#diagnostics-output");
 const refreshDiagnosticsButton = document.querySelector("#refresh-diagnostics");
@@ -16,6 +24,7 @@ let latestSettings = null;
 let latestTasks = null;
 let latestLibrary = null;
 let latestJob = null;
+let latestPackage = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -60,7 +69,15 @@ function renderTasks(data) {
 function updateTaskPreview() {
   if (!taskForm || !taskPreview) return;
   taskPreview.textContent = JSON.stringify(buildTaskPayload(), null, 2);
+  syncPackageSeriesId();
   updateDiagnostics();
+}
+
+function syncPackageSeriesId() {
+  if (!packageForm || !taskForm) return;
+  const packageField = packageForm.elements.package_series_id;
+  if (!packageField || cleanValue(packageField.value)) return;
+  packageField.value = buildTaskPayload().series_id || "";
 }
 
 function renderLibrary(data) {
@@ -182,6 +199,107 @@ function buildTaskPayload() {
   return task;
 }
 
+function packageSeriesId() {
+  if (!packageForm) return buildTaskPayload().series_id || "local-series";
+  const formData = new FormData(packageForm);
+  return cleanValue(formData.get("package_series_id")) || buildTaskPayload().series_id || "local-series";
+}
+
+function baselinePackageText() {
+  if (!packageForm) return "";
+  const formData = new FormData(packageForm);
+  return cleanValue(formData.get("baseline_text"));
+}
+
+function buildPackageDraft() {
+  const task = buildTaskPayload();
+  const seriesId = packageSeriesId();
+  return {
+    schema_version: "ui-draft-v1",
+    series_id: seriesId,
+    metadata: {
+      source: "ui",
+      updated_at: new Date().toISOString(),
+    },
+    premise: task.premise || "",
+    baseline_text: baselinePackageText(),
+    system_announcer: {},
+    characters: [],
+    familiar: {},
+    home_base: {},
+    floor_rules: {},
+    faction_map: {},
+  };
+}
+
+function renderSeriesPackage(data) {
+  latestPackage = data;
+  if (!packageStatus || !packageSummary || !packageOutput) return;
+  const modules = data.modules || {};
+  const packageState = data.available ? data.status || "ready" : data.status || "missing";
+  packageStatus.innerHTML = [
+    statusItem("Package", packageState),
+    statusItem("Storage helpers", modules.packages ? "available" : "fallback"),
+    statusItem("Generator", modules.generator ? "available" : "unavailable"),
+    statusItem("Path", data.path || ""),
+  ].join("");
+  packageSummary.textContent = data.summary || "No saved package summary yet.";
+  packageOutput.textContent = JSON.stringify(data.package || {}, null, 2);
+  updateDiagnostics();
+}
+
+function statusItem(label, value) {
+  return `<div class="status-item"><strong>${escapeHtml(label)}</strong>: ${escapeHtml(value)}</div>`;
+}
+
+async function loadSeriesPackage() {
+  const seriesId = packageSeriesId();
+  const data = await api(`/api/series-package?series_id=${encodeURIComponent(seriesId)}`);
+  renderSeriesPackage(data);
+  return data;
+}
+
+async function saveSeriesPackage() {
+  const seriesId = packageSeriesId();
+  let packageValue = buildPackageDraft();
+  const currentText = packageOutput ? cleanValue(packageOutput.textContent) : "";
+  if (currentText && currentText !== "{}") {
+    try {
+      const parsed = JSON.parse(currentText);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        packageValue = parsed;
+      }
+    } catch (_error) {
+      packageValue = buildPackageDraft();
+    }
+  }
+  const data = await api("/api/series-package", {
+    method: "POST",
+    body: JSON.stringify({
+      series_id: seriesId,
+      premise: buildTaskPayload().premise || "",
+      baseline_text: baselinePackageText(),
+      package: packageValue,
+    }),
+  });
+  renderSeriesPackage(data);
+  return data;
+}
+
+async function generateSeriesPackage() {
+  const data = await api("/api/series-package/generate", {
+    method: "POST",
+    body: JSON.stringify({
+      series_id: packageSeriesId(),
+      premise: buildTaskPayload().premise || "",
+      baseline_text: baselinePackageText(),
+      save: true,
+    }),
+  });
+  renderSeriesPackage(data);
+  return data;
+}
+
 async function pollJob(jobId) {
   while (true) {
     const data = await api(`/api/jobs/${jobId}`);
@@ -204,12 +322,14 @@ function buildDiagnosticsReport() {
   const premiseAnalysis = analyzePremise(premise);
   const settings = summarizeSettings(latestSettings);
   const librarySummary = summarizeLibrary(latestLibrary);
+  const seriesPackage = summarizeSeriesPackage(latestPackage);
   const job = latestJob ? summarizeJob(latestJob) : null;
   const recommendations = diagnosticRecommendations({
     task,
     premiseAnalysis,
     settings,
     librarySummary,
+    seriesPackage,
     job,
   });
 
@@ -218,6 +338,7 @@ function buildDiagnosticsReport() {
     task,
     premise_analysis: premiseAnalysis,
     settings,
+    series_package: seriesPackage,
     latest_job: job,
     library: librarySummary,
     recommendations,
@@ -238,9 +359,11 @@ function renderDiagnosticsSummary(report) {
     .filter(([, present]) => present)
     .length;
   const audio = report.task.render_audio ? "audio on" : "audio off";
+  const packageState = report.series_package.available ? "ready" : "missing";
   return [
     diagnosticsItem("Readiness", readiness),
     diagnosticsItem("Premise hooks", `${hooks}/7`),
+    diagnosticsItem("Series package", packageState),
     diagnosticsItem("Configured keys", String(configured)),
     diagnosticsItem("Mode", report.task.mode || "episode"),
     diagnosticsItem("Audio", audio),
@@ -323,6 +446,21 @@ function summarizeLibrary(data) {
   };
 }
 
+function summarizeSeriesPackage(data) {
+  const modules = (data && data.modules) || {};
+  return {
+    series_id: data ? data.series_id : "",
+    available: Boolean(data && data.available),
+    status: data ? data.status : "unknown",
+    path: data ? data.path : "",
+    modules: {
+      packages: Boolean(modules.packages),
+      generator: Boolean(modules.generator),
+    },
+    summary: data ? data.summary || "" : "",
+  };
+}
+
 function summarizeJob(job) {
   return {
     job_id: job.job_id,
@@ -335,7 +473,7 @@ function summarizeJob(job) {
   };
 }
 
-function diagnosticRecommendations({ task, premiseAnalysis, settings, job }) {
+function diagnosticRecommendations({ task, premiseAnalysis, settings, seriesPackage, job }) {
   const recommendations = [];
   if (!task.premise) {
     recommendations.push("Add a premise before queueing generation.");
@@ -360,6 +498,12 @@ function diagnosticRecommendations({ task, premiseAnalysis, settings, job }) {
   if (task.render_audio) {
     recommendations.push("For first story tests, consider turning audio off until QA/checkpoints look good.");
   }
+  if (!seriesPackage.available) {
+    recommendations.push("No series package is loaded yet; create or save a package before serious chapter tests.");
+  }
+  if (!seriesPackage.modules.generator) {
+    recommendations.push("Series package generator is unavailable; save a draft package or wait for the generator lane.");
+  }
   if (job && job.error) {
     recommendations.push(`Latest job failed: ${job.error}`);
   }
@@ -377,6 +521,17 @@ async function copyDiagnostics() {
   taskOutput.textContent = text;
 }
 
+async function copyPackageJson() {
+  const text = packageOutput ? packageOutput.textContent : "";
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    await navigator.clipboard.writeText(text);
+    taskOutput.textContent = "Package JSON copied.";
+    return;
+  }
+  taskOutput.textContent = text;
+}
+
 async function refreshAll() {
   const [settings, tasks, episodes] = await Promise.all([
     api("/api/settings"),
@@ -386,6 +541,18 @@ async function refreshAll() {
   renderSettings(settings);
   renderTasks(tasks);
   renderLibrary(episodes);
+  if (packageForm) {
+    await loadSeriesPackage().catch((error) => {
+      renderSeriesPackage({
+        ok: false,
+        series_id: packageSeriesId(),
+        available: false,
+        status: "unavailable",
+        error: error.message,
+        modules: {},
+      });
+    });
+  }
 }
 
 settingsForm.addEventListener("submit", async (event) => {
@@ -403,6 +570,56 @@ settingsForm.addEventListener("submit", async (event) => {
 
 taskForm.addEventListener("input", () => {
   updateTaskPreview();
+});
+
+packageForm.addEventListener("input", () => {
+  updateDiagnostics();
+});
+
+loadPackageButton.addEventListener("click", async () => {
+  loadPackageButton.disabled = true;
+  taskOutput.textContent = "Loading series package...";
+  try {
+    await loadSeriesPackage();
+    taskOutput.textContent = "Series package loaded.";
+  } catch (error) {
+    taskOutput.textContent = error.message;
+  } finally {
+    loadPackageButton.disabled = false;
+  }
+});
+
+savePackageButton.addEventListener("click", async () => {
+  savePackageButton.disabled = true;
+  taskOutput.textContent = "Saving series package...";
+  try {
+    await saveSeriesPackage();
+    taskOutput.textContent = "Series package saved.";
+  } catch (error) {
+    taskOutput.textContent = error.message;
+  } finally {
+    savePackageButton.disabled = false;
+  }
+});
+
+generatePackageButton.addEventListener("click", async () => {
+  generatePackageButton.disabled = true;
+  taskOutput.textContent = "Generating series package...";
+  try {
+    await generateSeriesPackage();
+    taskOutput.textContent = "Series package generated.";
+  } catch (error) {
+    taskOutput.textContent = error.message;
+    await loadSeriesPackage().catch(() => {});
+  } finally {
+    generatePackageButton.disabled = false;
+  }
+});
+
+copyPackageButton.addEventListener("click", () => {
+  copyPackageJson().catch((error) => {
+    taskOutput.textContent = error.message;
+  });
 });
 
 taskForm.addEventListener("submit", async (event) => {

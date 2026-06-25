@@ -29,6 +29,11 @@ def test_story_bible_round_trip_persistence(tmp_path):
                 name="Mara",
                 aliases=["The Stapler Witch"],
                 wounds=["Afraid of being laughed out of rooms."],
+                visual_anchors_static=["Permanent toner scar across left eyebrow."],
+                current_injuries=["Limping from copier mimic bite."],
+                equipped_gear=["Stapler shield (jammed)."],
+                gear_absurd_traits=["Inventory pouch smells like microwaved fish."],
+                description_rules=["Describe exhaustion physically before naming emotion."],
                 running_jokes=["Invents office crimes under stress."],
                 favorite_insults=["Budget necromancer"],
                 never_contradict_facts=["Mara refuses to kneel to the System."],
@@ -49,6 +54,9 @@ def test_story_bible_round_trip_persistence(tmp_path):
     assert raw_bible["schema_version"] == BIBLE_SCHEMA_VERSION
     assert raw_bible["characters"]["Mara"]["voice_rules"] == [
         "Dry, clipped, more scared than she admits."
+    ]
+    assert raw_bible["characters"]["Mara"]["current_injuries"] == [
+        "Limping from copier mimic bite."
     ]
 
 
@@ -80,6 +88,20 @@ def test_merge_story_bible_updates_keeps_existing_facts_and_deduplicates():
                 "Mara": {
                     "name": "Mara",
                     "wounds": [],
+                    "visual_anchors": {
+                        "dynamic": ["Tie worn like a defeated battle standard."]
+                    },
+                    "physical_degradation": {
+                        "current_injuries": ["Limping from copier mimic bite."],
+                        "fatigue_markers": ["Hands shake after system announcements."],
+                    },
+                    "gear_silhouette": {
+                        "equipped": ["Stapler shield (jammed)."],
+                        "absurd_traits": ["Helmet fogs when lying."],
+                    },
+                    "description_rules": [
+                        "Never describe gear without current disrepair."
+                    ],
                     "traumas": ["The tutorial boss wore her manager's voice."],
                     "voice_rules": [
                         "dry under pressure.",
@@ -109,6 +131,14 @@ def test_merge_story_bible_updates_keeps_existing_facts_and_deduplicates():
         "Dry under pressure.",
         "Never sounds fully comfortable with praise.",
     ]
+    assert updated.characters["Mara"].visual_anchors_dynamic == [
+        "Tie worn like a defeated battle standard."
+    ]
+    assert updated.characters["Mara"].current_injuries == [
+        "Limping from copier mimic bite."
+    ]
+    assert updated.characters["Mara"].equipped_gear == ["Stapler shield (jammed)."]
+    assert updated.characters["Mara"].gear_absurd_traits == ["Helmet fogs when lying."]
     assert updated.characters["Vex"].rivalries == ["Mara"]
 
 
@@ -123,6 +153,11 @@ def test_format_story_bible_summary_is_compact_prompt_context():
             "Mara": CharacterBibleEntry(
                 name="Mara",
                 wounds=["Afraid of being laughed out of rooms."],
+                visual_anchors_static=["Permanent toner scar across left eyebrow."],
+                current_injuries=["Limping from copier mimic bite."],
+                equipped_gear=["Stapler shield (jammed)."],
+                gear_absurd_traits=["Inventory pouch smells like microwaved fish."],
+                description_rules=["Show emotion through posture before naming it."],
                 running_jokes=["Invents office crimes under stress."],
                 rivalries=["Vex"],
                 unresolved_promises=["Promised Jin she would not use blood magic."],
@@ -140,4 +175,7 @@ def test_format_story_bible_summary_is_compact_prompt_context():
     assert "Never contradict: Mara cannot read system glyphs without pain." in summary
     assert "Mara: facts: Mara refuses to kneel to the System." in summary
     assert "voice: Dry, clipped, more scared than she admits." in summary
-    assert "promises:" not in summary
+    assert "visual: Permanent toner scar across left eyebrow." in summary
+    assert "body: Limping from copier mimic bite." in summary
+    assert "gear: Stapler shield (jammed)." in summary
+    assert "description: Show emotion through posture before naming it." in summary
