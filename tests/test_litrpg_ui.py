@@ -69,6 +69,12 @@ def test_index_page_exposes_task_creation_form(ui_server):
 
     assert status == 200
     assert content_type == "text/html"
+    assert 'id="active-series-id"' in html
+    assert 'id="series-select"' in html
+    assert 'id="use-task-series"' in html
+    assert 'id="load-active-series"' in html
+    assert 'id="new-series-package"' in html
+    assert 'id="series-status"' in html
     assert 'id="task-form"' in html
     assert 'name="series_id"' in html
     assert 'name="premise"' in html
@@ -100,6 +106,14 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="add-role"' in html
     assert 'id="rebuild-roles"' in html
     assert 'id="save-roles"' in html
+
+
+def test_favicon_request_is_ignored_without_404_noise(ui_server):
+    status, body, content_type = request_bytes(ui_server, "/favicon.ico")
+
+    assert status == 204
+    assert body == b""
+    assert content_type is None
 
 
 def test_series_package_save_and_load_uses_local_storage_fallback(ui_server, ui_roots):

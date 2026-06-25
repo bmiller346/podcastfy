@@ -80,6 +80,11 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/":
             self.path = "/index.html"
             return super().do_GET()
+        if parsed.path == "/favicon.ico":
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if parsed.path == "/api/settings":
             return self._send_json(settings_status())
         if parsed.path == "/api/tasks":

@@ -78,9 +78,9 @@ function renderTasks(data) {
   }
 }
 
-function updateTaskPreview() {
+function updateTaskPreview({ syncSeries = false } = {}) {
   if (!taskForm || !taskPreview) return;
-  syncSeriesFromTask({ force: true });
+  syncSeriesFromTask({ force: syncSeries });
   taskPreview.textContent = JSON.stringify(buildTaskPayload(), null, 2);
   renderSeriesWorkspace();
   updateDiagnostics();
@@ -161,14 +161,17 @@ function renderSeriesWorkspace() {
   const librarySeries = (latestLibrary && latestLibrary.library) || [];
   const selectedSeries = currentSeriesId();
   if (seriesSelect) {
-    const options = [...librarySeries]
+    const sortedSeries = [...librarySeries]
       .sort((a, b) => String(a.series_id).localeCompare(String(b.series_id)))
+      .filter((item) => cleanValue(item.series_id));
+    const knownSeries = new Set(sortedSeries.map((item) => String(item.series_id)));
+    const options = sortedSeries
       .map((item) => {
         const id = String(item.series_id || "");
         const title = item.title && item.title !== id ? ` - ${item.title}` : "";
         return `<option value="${escapeHtml(id)}">${escapeHtml(id + title)}</option>`;
       });
-    if (!options.some((option) => option.includes(`value="${escapeHtml(selectedSeries)}"`))) {
+    if (!knownSeries.has(selectedSeries)) {
       options.unshift(`<option value="${escapeHtml(selectedSeries)}">${escapeHtml(selectedSeries)} - current draft</option>`);
     }
     seriesSelect.innerHTML = options.join("") || `<option value="${escapeHtml(selectedSeries)}">${escapeHtml(selectedSeries)}</option>`;
@@ -596,6 +599,7 @@ function buildDiagnosticsReport() {
 
   return {
     generated_at: new Date().toISOString(),
+    active_series_id: currentSeriesId(),
     task,
     premise_analysis: premiseAnalysis,
     settings,
@@ -623,6 +627,7 @@ function renderDiagnosticsSummary(report) {
   const audio = report.task.render_audio ? "audio on" : "audio off";
   const packageState = report.series_package.available ? "ready" : "missing";
   return [
+    diagnosticsItem("Active series", report.active_series_id || "local-series"),
     diagnosticsItem("Readiness", readiness),
     diagnosticsItem("Premise hooks", `${hooks}/${hookTotal}`),
     diagnosticsItem("Series package", packageState),
@@ -906,14 +911,14 @@ settingsForm.addEventListener("submit", async (event) => {
   }
 });
 
-taskForm.addEventListener("input", () => {
-  updateTaskPreview();
+taskForm.addEventListener("input", (event) => {
+  updateTaskPreview({ syncSeries: event.target && event.target.name === "series_id" });
 });
 
 if (activeSeriesInput) {
   activeSeriesInput.addEventListener("input", () => {
     setActiveSeriesId(activeSeriesInput.value, { syncTask: true, syncPackage: true });
-    updateTaskPreview();
+    updateTaskPreview({ syncSeries: false });
   });
 }
 
@@ -966,8 +971,8 @@ if (newSeriesPackageButton) {
       modules: latestPackage && latestPackage.modules ? latestPackage.modules : {},
       summary: "",
     };
-    packageOutput.textContent = JSON.stringify(draft, null, 2);
-    packageSummary.textContent = "Unsaved package draft.";
+    if (packageOutput) packageOutput.textContent = JSON.stringify(draft, null, 2);
+    if (packageSummary) packageSummary.textContent = "Unsaved package draft.";
     renderRoleEditor(draft);
     renderSeriesWorkspace();
     updateDiagnostics();
@@ -1129,5 +1134,5 @@ refreshAll().catch((error) => {
   taskOutput.textContent = error.message;
 });
 
-updateTaskPreview();
+updateTaskPreview({ syncSeries: true });
 updateDiagnostics();
