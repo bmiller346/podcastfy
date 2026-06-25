@@ -60,7 +60,7 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
   "generation": {
     "provider": "hybrid",
     "local_provider": "ollama",
-    "local_model": "llama3.1:8b-instruct",
+    "local_model": "litrpg-writer",
     "ollama_host": "http://127.0.0.1:11434",
     "commercial_provider": "openai",
     "commercial_model": "gpt-5.5",

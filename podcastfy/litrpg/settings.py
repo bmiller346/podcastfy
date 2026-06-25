@@ -22,6 +22,9 @@ API_KEY_FIELDS = {
 }
 
 API_KEY_SETTING_KEYS = tuple(dict.fromkeys(value[0] for value in API_KEY_FIELDS.values()))
+API_KEY_PREFIXES = {
+    "openai_api_key": ("sk-",),
+}
 DEFAULT_SETTING_KEYS = (
     "default_generation_provider",
     "default_tts_provider",
@@ -38,7 +41,7 @@ def load_litrpg_settings(settings_path: str | Path | None = None) -> dict[str, A
     settings = _load_settings_file(settings_path)
     for provider, (setting_key, env_key) in API_KEY_FIELDS.items():
         env_value = os.getenv(env_key)
-        if env_value:
+        if env_value and _valid_api_key(setting_key, env_value):
             settings[setting_key] = env_value
     return settings
 
@@ -52,8 +55,13 @@ def get_provider_api_key(
         return None
     setting_key, env_key = key_info
     if settings and settings.get(setting_key):
-        return str(settings[setting_key])
-    return os.getenv(env_key)
+        value = str(settings[setting_key])
+        if _valid_api_key(setting_key, value):
+            return value
+    env_value = os.getenv(env_key)
+    if env_value and _valid_api_key(setting_key, env_value):
+        return env_value
+    return None
 
 
 def resolve_settings_path(settings_path: str | Path | None = None) -> Path:
@@ -93,6 +101,8 @@ def save_litrpg_settings(
             continue
         if not isinstance(value, (str, int, float, bool)):
             raise ValueError(f"Unsupported settings value for {key}")
+        if key in API_KEY_SETTING_KEYS and not _valid_api_key(key, str(value)):
+            raise ValueError(f"Invalid API key format for {key}")
         next_settings[key] = value
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,14 +123,17 @@ def redacted_litrpg_settings_status(
         if provider in api_keys:
             continue
         file_configured = bool(file_settings.get(setting_key))
-        env_configured = bool(os.getenv(env_key))
+        file_valid = bool(file_configured and _valid_api_key(setting_key, str(file_settings[setting_key])))
+        env_value = os.getenv(env_key)
+        env_configured = bool(env_value and _valid_api_key(setting_key, env_value))
         api_keys[provider] = {
             "setting_key": setting_key,
             "env_key": env_key,
             "file": file_configured,
+            "file_valid": file_valid,
             "env": env_configured,
-            "configured": file_configured or env_configured,
-            "value": REDACTED_VALUE if file_configured or env_configured else "",
+            "configured": file_valid or env_configured,
+            "value": REDACTED_VALUE if file_valid or env_configured else "",
         }
     defaults = {
         key: file_settings.get(key, "")
@@ -154,3 +167,13 @@ def _existing_settings_path(settings_path: str | Path | None) -> Path | None:
     if settings_path is None and not os.getenv(SETTINGS_PATH_ENV) and LEGACY_SETTINGS_PATH.exists():
         return LEGACY_SETTINGS_PATH
     return None
+
+
+def _valid_api_key(setting_key: str, value: str) -> bool:
+    clean = value.strip()
+    if not clean or clean != value or any(char.isspace() for char in clean):
+        return False
+    prefixes = API_KEY_PREFIXES.get(setting_key)
+    if prefixes and not clean.startswith(prefixes):
+        return False
+    return True

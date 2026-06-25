@@ -30,15 +30,15 @@ _XP_GAIN_RE = re.compile(r"(?:\+|gains?|earned|awarded)\s*(?P<amount>\d+)\s*(?:x
 _XP_SPEND_RE = re.compile(r"(?:spends?|spent|costs?|paid)\s*(?P<amount>\d+)\s*(?:xp|experience)\b", re.I)
 _XP_TOTAL_RE = re.compile(r"(?:xp|experience)\s*(?:total|now|balance)?\s*[:=]?\s*(?P<amount>\d+)\b", re.I)
 _LOOT_GAIN_RE = re.compile(
-    r"(?:loot(?: gained)?|gained|obtained|received|picked up|found)\s*[:\-]?\s*(?P<item>[A-Za-z][A-Za-z0-9 '\-]{1,60})",
+    r"\b(?:loot(?: gained)?|gained|obtained|received|picked up|found)\s*[:\-]?\s*(?P<item>[A-Za-z][A-Za-z0-9 '\-]{1,60})",
     re.I,
 )
 _CONSUME_RE = re.compile(
-    r"(?:consumes?|used up|burns?|drinks?|eats?)\s+(?P<item>[A-Za-z][A-Za-z0-9 '\-]{1,60})",
+    r"\b(?:consumes?|used up|burns?|drinks?|eats?)\s+(?P<item>[A-Za-z][A-Za-z0-9 '\-]{1,60})",
     re.I,
 )
 _REMOVE_RE = re.compile(
-    r"(?:removes?|lost|discarded|inventory\s*-\s*1)\s+(?P<item>[A-Za-z][A-Za-z0-9 '\-]{1,60})",
+    r"\b(?:removes?|lost|discarded|inventory\s*-\s*1)\s+(?P<item>[A-Za-z][A-Za-z0-9 '\-]{1,60})",
     re.I,
 )
 _COOLDOWN_ACTIVE_RE = re.compile(
@@ -50,11 +50,11 @@ _COOLDOWN_READY_RE = re.compile(
     re.I,
 )
 _SKILL_LEARN_RE = re.compile(
-    r"(?:learned|unlocked|gained)\s+(?:the\s+)?(?P<term>[A-Za-z][A-Za-z0-9 '\-]{1,50})\s+skill\b|skill\s+(?:learned|unlocked|gained)\s*[:\-]\s*(?P<term2>[A-Za-z][A-Za-z0-9 '\-]{1,50})",
+    r"\b(?:learned|unlocked|gained)\s+(?:the\s+)?(?P<term>[A-Za-z][A-Za-z0-9 '\-]{1,50})\s+skill\b|\bskill\s+(?:learned|unlocked|gained)\s*[:\-]\s*(?P<term2>[A-Za-z][A-Za-z0-9 '\-]{1,50})",
     re.I,
 )
 _SKILL_MENTION_RE = re.compile(
-    r"(?:casts?|activates?|uses?|triggers?)\s+(?:the\s+)?(?P<term>[A-Za-z][A-Za-z0-9 '\-]{1,50})(?:\s+skill)?\b|skill\s*[:\-]\s*(?P<term2>[A-Za-z][A-Za-z0-9 '\-]{1,50})",
+    r"\b(?:casts?|activates?|triggers?)\s+(?:the\s+)?(?P<term>[A-Za-z][A-Za-z0-9 '\-]{1,50})\b|\buses?\s+(?:the\s+)?(?P<term3>[A-Za-z][A-Za-z0-9 '\-]{1,50})\s+skill\b|\bskill\s*[:\-]\s*(?P<term2>[A-Za-z][A-Za-z0-9 '\-]{1,50})",
     re.I,
 )
 _CLASS_RE = re.compile(r"\bclass\s*[:\-]\s*(?P<term>[A-Za-z][A-Za-z0-9 '\-]{1,50})", re.I)
@@ -223,6 +223,7 @@ def _match_term(match: re.Match[str], kind: str) -> str:
     group = (
         match.groupdict().get("term")
         or match.groupdict().get("term2")
+        or match.groupdict().get("term3")
         or match.groupdict().get("item")
     )
     if group:

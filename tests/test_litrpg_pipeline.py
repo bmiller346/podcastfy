@@ -98,7 +98,7 @@ def test_pipeline_uses_tts_options_for_provider_config(tmp_path, monkeypatch):
         def convert_script_to_speech(self, script, output_file, voice_map, role_tags=None, role_instructions=None):
             Path(output_file).write_bytes(b"audio")
 
-    monkeypatch.setenv("OPENAI_API_KEY", "env-openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-openai")
     monkeypatch.setattr("podcastfy.text_to_speech.TextToSpeech", CapturingTextToSpeech)
 
     generate_litrpg_audio_episode(
@@ -121,7 +121,7 @@ def test_pipeline_uses_tts_options_for_provider_config(tmp_path, monkeypatch):
 def test_pipeline_uses_settings_default_provider(tmp_path, monkeypatch):
     settings_path = tmp_path / "settings.local.json"
     settings_path.write_text(
-        '{"default_tts_provider":"openai","default_tts_model":"gpt-4o-mini-tts","openai_api_key":"settings-key"}',
+        '{"default_tts_provider":"openai","default_tts_model":"gpt-4o-mini-tts","openai_api_key":"sk-settings-key"}',
         encoding="utf-8",
     )
     captured = {}
@@ -146,7 +146,7 @@ def test_pipeline_uses_settings_default_provider(tmp_path, monkeypatch):
     )
 
     assert captured["model"] == "openai"
-    assert captured["api_key"] == "settings-key"
+    assert captured["api_key"] == "sk-settings-key"
 
 
 def test_pipeline_regenerates_when_audio_required_but_missing(tmp_path):

@@ -33,6 +33,11 @@ const packageRadar = document.querySelector("#package-radar");
 const library = document.querySelector("#library");
 const runTaskButton = document.querySelector("#run-task");
 const refreshButton = document.querySelector("#refresh");
+const messyContextInput = document.querySelector("#messy-context");
+const applyMessyContextButton = document.querySelector("#apply-messy-context");
+const queuePremiseIntakeButton = document.querySelector("#queue-premise-intake");
+const copyMcpContextButton = document.querySelector("#copy-mcp-context");
+const messyContextSummary = document.querySelector("#messy-context-summary");
 
 let latestSettings = null;
 let latestTasks = null;
@@ -253,6 +258,14 @@ function cleanValue(value) {
   return String(value || "").trim();
 }
 
+function slugify(value) {
+  return cleanValue(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
 function maybeAssign(target, key, value) {
   if (value) {
     target[key] = value;
@@ -262,6 +275,7 @@ function maybeAssign(target, key, value) {
 function buildTaskPayload() {
   const formData = new FormData(taskForm);
   const mode = cleanValue(formData.get("mode")) || "episode";
+  const messyContext = cleanValue(messyContextInput && messyContextInput.value);
   const task = {
     mode,
     series_id: cleanValue(formData.get("series_id")) || "local-series",
@@ -269,6 +283,25 @@ function buildTaskPayload() {
     render_audio: formData.get("render_audio") === "on",
     storage_dir: cleanValue(formData.get("storage_dir")) || "../data/litrpg",
   };
+
+  maybeAssign(task, "premise_path", cleanValue(formData.get("premise_path")));
+  if (mode === "premise_intake" && messyContext) {
+    task.source_text = messyContext;
+  }
+  maybeAssign(task, "series_title", cleanValue(formData.get("series_title")));
+  maybeAssign(task, "series_promise", cleanValue(formData.get("series_promise")));
+  maybeAssign(task, "endgame_direction", cleanValue(formData.get("endgame_direction")));
+  const targetBooks = Number(cleanValue(formData.get("target_books")));
+  if (Number.isInteger(targetBooks) && targetBooks > 0) {
+    task.target_books = targetBooks;
+  }
+  const chaptersPerBook = Number(cleanValue(formData.get("chapters_per_book")));
+  if (Number.isInteger(chaptersPerBook) && chaptersPerBook > 0) {
+    task.chapters_per_book = chaptersPerBook;
+  }
+  if (mode === "premise_intake") {
+    task.render_audio = false;
+  }
 
   maybeAssign(task, "genre", cleanValue(formData.get("genre")));
   maybeAssign(task, "result_path", cleanValue(formData.get("result_path")));
@@ -325,6 +358,93 @@ function buildPackageDraft() {
     faction_map: {},
     bestiary: [],
     encounters: [],
+  };
+}
+
+function analyzeMessyContext(text) {
+  const clean = cleanValue(text);
+  const lines = clean.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const titleLine = lines.find((line) => /^(?:title|series title|name)\s*[:=-]\s*/i.test(line));
+  const explicitTitle = titleLine ? titleLine.replace(/^(?:title|series title|name)\s*[:=-]\s*/i, "").trim() : "";
+  const headingTitle = !explicitTitle && lines[0] && lines[0].length <= 80 ? lines[0].replace(/^#+\s*/, "").trim() : "";
+  const title = explicitTitle || headingTitle;
+  const seriesId = slugify(title || lines.find((line) => line.length <= 50) || "local-series");
+  const premiseLines = lines.filter((line) => !/^(?:title|series title|name)\s*[:=-]\s*/i.test(line));
+  const premise = premiseLines.slice(0, 8).join(" ").slice(0, 1200);
+  const markers = {
+    characters: /\b(character|protagonist|hero|cast|voice|sidekick|rival|villain)\b/i.test(clean),
+    mechanics: /\b(system|xp|quest|skill|class|level|stat|loot|inventory|cooldown)\b/i.test(clean),
+    outline: /\b(chapter|book|outline|act|arc|episode|floor)\b/i.test(clean),
+    setting: /\b(setting|city|town|ship|office|dungeon|marina|home base|floor)\b/i.test(clean),
+    tone: /\b(tone|voice|funny|dark|cozy|satire|horror|mystery|romance)\b/i.test(clean),
+  };
+  return {
+    title,
+    series_id: seriesId || "local-series",
+    premise,
+    word_count: clean ? clean.split(/\s+/).length : 0,
+    markers,
+  };
+}
+
+function renderMessyContextSummary(analysis) {
+  if (!messyContextSummary) return;
+  const markerText = Object.entries(analysis.markers || {})
+    .filter(([, enabled]) => enabled)
+    .map(([key]) => key)
+    .join(", ") || "raw notes";
+  messyContextSummary.innerHTML = [
+    diagnosticsItem("Words", String(analysis.word_count || 0)),
+    diagnosticsItem("Detected", markerText),
+    diagnosticsItem("Series ID", analysis.series_id || "local-series"),
+  ].join("");
+}
+
+function applyMessyContextToStoryFields({ queueMode = false } = {}) {
+  if (!messyContextInput || !taskForm) return null;
+  const raw = cleanValue(messyContextInput.value);
+  const analysis = analyzeMessyContext(raw);
+  if (!raw) {
+    renderMessyContextSummary(analysis);
+    taskOutput.textContent = "Paste messy context first.";
+    return null;
+  }
+  setActiveSeriesId(analysis.series_id, { syncTask: true, syncPackage: true });
+  if (taskForm.elements.mode) taskForm.elements.mode.value = "premise_intake";
+  if (analysis.title && taskForm.elements.series_title && !cleanValue(taskForm.elements.series_title.value)) {
+    taskForm.elements.series_title.value = analysis.title;
+  }
+  if (taskForm.elements.premise) {
+    taskForm.elements.premise.value = analysis.premise || raw.slice(0, 1200);
+  }
+  if (taskForm.elements.render_audio) taskForm.elements.render_audio.checked = false;
+  if (packageForm && packageForm.elements.baseline_text) {
+    packageForm.elements.baseline_text.value = raw;
+  }
+  renderMessyContextSummary(analysis);
+  updateTaskPreview({ syncSeries: true });
+  syncPackageOutputFromRoleEditor();
+  taskOutput.textContent = queueMode
+    ? "Messy context applied. Intake agent is ready to queue."
+    : "Messy context copied into story fields.";
+  return analysis;
+}
+
+function buildMcpContextPayload() {
+  const task = buildTaskPayload();
+  return {
+    tool: "bootstrap_from_premise",
+    arguments: {
+      storage_dir: task.storage_dir || "../data/litrpg",
+      series_id: task.series_id || "local-series",
+      premise: task.source_text || task.premise || "",
+      target_books: task.target_books || 1,
+      chapters_per_book: task.chapters_per_book || 30,
+      series_title: task.series_title || "",
+      series_promise: task.series_promise || "",
+      endgame_direction: task.endgame_direction || "",
+      generation: task.generation || {},
+    },
   };
 }
 
@@ -790,6 +910,7 @@ function renderJobConsole(job) {
   const status = job.error ? "failed" : job.status || "unknown";
   const summary = job.task_summary || {};
   const checkpoints = (job.checkpoint_paths || []).length;
+  const pathLabel = summary.mode === "premise_intake" ? "Artifacts" : "Checkpoints";
   const error = job.error ? `<div class="job-error">${escapeHtml(job.error)}</div>` : "";
   return `<div class="job-status status-${escapeClass(status)}">
     <strong>${escapeHtml(status)}</strong>
@@ -798,7 +919,7 @@ function renderJobConsole(job) {
   <dl class="job-facts">
     <div><dt>Series</dt><dd>${escapeHtml(summary.series_id || "unknown")}</dd></div>
     <div><dt>Mode</dt><dd>${escapeHtml(summary.mode || "unknown")}</dd></div>
-    <div><dt>Checkpoints</dt><dd>${escapeHtml(String(checkpoints))}</dd></div>
+    <div><dt>${escapeHtml(pathLabel)}</dt><dd>${escapeHtml(String(checkpoints))}</dd></div>
   </dl>
   ${error}`;
 }
@@ -1016,8 +1137,12 @@ function diagnosticRecommendations({ task, premiseAnalysis, settings, seriesPack
     recommendations.push(`Sensitive material detected (${premiseAnalysis.sensitive_terms.join(", ")}); keep the character specific, agentic, and non-caricatured.`);
   }
   const generationProvider = (task.generation && task.generation.provider) || settings.defaults.default_generation_provider || "openai";
+  const commercialProvider = (task.generation && (task.generation.commercial_provider || task.generation.cloud_provider)) || "openai";
   if (generationProvider === "openai" && !settings.api_keys.openai) {
-    recommendations.push("OpenAI generation is selected but no OpenAI API key is configured.");
+    recommendations.push("OpenAI generation is selected but no valid OpenAI API key is configured.");
+  }
+  if (generationProvider === "hybrid" && commercialProvider === "openai" && !settings.api_keys.openai) {
+    recommendations.push("Hybrid generation is selected with OpenAI review, but no valid OpenAI API key is configured.");
   }
   const ttsProvider = (task.tts && task.tts.provider) || settings.defaults.default_tts_provider || "";
   if (task.render_audio && ttsProvider && !settings.api_keys[ttsProvider]) {
@@ -1331,6 +1456,40 @@ if (nextActions) {
     runQuickAction(target.dataset.action).catch((error) => {
       taskOutput.textContent = error.message;
     });
+  });
+}
+
+if (messyContextInput) {
+  messyContextInput.addEventListener("input", () => {
+    renderMessyContextSummary(analyzeMessyContext(messyContextInput.value));
+  });
+}
+
+if (applyMessyContextButton) {
+  applyMessyContextButton.addEventListener("click", () => {
+    applyMessyContextToStoryFields();
+  });
+}
+
+if (queuePremiseIntakeButton) {
+  queuePremiseIntakeButton.addEventListener("click", () => {
+    const analysis = applyMessyContextToStoryFields({ queueMode: true });
+    if (analysis) taskForm.requestSubmit();
+  });
+}
+
+if (copyMcpContextButton) {
+  copyMcpContextButton.addEventListener("click", () => {
+    applyMessyContextToStoryFields();
+    const payload = JSON.stringify(buildMcpContextPayload(), null, 2);
+    navigator.clipboard.writeText(payload).then(
+      () => {
+        taskOutput.textContent = "MCP context copied.";
+      },
+      () => {
+        taskOutput.textContent = payload;
+      },
+    );
   });
 }
 

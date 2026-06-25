@@ -9,6 +9,12 @@ MCP is only the control surface. Story logic lives in
 `podcastfy/litrpg/premise_intake.py`, and the MCP wrapper calls
 `run_premise_intake` instead of duplicating that logic.
 
+If you are using the local UI, paste messy notes into the Messy Context Intake
+panel. The UI can fill the story fields, queue a `premise_intake` job, or copy
+the equivalent MCP `bootstrap_from_premise` payload for another agent. The UI
+path and MCP path share the same backend; MCP is not a separate place where you
+must manually paste story context.
+
 ## What It Writes
 
 Given `storage_dir` and `series_id`, intake can seed:

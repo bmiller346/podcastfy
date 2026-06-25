@@ -32,6 +32,16 @@ The Create Task panel is meant for local experimentation without hand-editing a 
 
 The browser builds a JSON payload that matches the LitRPG task schema and submits it to the local jobs API. The preview box shows the exact task object before it is queued.
 
+## Messy Context Intake
+
+Use the Messy Context Intake panel when you have a rough notes dump, copied chat context, chapter outline, character list, or half-structured premise. Paste the whole thing there first.
+
+- **Fill Story Fields** infers a title/series id, switches the task to `premise_intake`, fills the visible premise summary, disables audio, and copies the full raw dump into the Series Package baseline text.
+- **Queue Intake Agent** does the same setup and immediately submits the `premise_intake` job. The queued task includes the full raw dump as `source_text`, so the intake pass sees more than the shortened visible premise field.
+- **Copy MCP Context** copies a `bootstrap_from_premise` tool payload for MCP clients or agent shells. Use this when another agent is driving the MCP server directly instead of clicking through the local UI.
+
+In normal use, you do not paste messy notes into MCP by hand. MCP is the tool layer agents call. The local UI is the human-friendly paste surface, and both paths end up calling the same premise-intake code.
+
 ## Series Package Workflow
 
 The Series Package panel sits between premise drafting and chapter generation. It is meant for reusable story and performance context such as:

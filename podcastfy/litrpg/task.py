@@ -209,9 +209,16 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
 def _openai_generator_from_config(
     generation: Mapping[str, Any], *, settings: Mapping[str, Any]
 ) -> OpenAIResponsesGenerator:
+    api_key = get_provider_api_key(str(generation.get("provider") or "openai"), settings) or get_provider_api_key(
+        "openai", settings
+    )
+    if not api_key:
+        raise ValueError(
+            "OpenAI generation requires a valid API key. Set OPENAI_API_KEY or save "
+            "openai_api_key in the LitRPG UI settings."
+        )
     return OpenAIResponsesGenerator(
-        api_key=get_provider_api_key(str(generation.get("provider") or "openai"), settings)
-        or get_provider_api_key("openai", settings),
+        api_key=api_key,
         model=str(
             generation.get("model")
             or generation.get("commercial_model")

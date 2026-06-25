@@ -204,7 +204,7 @@ def test_llm_from_task_builds_hybrid_router_with_custom_stage_rules(monkeypatch)
                 "allow_local_fallback": True,
             }
         },
-        settings={"openai_api_key": "test-key"},
+        settings={"openai_api_key": "sk-test"},
     )
 
     assert llm.local.model == "dolphin3"
@@ -212,6 +212,20 @@ def test_llm_from_task_builds_hybrid_router_with_custom_stage_rules(monkeypatch)
     assert llm.routing.local_exact == ("script", "announcer_lines")
     assert llm.routing.local_prefixes == ("part:", "revise:", "voice:")
     assert llm.allow_local_fallback is True
+
+
+def test_llm_from_task_requires_valid_openai_key_for_hybrid():
+    with pytest.raises(ValueError, match="OpenAI generation requires a valid API key"):
+        _llm_from_task(
+            {
+                "generation": {
+                    "provider": "hybrid",
+                    "local_model": "litrpg-writer",
+                    "commercial_model": "gpt-5.5",
+                }
+            },
+            settings={"openai_api_key": "not a real key"},
+        )
 
 
 def test_run_litrpg_task_data_uses_base_dir_for_relative_outputs(tmp_path):

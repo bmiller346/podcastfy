@@ -67,7 +67,8 @@ This task keeps `render_audio` set to `false`, so no audio file should be produc
 Use `usage/litrpg_task_hybrid.example.json` for a local-writer smoke:
 
 ```powershell
-ollama pull llama3.1:8b-instruct
+ollama pull llama3.1:8b
+ollama create litrpg-writer -f usage/Modelfile.litrpg-writer
 ollama serve
 python -m podcastfy.litrpg.task usage/litrpg_task_hybrid.example.json
 ```

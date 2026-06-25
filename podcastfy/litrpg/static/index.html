@@ -24,19 +24,19 @@
         <form id="settings-form" class="grid-form">
           <label>
             OpenAI API key
-            <input name="openai_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+            <input name="openai_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
           </label>
           <label>
             Gemini API key
-            <input name="gemini_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+            <input name="gemini_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
           </label>
           <label>
             ElevenLabs API key
-            <input name="elevenlabs_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+            <input name="elevenlabs_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
           </label>
           <label>
             Edge API key
-            <input name="edge_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+            <input name="edge_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
           </label>
           <label>
             Default generation provider
@@ -105,6 +105,23 @@
         </div>
       </section>
 
+      <section class="panel messy-intake-panel">
+        <div class="section-heading">
+          <h2>Messy Context Intake</h2>
+          <p>Paste raw notes, chat dumps, character ideas, outlines, rules, or MCP context here.</p>
+        </div>
+        <label class="wide">
+          Raw story context
+          <textarea id="messy-context" rows="8" placeholder="Paste the messy context here. The studio will keep the raw text and copy useful pieces into the story fields below."></textarea>
+        </label>
+        <div class="actions intake-actions">
+          <button id="apply-messy-context" type="button">Fill Story Fields</button>
+          <button id="queue-premise-intake" type="button">Queue Intake Agent</button>
+          <button id="copy-mcp-context" type="button">Copy MCP Context</button>
+        </div>
+        <div id="messy-context-summary" class="diagnostics-grid" aria-live="polite"></div>
+      </section>
+
       <section class="panel">
         <div class="section-heading">
           <h2>Create Task</h2>
@@ -124,7 +141,32 @@
             <select name="mode">
               <option value="episode">episode</option>
               <option value="chapter">chapter</option>
+              <option value="premise_intake">premise_intake</option>
             </select>
+          </label>
+          <label>
+            Series title
+            <input name="series_title" type="text" placeholder="The Knotty Buoy">
+          </label>
+          <label>
+            Target books
+            <input name="target_books" type="number" min="1" step="1" placeholder="1">
+          </label>
+          <label>
+            Chapters per book
+            <input name="chapters_per_book" type="number" min="1" step="1" placeholder="30">
+          </label>
+          <label class="wide">
+            Premise file path
+            <input name="premise_path" type="text" placeholder="usage/knotty-buoy-notes.md">
+          </label>
+          <label class="wide">
+            Series promise
+            <input name="series_promise" type="text" placeholder="What readers/listeners come back for.">
+          </label>
+          <label class="wide">
+            Endgame direction
+            <input name="endgame_direction" type="text" placeholder="The long-term destination or final pressure.">
           </label>
           <label>
             Genre / style

@@ -78,10 +78,23 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="studio-flow"' in html
     assert 'id="next-actions"' in html
     assert 'id="job-console"' in html
+    assert 'id="messy-context"' in html
+    assert 'id="apply-messy-context"' in html
+    assert 'id="queue-premise-intake"' in html
+    assert 'id="copy-mcp-context"' in html
+    assert 'id="messy-context-summary"' in html
     assert 'id="task-form"' in html
+    assert "Leave blank to keep existing key" in html
     assert 'name="series_id"' in html
     assert 'name="premise"' in html
     assert 'name="mode"' in html
+    assert 'value="premise_intake"' in html
+    assert 'name="series_title"' in html
+    assert 'name="premise_path"' in html
+    assert 'name="target_books"' in html
+    assert 'name="chapters_per_book"' in html
+    assert 'name="series_promise"' in html
+    assert 'name="endgame_direction"' in html
     assert 'name="genre"' in html
     assert 'name="generation_provider"' in html
     assert 'name="generation_model"' in html
@@ -280,14 +293,14 @@ def wait_for_job(server, job_id, status, timeout=2):
 
 
 def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "from-env")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
 
     status, data = request_json(
         ui_server,
         "POST",
         "/api/settings",
         {
-            "openai_api_key": "from-file",
+            "openai_api_key": "sk-file",
             "gemini_api_key": "",
             "default_tts_provider": "edge",
             "default_model": "gpt-5.5",
@@ -305,7 +318,7 @@ def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypa
         "default_tts_format": "mp3",
         "default_tts_model": "gpt-4o-mini-tts",
         "default_tts_provider": "edge",
-        "openai_api_key": "from-file",
+        "openai_api_key": "sk-file",
     }
     assert data["settings_path"] == str(settings_path)
     assert data["api_keys"]["openai"]["configured"] is True
@@ -313,8 +326,8 @@ def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypa
     assert data["defaults"]["default_model"] == "gpt-5.5"
     assert data["defaults"]["default_tts_model"] == "gpt-4o-mini-tts"
     assert data["defaults"]["default_tts_format"] == "mp3"
-    assert "from-file" not in json.dumps(data)
-    assert "from-env" not in json.dumps(data)
+    assert "sk-file" not in json.dumps(data)
+    assert "sk-env" not in json.dumps(data)
 
 
 def test_settings_get_does_not_return_plaintext_saved_or_env_keys(
@@ -344,7 +357,7 @@ def test_settings_post_can_clear_non_secret_defaults_without_clearing_saved_keys
     settings_path.write_text(
         json.dumps(
             {
-                "openai_api_key": "openai-secret",
+                "openai_api_key": "sk-openai-secret",
                 "default_model": "gpt-5.5",
                 "default_tts_format": "wav",
             }
@@ -365,10 +378,22 @@ def test_settings_post_can_clear_non_secret_defaults_without_clearing_saved_keys
     stored = json.loads(settings_path.read_text(encoding="utf-8"))
 
     assert status == 200
-    assert stored == {"openai_api_key": "openai-secret"}
+    assert stored == {"openai_api_key": "sk-openai-secret"}
     assert data["defaults"]["default_model"] == ""
     assert data["defaults"]["default_tts_format"] == ""
     assert data["api_keys"]["openai"]["configured"] is True
+
+
+def test_settings_post_rejects_malformed_openai_key(ui_server):
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/settings",
+        {"openai_api_key": "this is pasted prose, not a key"},
+    )
+
+    assert status == 400
+    assert "Invalid API key format for openai_api_key" in data["error"]
 
 
 def test_tasks_endpoint_lists_supported_story_json_files(ui_server, ui_roots):
@@ -558,6 +583,49 @@ def test_submit_inline_task_job_tracks_summary_and_status(
     assert final_job["result"]["status"] == "cached"
     assert captured[0][0]["series_id"] == "paper-cuts"
     assert captured[0][1] == ui.PROJECT_ROOT
+
+
+def test_submit_premise_intake_job_routes_to_task_data(ui_server, monkeypatch):
+    captured = []
+
+    def fake_run_litrpg_task_data(task, *, base_dir, llm=None, tts=None):
+        captured.append((task, base_dir, llm, tts))
+        return {
+            "series_id": task["series_id"],
+            "mode": task["mode"],
+            "written_files": ["data/litrpg/series/knotty/series_plan.json"],
+        }
+
+    monkeypatch.setattr(ui, "run_litrpg_task_data", fake_run_litrpg_task_data)
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/jobs",
+        {
+            "task": {
+                "mode": "premise_intake",
+                "series_id": "knotty",
+                "premise": "A large pasted outline.",
+                "series_title": "The Knotty Buoy",
+                "target_books": 1,
+                "chapters_per_book": 30,
+            }
+        },
+    )
+
+    final_job = wait_for_job(ui_server, data["job"]["job_id"], "succeeded")
+
+    assert status == 202
+    assert captured[0][0]["mode"] == "premise_intake"
+    assert captured[0][0]["series_title"] == "The Knotty Buoy"
+    assert captured[0][1] == ui.PROJECT_ROOT
+    assert final_job["result"]["written_files"] == [
+        "data/litrpg/series/knotty/series_plan.json"
+    ]
+    assert final_job["checkpoint_paths"] == [
+        "data/litrpg/series/knotty/series_plan.json"
+    ]
 
 
 def test_submit_task_job_exposes_running_status(

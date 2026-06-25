@@ -541,6 +541,8 @@ def _result_metadata(result: Any) -> dict[str, Any]:
         "episode_dir",
         "checkpoint_dir",
         "audio_path",
+        "written_files",
+        "artifact_paths",
     )
     metadata = {key: result[key] for key in keys if key in result}
     for key in ("script_path", "metadata_path", "audio_metadata_path"):
@@ -555,7 +557,14 @@ def _checkpoint_paths(result: Any) -> list[str]:
     if not isinstance(result, dict):
         return []
     raw_paths: list[Any] = []
-    for key in ("checkpoint_paths", "checkpoints", "part_paths", "approved_part_paths"):
+    for key in (
+        "checkpoint_paths",
+        "checkpoints",
+        "part_paths",
+        "approved_part_paths",
+        "written_files",
+        "artifact_paths",
+    ):
         value = result.get(key)
         if isinstance(value, list):
             raw_paths.extend(value)

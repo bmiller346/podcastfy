@@ -57,7 +57,7 @@ def test_live_smoke_skip_reason_requires_flag_and_api_key(monkeypatch):
     monkeypatch.setenv("RUN_LITRPG_LIVE_SMOKE", "1")
     assert "OPENAI_API_KEY" in _live_smoke_skip_reason()
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     assert _live_smoke_skip_reason() is None
 
 

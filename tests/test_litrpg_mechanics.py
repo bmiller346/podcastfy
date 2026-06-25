@@ -64,6 +64,20 @@ def test_validate_mechanics_fails_unavailable_skill_use():
     ]
 
 
+def test_validate_mechanics_does_not_treat_plain_use_phrases_as_skills():
+    script = """
+<SYSTEM>Quest update: Enter the Evaluation Room. Reward: 50 XP.</SYSTEM>
+<ROGUE>Nothing says evaluation like a room full of angry accountants.</ROGUE>
+<TANK>We can use all the charm we can get down here.</TANK>
+<HEALER>What's your plan for when things go south?</HEALER>
+"""
+
+    result = validate_mechanics(script, {"skills": [], "inventory": []})
+
+    assert result["ready"] is True
+    assert result["issues"] == []
+
+
 def test_validate_mechanics_fails_xp_total_decrease_without_spend():
     script = """
 <SYSTEM>+20 XP. XP total: 120.</SYSTEM>

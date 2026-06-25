@@ -8,7 +8,7 @@
   "storage_dir": "../data/litrpg",
   "result_path": "../data/litrpg/paper-cuts-hybrid/chapter-001.json",
   "checkpoint_dir": "../data/litrpg/paper-cuts-hybrid/chapter-001_checkpoints",
-  "settings_path": "../settings.local.json",
+  "settings_path": "../data/litrpg/settings.json",
   "persist_state": true,
   "render_audio": false,
   "series_package": {
@@ -28,7 +28,7 @@
   "generation": {
     "provider": "hybrid",
     "local_provider": "ollama",
-    "local_model": "llama3.1:8b-instruct",
+    "local_model": "litrpg-writer",
     "ollama_host": "http://127.0.0.1:11434",
     "commercial_provider": "openai",
     "commercial_model": "gpt-5.5",
@@ -85,8 +85,8 @@
     }
   },
   "locked_part_scripts": {
-    "mechanics-reveal": "<NARRATOR>The tutorial display flickered, saving room for a real mechanics pass later.</NARRATOR><SYSTEM>MECHANICS PLACEHOLDER: Reward tables deferred.</SYSTEM><GUIDE>The audience will forgive one temporary mystery.</GUIDE><HERO>I won't.</HERO><MERCHANT>Excellent. Resentment is collectible.</MERCHANT><MENTOR>Keep moving.</MENTOR>",
-    "boss-setpiece": "<NARRATOR>The loading-bay doors shuddered like they were rehearsing for a larger episode.</NARRATOR><HERO>This is where the expensive screaming goes.</HERO><SYSTEM>BOSS PLACEHOLDER ACCEPTED.</SYSTEM><BOSS>Return when the budget allows smoke.</BOSS><BEAST>Rrr.</BEAST><MINION>We respect fiscal restraint.</MINION><SIDEKICK>That is somehow worse.</SIDEKICK>",
-    "fallout-cliffhanger": "<NARRATOR>The dungeon saved the recording and marked the chapter incomplete but alive.</NARRATOR><HERO>I survived the hybrid smoke version. That still counts.</HERO><SYSTEM>CLIFFHANGER: Audio rendering remains disabled.</SYSTEM><VILLAIN>For now.</VILLAIN><RIVAL>Do not get smug.</RIVAL><MENTOR>Too late.</MENTOR>"
+    "mechanics-reveal": "<NARRATOR>The tutorial display flickered, saving room for a real mechanics pass later.</NARRATOR><SYSTEM>QUEST UPDATE: Reward tables deferred. +0 XP. Inventory unchanged.</SYSTEM><GUIDE>The audience will forgive one temporary mystery.</GUIDE><HERO>I won't.</HERO><MERCHANT>Excellent. Resentment is collectible.</MERCHANT><MENTOR>Keep moving.</MENTOR>",
+    "boss-setpiece": "<NARRATOR>The loading-bay doors shuddered like they were rehearsing for a larger episode.</NARRATOR><HERO>This is where the expensive screaming goes.</HERO><SYSTEM>BOSS PLACEHOLDER ACCEPTED. Status: budget smoke pending. +0 XP.</SYSTEM><BOSS>Return when the budget allows smoke.</BOSS><BEAST>Rrr.</BEAST><MINION>We respect fiscal restraint.</MINION><SIDEKICK>That is somehow worse.</SIDEKICK>",
+    "fallout-cliffhanger": "<NARRATOR>The dungeon saved the recording and marked the chapter incomplete but alive.</NARRATOR><HERO>I survived the hybrid smoke version. That still counts.</HERO><SYSTEM>CLIFFHANGER: Audio rendering remains disabled. Quest progress saved. +0 XP.</SYSTEM><VILLAIN>For now.</VILLAIN><RIVAL>Do not get smug.</RIVAL><MENTOR>Too late.</MENTOR>"
   }
 }
