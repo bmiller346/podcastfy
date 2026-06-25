@@ -19,8 +19,11 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
 
 ```json
 {
+  "default_generation_provider": "openai",
+  "default_model": "gpt-5.5",
   "default_tts_provider": "openai",
   "default_tts_model": "gpt-4o-mini-tts",
+  "default_tts_format": "mp3",
   "openai_api_key": "sk-...",
   "gemini_api_key": "AIza..."
 }

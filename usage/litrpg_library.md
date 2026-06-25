@@ -110,3 +110,38 @@ kept for compatibility, but new UI links should prefer series and episode IDs.
 Regeneration controls can start with `list_regenerable_parts()` and pass the
 selected part path to a future chapter renderer without coupling the UI to the
 TTS provider.
+
+The UI API also exposes narrower replay endpoints:
+
+- `GET /api/library/series` returns local series summaries only.
+- `GET /api/library/episodes?series_id=<series_id>` returns replay-ready episode
+  cards for one series. Omitting `series_id` returns all episodes.
+- `GET /api/library/episodes/<series_id>/<episode_id>` returns one episode with
+  a `replay` object that reports cached playback readiness.
+
+Episode replay payloads use:
+
+```json
+{
+  "replay": {
+    "available": true,
+    "mode": "cached",
+    "status": "ready",
+    "format": "mp3",
+    "bytes": 123456,
+    "url": "/audio?series_id=paper-cuts&episode_id=episode-0001"
+  }
+}
+```
+
+When cached audio is missing, the same field becomes:
+
+```json
+{
+  "replay": {
+    "available": false,
+    "mode": "cached",
+    "status": "missing_audio"
+  }
+}
+```

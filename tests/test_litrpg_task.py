@@ -6,7 +6,7 @@ import pytest
 from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible, save_story_bible
 from podcastfy.litrpg.models import CharacterState, SeriesState
 from podcastfy.litrpg.state_store import save_series_state
-from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task
+from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task, run_litrpg_task_data
 
 
 class FakeTTS:
@@ -105,6 +105,27 @@ def test_run_litrpg_task_rejects_unknown_generation_provider(tmp_path):
 
     with pytest.raises(ValueError, match="generation.provider=openai"):
         run_litrpg_task(task_path, tts=FakeTTS())
+
+
+def test_run_litrpg_task_data_uses_base_dir_for_relative_outputs(tmp_path):
+    task = {
+        "series_id": "paper-cuts",
+        "premise": "A clerk discovers the office is a dungeon.",
+        "storage_dir": "library",
+        "result_path": "results/inline_result.json",
+        "render_audio": True,
+        "outline": "Outline: SYSTEM grants a quest.",
+        "script": "<NARRATOR>Begin.</NARRATOR><SYSTEM>Quest accepted.</SYSTEM>",
+    }
+    tts = FakeTTS()
+
+    result = run_litrpg_task_data(task, base_dir=tmp_path, tts=tts)
+
+    result_path = tmp_path / "results" / "inline_result.json"
+    assert result["series_id"] == "paper-cuts"
+    assert len(tts.calls) == 1
+    assert result_path.exists()
+    assert json.loads(result_path.read_text(encoding="utf-8"))["series_id"] == "paper-cuts"
 
 
 def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(tmp_path, monkeypatch):

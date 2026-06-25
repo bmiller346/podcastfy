@@ -11,10 +11,25 @@ Then open http://127.0.0.1:8765/.
 The UI can:
 
 - Save local provider keys and default provider/model settings.
+- Build a local LitRPG task payload with series, premise, provider, TTS, and storage settings.
 - List `usage/litrpg*.json` task files.
 - Run a selected task through `podcastfy.litrpg.task.run_litrpg_task`.
 - Submit a selected task as a tracked background job and poll status/result metadata.
 - Browse saved episodes under `data/litrpg` and play saved audio files.
+- Query series, episode, and replay metadata through JSON endpoints.
+
+## Task Builder
+
+The Create Task panel is meant for local experimentation without hand-editing a task file first. It covers:
+
+- `series_id` and `premise`
+- `mode` as `episode` or `chapter`
+- story generation `provider` and `model`
+- TTS `provider`, `model`, and `format`
+- `render_audio`
+- `result_path`, `checkpoint_dir`, and `storage_dir`
+
+The browser builds a JSON payload that matches the LitRPG task schema and submits it to the local jobs API. The preview box shows the exact task object before it is queued.
 
 ## Job API
 
@@ -33,7 +48,24 @@ For one-click generation from the UI, prefer the tracked job API:
 POST /api/jobs
 Content-Type: application/json
 
-{"path": "usage/litrpg_task.example.json"}
+{
+  "task": {
+    "mode": "episode",
+    "series_id": "paper-cuts",
+    "premise": "A warehouse clerk discovers the forklift training course is a dungeon tutorial.",
+    "render_audio": true,
+    "storage_dir": "../data/litrpg",
+    "generation": {
+      "provider": "openai",
+      "model": "gpt-5.5"
+    },
+    "tts": {
+      "provider": "openai",
+      "model": "gpt-4o-mini-tts",
+      "format": "mp3"
+    }
+  }
+}
 ```
 
 The response includes a `job_id`. Poll it until the status is `succeeded` or `failed`:
@@ -49,6 +81,27 @@ To show recent jobs:
 ```http
 GET /api/jobs
 ```
+
+## Replay Library API
+
+The combined library view is still available:
+
+```http
+GET /api/library
+```
+
+For a more targeted frontend, use:
+
+```http
+GET /api/library/series
+GET /api/library/episodes?series_id=paper-cuts
+GET /api/library/episodes/paper-cuts/episode-0001
+```
+
+Episode payloads always include a `replay` object. When cached audio exists it
+reports `available: true`, `status: "ready"`, and the local `/audio?...` URL.
+When audio has not been rendered yet, it reports `available: false` and
+`status: "missing_audio"`.
 
 ## Local Settings
 
