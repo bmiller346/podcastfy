@@ -15,6 +15,7 @@ from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
+from podcastfy.litrpg.series_architect import SeriesArchitect, format_chapter_contract_context
 from podcastfy.litrpg.showrunner import build_showrunner_payload, format_showrunner_context
 from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, save_series_state
@@ -202,6 +203,41 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         )
         if summary:
             chapter_task["series_package_summary"] = summary
+    chapter_contract = None
+    if (
+        storage_dir is not None
+        and task.get("showrunner") is not False
+        and task.get("chapter_contract") is not False
+    ):
+        architect = SeriesArchitect(storage_dir, series_id)
+        if architect.available():
+            book_number = int(task.get("book_number") or task.get("book") or 1)
+            chapter_number = int(task.get("chapter_number") or task.get("episode_number") or 1)
+            chapter_contract = architect.get_chapter_contract(
+                book_number=book_number,
+                chapter_number=chapter_number,
+            )
+            chapter_task["chapter_contract"] = chapter_contract
+            chapter_task.setdefault("book_number", book_number)
+            if chapter_contract.get("title") and not (
+                task.get("chapter_title") or task.get("title")
+            ):
+                chapter_task["chapter_title"] = str(chapter_contract["title"])
+            if chapter_contract.get("premise") and not task.get("premise"):
+                chapter_task["premise"] = str(chapter_contract["premise"])
+            chapter_task.setdefault(
+                "showrunner_context",
+                format_chapter_contract_context(chapter_contract),
+            )
+            chapter_task["showrunner"] = {
+                "chapter": chapter_number,
+                "phase": chapter_contract.get("phase"),
+                "tension": chapter_contract.get("tension"),
+                "creativity": chapter_contract.get("creativity"),
+                "absurdity": chapter_contract.get("absurdity"),
+                "directives": list(chapter_contract.get("directives") or []),
+                "contract_source": "series_architect",
+            }
     if task.get("showrunner") is not False:
         showrunner_settings = task.get("showrunner")
         if showrunner_settings is not None and not isinstance(showrunner_settings, Mapping):
@@ -210,11 +246,12 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         chapter_number = int(task.get("chapter_number") or task.get("episode_number") or 1)
         if "chapter_number" in settings:
             chapter_number = int(settings["chapter_number"])
-        chapter_task["showrunner"] = build_showrunner_payload(
-            chapter_number=chapter_number,
-            wandering_event=settings.get("wandering_event"),
-            enable_wandering=bool(settings.get("enable_wandering")),
-        )
+        if chapter_contract is None:
+            chapter_task["showrunner"] = build_showrunner_payload(
+                chapter_number=chapter_number,
+                wandering_event=settings.get("wandering_event"),
+                enable_wandering=bool(settings.get("enable_wandering")),
+            )
         chapter_task.setdefault(
             "showrunner_context",
             format_showrunner_context(chapter_task["showrunner"]),

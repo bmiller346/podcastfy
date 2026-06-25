@@ -66,6 +66,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     showrunner_context = str(task.get("showrunner_context") or "").strip()
     if not showrunner_context and showrunner_payload:
         showrunner_context = format_showrunner_context(showrunner_payload)
+    chapter_contract = _mapping_or_none(task.get("chapter_contract")) or {}
     mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
     checkpoint_dir = _checkpoint_dir(task)
@@ -304,6 +305,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "series_package_summary": series_package_summary,
             "showrunner": dict(showrunner_payload),
             "showrunner_context": showrunner_context,
+            "chapter_contract": dict(chapter_contract),
             "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),

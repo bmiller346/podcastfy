@@ -5,6 +5,8 @@ import pytest
 
 from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible, save_story_bible
 from podcastfy.litrpg.models import CharacterState, SeriesState
+from podcastfy.litrpg.series_architect import ChapterOutlineEntry, SeriesShape
+from podcastfy.litrpg.series_architect import bootstrap_series, save_chapter_outline
 from podcastfy.litrpg.state_store import save_series_state
 from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task, run_litrpg_task_data
 
@@ -314,6 +316,77 @@ def test_run_litrpg_task_persists_validated_mechanics_deltas_for_chapters(tmp_pa
     assert state["character"]["inventory"] == ["brass key"]
     assert "Staple Guard" in state["character"]["skills"]
     assert "Chapter 3: The Break Room Bites Back" in state["memory"]
+
+
+def test_run_litrpg_task_injects_series_architect_chapter_contract(tmp_path, monkeypatch):
+    storage_dir = tmp_path / "library"
+    bootstrap_series(
+        storage_dir=storage_dir,
+        series_id="paper-cuts",
+        shape=SeriesShape(
+            target_books=1,
+            chapters_per_book=8,
+            series_title="Paper Cuts",
+            series_promise="Office workers survive dungeon bureaucracy.",
+            endgame_direction="Expose the HR System.",
+            series_mysteries=["HR System origin"],
+        ),
+        series_arc=[
+            {
+                "book": 1,
+                "role": "Origin and first floor survival",
+                "major_change": "The clerk admits the office is a dungeon.",
+                "power_ceiling": "level 10",
+                "chapter_count": 8,
+                "arc_style": "escalating_floor_survival",
+                "must_resolve": ["first boss"],
+                "must_preserve": ["HR System origin"],
+            }
+        ],
+    )
+    save_chapter_outline(
+        storage_dir,
+        "paper-cuts",
+        1,
+        [
+            ChapterOutlineEntry(
+                chapter=2,
+                title="The Copier Has Teeth",
+                premise="The copier room becomes a tutorial arena.",
+                ends_on="The toner hatch opens from the inside.",
+                must_not_use=["HR System origin"],
+            )
+        ],
+    )
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "book_number": 1,
+                "chapter_number": 2,
+                "storage_dir": "library",
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_generate(task, *, llm):
+        captured.update(task)
+        return {"mode": "chapter", "series_id": task["series_id"]}
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    run_litrpg_task(task_path, llm=object())
+
+    assert captured["chapter_title"] == "The Copier Has Teeth"
+    assert captured["premise"] == "The copier room becomes a tutorial arena."
+    assert captured["chapter_contract"]["book_role"] == "Origin and first floor survival"
+    assert "HR System origin" in captured["chapter_contract"]["must_not_spend"]
+    assert "Chapter Contract:" in captured["showrunner_context"]
+    assert captured["showrunner"]["contract_source"] == "series_architect"
 
 
 def test_checked_in_episode_example_replays_with_fake_tts(tmp_path):

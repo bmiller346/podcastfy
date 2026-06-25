@@ -31,6 +31,13 @@ from podcastfy.litrpg.models import CharacterState, EpisodeBundle, EpisodeConfig
 from podcastfy.litrpg.models import QuestState, ScriptLine, SeriesState
 from podcastfy.litrpg.renderer import RoleScriptRenderer
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
+from podcastfy.litrpg.series_architect import BookPlan, ChapterBeat
+from podcastfy.litrpg.series_architect import ChapterOutlineEntry, SeriesArchitect
+from podcastfy.litrpg.series_architect import SeriesShape, bootstrap_series
+from podcastfy.litrpg.series_architect import build_series_arc_prompt
+from podcastfy.litrpg.series_architect import format_chapter_contract_context
+from podcastfy.litrpg.series_architect import generate_tempo_map
+from podcastfy.litrpg.series_architect import load_series_shape, save_series_shape
 from podcastfy.litrpg.showrunner import NARRATIVE_ARC, WANDERING_EVENTS
 from podcastfy.litrpg.showrunner import build_showrunner_payload
 from podcastfy.litrpg.showrunner import format_showrunner_context
@@ -57,6 +64,9 @@ __all__ = [
     "CastMember",
     "CastPlan",
     "CharacterBibleEntry",
+    "BookPlan",
+    "ChapterBeat",
+    "ChapterOutlineEntry",
     "CharacterState",
     "EpisodeBundle",
     "EpisodeConfig",
@@ -66,6 +76,8 @@ __all__ = [
     "RoleScriptRenderer",
     "ScriptLine",
     "SeriesState",
+    "SeriesArchitect",
+    "SeriesShape",
     "STATE_SCHEMA_VERSION",
     "StoryBible",
     "NARRATIVE_ARC",
@@ -79,7 +91,9 @@ __all__ = [
     "build_mix_plan",
     "build_role_tts_instructions",
     "build_series_package_prompt",
+    "build_series_arc_prompt",
     "build_showrunner_payload",
+    "bootstrap_series",
     "cast_plan_from_mapping",
     "coerce_series_package",
     "create_generation_request",
@@ -91,7 +105,9 @@ __all__ = [
     "find_bundle_by_cache_key",
     "format_story_bible_summary",
     "format_series_package_summary",
+    "format_chapter_contract_context",
     "format_showrunner_context",
+    "generate_tempo_map",
     "generate_audition_script",
     "generate_series_package",
     "generate_sfx_candidate",
@@ -109,6 +125,7 @@ __all__ = [
     "load_litrpg_task",
     "load_litrpg_settings",
     "load_series_state",
+    "load_series_shape",
     "load_story_bible",
     "locked_part_scripts_from_ready_parts",
     "mark_episode_status",
@@ -125,6 +142,7 @@ __all__ = [
     "save_asset_manifest_file",
     "save_generated_series_package",
     "save_series_state",
+    "save_series_shape",
     "save_story_bible",
     "scan_asset_directory",
     "sfx_cache_path",
