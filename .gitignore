@@ -20,6 +20,8 @@ __pycache__/
 venv/
 env/
 .env
+settings.local.json
+*.local.json
 
 # IDE-specific files
 .vscode/
@@ -33,6 +35,7 @@ Thumbs.db
 
 # Project-specific ignores
 attachments/
+data/litrpg/
 
 # Logs
 *.log

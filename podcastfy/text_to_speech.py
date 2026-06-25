@@ -10,15 +10,24 @@ import io
 import logging
 import os
 import re
+import shutil
 import tempfile
 from typing import List, Tuple, Optional, Dict, Any
 from pydub import AudioSegment
 
+from .tts.script_parser import RoleLine, parse_role_script
 from .tts.factory import TTSProviderFactory
 from .utils.config import load_config
 from .utils.config_conversation import load_conversation_config
 
 logger = logging.getLogger(__name__)
+
+
+def _join_instruction_parts(*parts: str | None) -> str | None:
+    instructions = [part.strip() for part in parts if part and part.strip()]
+    if not instructions:
+        return None
+    return " ".join(instructions)
 
 
 class TextToSpeech:
@@ -175,6 +184,118 @@ class TextToSpeech:
 
         return audio_files
 
+    def convert_script_to_speech(
+        self,
+        script: str,
+        output_file: str,
+        voice_map: Dict[str, str],
+        role_tags: Optional[List[str]] = None,
+        role_instructions: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """
+        Convert a role-tagged script to speech without requiring Q&A alternation.
+
+        Args:
+                script: Role-tagged script text to convert.
+                output_file: Path to save the output audio file.
+                voice_map: Mapping of role names to provider voice IDs.
+                role_tags: Optional list of role tags to parse.
+        """
+        lines = parse_role_script(script, role_tags=role_tags)
+        if not lines:
+            raise ValueError("Script does not contain any role-tagged lines")
+
+        with tempfile.TemporaryDirectory(dir=self.temp_audio_dir) as temp_dir:
+            audio_segments = self._generate_role_audio_segments(
+                lines, temp_dir, voice_map, role_instructions or {}
+            )
+            self._merge_audio_files_sequential(audio_segments, output_file)
+            logger.info(f"Role-script audio saved to {output_file}")
+
+    def _generate_role_audio_segments(
+        self,
+        lines: List[RoleLine],
+        temp_dir: str,
+        voice_map: Dict[str, str],
+        role_instructions: Dict[str, str],
+    ) -> List[str]:
+        """Generate audio segments for role-script lines in original order."""
+        audio_files = []
+        provider_config = self._get_provider_config()
+        model = provider_config.get("model")
+        default_voice = (
+            voice_map.get("default")
+            or voice_map.get("DEFAULT")
+            or provider_config.get("default_voices", {}).get("question")
+        )
+
+        for idx, line in enumerate(lines, 1):
+            temp_file = os.path.join(
+                temp_dir, f"{idx:04d}_{line.role.lower()}.{self.audio_format}"
+            )
+            voice = (
+                voice_map.get(line.role)
+                or voice_map.get(line.role.lower())
+                or default_voice
+            )
+            if not voice:
+                raise ValueError(f"No voice configured for role {line.role}")
+
+            instructions = _join_instruction_parts(
+                role_instructions.get(line.role) or role_instructions.get(line.role.lower()),
+                line.style,
+            )
+            audio_data = self._generate_provider_audio(
+                line.text,
+                voice,
+                model,
+                instructions=instructions,
+            )
+            with open(temp_file, "wb") as f:
+                f.write(audio_data)
+            audio_files.append(temp_file)
+
+        return audio_files
+
+    def _generate_provider_audio(
+        self, text: str, voice: str, model: str, instructions: str | None = None
+    ) -> bytes:
+        try:
+            return self.provider.generate_audio(
+                text,
+                voice,
+                model,
+                instructions=instructions,
+                response_format=self.audio_format,
+            )
+        except TypeError:
+            return self.provider.generate_audio(text, voice, model)
+
+    def _merge_audio_files_sequential(
+        self, audio_files: List[str], output_file: str
+    ) -> None:
+        """Merge audio files in the order provided."""
+        try:
+            if self._should_concatenate_without_pydub():
+                self._concatenate_audio_files(audio_files, output_file)
+                logger.info(f"Concatenated role-script audio saved to {output_file}")
+                return
+
+            combined = AudioSegment.empty()
+
+            for file_path in audio_files:
+                combined += AudioSegment.from_file(file_path, format=self.audio_format)
+
+            output_dir = os.path.dirname(output_file)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+            combined.export(output_file, format=self.audio_format)
+            logger.info(f"Merged role-script audio saved to {output_file}")
+
+        except Exception as e:
+            logger.error(f"Error merging role-script audio files: {str(e)}")
+            raise
+
     def _merge_audio_files(self, audio_files: List[str], output_file: str) -> None:
         """
         Merge the provided audio files sequentially, ensuring questions come before answers.
@@ -202,6 +323,11 @@ class TextToSpeech:
             # Sort files by index and type (question/answer)
             audio_files.sort(key=get_sort_key)
 
+            if self._should_concatenate_without_pydub():
+                self._concatenate_audio_files(audio_files, output_file)
+                logger.info(f"Concatenated audio saved to {output_file}")
+                return
+
             # Create empty audio segment
             combined = AudioSegment.empty()
 
@@ -219,6 +345,22 @@ class TextToSpeech:
         except Exception as e:
             logger.error(f"Error merging audio files: {str(e)}")
             raise
+
+    def _should_concatenate_without_pydub(self) -> bool:
+        """Use simple MP3 concatenation when ffmpeg/ffprobe are unavailable."""
+        if self.audio_format.lower() != "mp3":
+            return False
+        return shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None
+
+    def _concatenate_audio_files(self, audio_files: List[str], output_file: str) -> None:
+        """Concatenate MP3 segments directly as a no-ffmpeg fallback."""
+        output_dir = os.path.dirname(output_file)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        with open(output_file, "wb") as output:
+            for file_path in audio_files:
+                with open(file_path, "rb") as source:
+                    shutil.copyfileobj(source, output)
 
     def _setup_directories(self) -> None:
         """Setup required directories for audio processing."""

@@ -1,7 +1,7 @@
 """Abstract base class for Text-to-Speech providers."""
 
 from abc import ABC, abstractmethod
-from typing import List, ClassVar, Tuple
+from typing import List, ClassVar, Tuple, Dict, Optional
 import re
 
 class TTSProvider(ABC):
@@ -87,6 +87,22 @@ class TTSProvider(ABC):
             for person1, person2 in matches
         ]
         return processed_matches
+
+    def split_role_lines(
+        self, input_text: str, role_tags: Optional[List[str]] = None
+    ) -> List[Dict[str, Optional[str]]]:
+        """
+        Split arbitrary role-tagged text into ordered line dictionaries.
+
+        This is separate from split_qa so the legacy Person1/Person2 pairing behavior
+        remains unchanged.
+        """
+        from podcastfy.tts.script_parser import parse_role_script
+
+        return [
+            {"role": line.role, "text": line.text, "style": line.style}
+            for line in parse_role_script(input_text, role_tags=role_tags)
+        ]
 
     def clean_tss_markup(self, input_text: str, additional_tags: List[str] = ["Person1", "Person2"], supported_tags: List[str] = None) -> str:
         """

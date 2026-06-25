@@ -1,0 +1,8 @@
+{
+  "openai_api_key": "sk-proj-replace-me-or-use-env",
+  "gemini_api_key": "replace-me-or-use-env",
+  "elevenlabs_api_key": "replace-me-or-use-env",
+  "default_tts_provider": "openai",
+  "default_tts_model": "gpt-4o-mini-tts",
+  "default_tts_format": "mp3"
+}

@@ -1,0 +1,81 @@
+minutes: 18
+tone: cinematic, witty, high-stakes, audio-first
+episode_structure:
+  - cold_open_cliff_recap
+  - quest_hook
+  - combat_or_skill_trial
+  - loot_xp_class_update
+  - character_callback
+  - boss_reversal
+  - cliffhanger
+cast_roles:
+  NARRATOR: Warm, cinematic guide with crisp action clarity.
+  HERO: Newly awakened adventurer, brave but still learning the rules.
+  SYSTEM: Precise game interface voice for notifications and mechanics.
+  SIDEKICK: Quick, loyal companion who turns exposition into banter.
+  BOSS: Commanding antagonist with readable menace and tactical pressure.
+  RIVAL: Competitive survivor with grudging respect for the hero.
+  MENTOR: Experienced delver who knows more than they admit.
+  MERCHANT: Opportunistic vendor with suspiciously useful inventory.
+  HEALER: Practical support character with dry triage humor.
+  TANK: Front-line bruiser who treats danger as logistics.
+  ROGUE: Sneaky opportunist who notices traps and social leverage.
+  MAGE: Rules-minded caster who explains mechanics under stress.
+  BEAST: Monster or summoned creature with simple but distinct vocal identity.
+  MINION: Disposable enemy voice for crowd texture and combat beats.
+  GUIDE: Dungeon tutorial voice separate from the hostile SYSTEM.
+  VILLAIN: Long-arc antagonist who should feel different from BOSS.
+voices:
+  NARRATOR:
+    voice: en-US-GuyNeural
+    effect: light_room
+  HERO:
+    voice: en-US-EricNeural
+    effect: close_mic
+  SYSTEM:
+    voice: en-US-JennyNeural
+    effect: soft_chime
+  SIDEKICK:
+    voice: en-US-AriaNeural
+    effect: close_mic
+  BOSS:
+    voice: en-US-ChristopherNeural
+    effect: subtle_reverb
+  RIVAL:
+    voice: en-US-RogerNeural
+    effect: close_mic
+  MENTOR:
+    voice: en-US-SteffanNeural
+    effect: light_room
+  MERCHANT:
+    voice: en-US-BrianNeural
+    effect: close_mic
+  HEALER:
+    voice: en-US-AvaNeural
+    effect: close_mic
+  TANK:
+    voice: en-US-AndrewNeural
+    effect: close_mic
+  ROGUE:
+    voice: en-US-EmmaNeural
+    effect: close_mic
+  MAGE:
+    voice: en-US-MichelleNeural
+    effect: light_room
+  BEAST:
+    voice: en-US-ChristopherNeural
+    effect: subtle_reverb
+  MINION:
+    voice: en-US-BrianNeural
+    effect: radio
+  GUIDE:
+    voice: en-US-JennyNeural
+    effect: soft_chime
+  VILLAIN:
+    voice: en-US-ChristopherNeural
+    effect: subtle_reverb
+effects:
+  notification: short crystalline ping before SYSTEM updates
+  loot_drop: small rising sparkle under the reveal
+  level_up: confident two-note flourish
+  cliffhanger: low pulse, then abrupt silence
