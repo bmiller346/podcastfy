@@ -414,6 +414,39 @@ def test_generate_litrpg_chapter_injects_series_package_summary_into_prompts():
         assert package_line in call["prompt"]
 
 
+def test_generate_litrpg_chapter_passes_non_litrpg_genre_to_prompts():
+    llm = AllRolesChapterLLM()
+
+    result = generate_litrpg_chapter(
+        {
+            **_chapter_task(),
+            "genre": "cozy mystery",
+            "premise": "A village baker solves a murder through pastry gossip.",
+            "part_overrides": {
+                "cold-open": {"required_roles": ["NARRATOR", "HERO"]},
+                "social-pressure": {"required_roles": ["NARRATOR"]},
+                "rules-reveal": {"required_roles": ["NARRATOR"]},
+                "setpiece": {"required_roles": ["NARRATOR"]},
+                "fallout-cliffhanger": {"required_roles": ["NARRATOR"]},
+            },
+        },
+        llm=llm,
+    )
+
+    first_prompt = next(
+        call["prompt"] for call in llm.calls if call["stage"] == "part:cold-open"
+    )
+    mechanics_prompt = next(
+        call["prompt"] for call in llm.calls if call["stage"] == "mechanics:cold-open"
+    )
+
+    assert result["chapter"]["genre"] == "cozy mystery"
+    assert result["render"]["metadata"]["genre"] == "cozy mystery"
+    assert "cozy mystery audio chapter" in first_prompt
+    assert "XP, loot" not in first_prompt
+    assert "cozy mystery story logic" in mechanics_prompt
+
+
 def test_generate_litrpg_chapter_uses_mechanics_context_in_final_gate():
     script = (
         "<NARRATOR>XP total: 5.</NARRATOR>"

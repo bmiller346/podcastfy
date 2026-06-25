@@ -38,6 +38,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     chapter_number = int(task.get("chapter_number") or 1)
     title = str(task.get("chapter_title") or task.get("title") or f"Chapter {chapter_number}")
     premise = str(task.get("premise") or "")
+    genre = str(task.get("genre") or task.get("style") or "").strip()
     target_minutes = int(task.get("target_minutes") or 30)
     injected_beats = _string_list(task.get("injected_beats"))
 
@@ -48,6 +49,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         target_minutes=target_minutes,
         cast_roles=_mapping_or_none(task.get("cast_roles")),
         injected_beats=injected_beats,
+        genre=genre,
     )
     plan.parts = _apply_part_overrides(
         plan.parts,
@@ -78,6 +80,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             story_bible_summary=story_bible_summary,
             series_package_summary=series_package_summary,
             showrunner_context=showrunner_context,
+            genre=genre,
         )
         locked_script = locked_part_scripts.get(part.part_id)
         script = (
@@ -115,6 +118,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 part_script=script,
                 required_roles=part.required_roles,
                 series_package_summary=series_package_summary,
+                genre=genre,
             )
             review = _generate_with_retry(
                 llm,
@@ -126,6 +130,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 part_script=script,
                 required_roles=part.required_roles,
                 series_package_summary=series_package_summary,
+                genre=genre,
             )
             director_tags = _generate_with_retry(
                 llm,
@@ -139,6 +144,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 prior_parts_summary=_prior_parts_summary(generated_parts),
                 story_bible_summary=story_bible_summary,
                 series_package_summary=series_package_summary,
+                genre=genre,
             )
             mechanics_audit = _generate_with_retry(
                 llm,
@@ -149,6 +155,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             description_audit_prompt = build_description_audit_prompt(
                 part_script=script,
                 story_bible_summary=story_bible_summary,
+                genre=genre,
             )
             description_audit = _generate_with_retry(
                 llm,
@@ -159,6 +166,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             tonal_audit_prompt = build_tonal_audit_prompt(
                 part_script=script,
                 target_tone=target_tone,
+                genre=genre,
             )
             tonal_audit = _generate_with_retry(
                 llm,
@@ -166,7 +174,10 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 stage=f"tonal:{part.part_id}",
                 retry_options=retry_options,
             )
-            showmanship_audit_prompt = build_showmanship_audit_prompt(part_script=script)
+            showmanship_audit_prompt = build_showmanship_audit_prompt(
+                part_script=script,
+                genre=genre,
+            )
             showmanship_audit = _generate_with_retry(
                 llm,
                 prompt=showmanship_audit_prompt,
@@ -183,6 +194,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                     required_roles=part.required_roles,
                     description_audit=description_audit,
                     series_package_summary=series_package_summary,
+                    genre=genre,
                 )
                 revised_script = _generate_with_retry(
                     llm,
@@ -244,6 +256,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             part_scripts=part_scripts,
             cast_roles=plan.cast_roles,
             series_package_summary=series_package_summary,
+            genre=genre,
         )
         chapter_review = _generate_with_retry(
             llm,
@@ -259,6 +272,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         visual_state_update_prompt = build_visual_state_extraction_prompt(
             final_script=combined_script,
             story_bible_summary=story_bible_summary,
+            genre=genre,
         )
         visual_state_update = _generate_with_retry(
             llm,
@@ -283,6 +297,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "number": chapter_number,
             "title": title,
             "premise": premise,
+            "genre": genre,
             "target_minutes": target_minutes,
             "injected_beats": injected_beats,
             "story_bible_summary": story_bible_summary,
@@ -316,6 +331,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 "series_id": str(task.get("series_id") or "default-series"),
                 "chapter_number": chapter_number,
                 "chapter_title": title,
+                "genre": genre,
             },
         },
     }

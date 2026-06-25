@@ -349,14 +349,20 @@ def test_settings_post_can_clear_non_secret_defaults_without_clearing_saved_keys
     assert data["api_keys"]["openai"]["configured"] is True
 
 
-def test_tasks_endpoint_lists_litrpg_json_files(ui_server, ui_roots):
+def test_tasks_endpoint_lists_supported_story_json_files(ui_server, ui_roots):
     (ui_roots / "usage" / "litrpg_task.json").write_text("{}", encoding="utf-8")
+    (ui_roots / "usage" / "story_task.json").write_text("{}", encoding="utf-8")
+    (ui_roots / "usage" / "audio_story_task.json").write_text("{}", encoding="utf-8")
     (ui_roots / "usage" / "notes.json").write_text("{}", encoding="utf-8")
 
     status, data = request_json(ui_server, "GET", "/api/tasks")
 
     assert status == 200
-    assert data["tasks"] == [{"name": "litrpg_task.json", "path": "usage/litrpg_task.json"}]
+    assert data["tasks"] == [
+        {"name": "audio_story_task.json", "path": "usage/audio_story_task.json"},
+        {"name": "litrpg_task.json", "path": "usage/litrpg_task.json"},
+        {"name": "story_task.json", "path": "usage/story_task.json"},
+    ]
 
 
 def test_run_task_rejects_paths_outside_usage(ui_server, ui_roots):
@@ -368,6 +374,18 @@ def test_run_task_rejects_paths_outside_usage(ui_server, ui_roots):
 
     assert status == 400
     assert "inside usage" in data["error"]
+
+
+def test_run_task_rejects_unsupported_usage_file_prefix(ui_server, ui_roots):
+    (ui_roots / "usage" / "notes.json").write_text("{}", encoding="utf-8")
+
+    status, data = request_json(
+        ui_server, "POST", "/api/run-task", {"path": "usage/notes.json"}
+    )
+
+    assert status == 400
+    assert "litrpg*.json" in data["error"]
+    assert "story*.json" in data["error"]
 
 
 def test_run_task_calls_task_runner_with_safe_task_path(

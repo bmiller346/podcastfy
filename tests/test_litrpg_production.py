@@ -32,6 +32,43 @@ def test_chapter_plan_splits_into_parts_with_injected_beats():
     assert any("SYSTEM" in part.required_roles for part in plan.parts)
 
 
+def test_non_litrpg_chapter_plan_uses_generic_story_profile():
+    plan = build_chapter_plan(
+        premise="A village baker solves a murder through pastry gossip.",
+        genre="cozy mystery",
+    )
+    part = plan.parts[2]
+
+    prompt = build_chapter_part_prompt(
+        chapter_plan=plan,
+        part=part,
+        genre="cozy mystery",
+    )
+    mechanics = build_mechanics_audit_prompt(
+        part_script="<HERO>The alibi is in the receipt book.</HERO>",
+        chapter_premise=plan.premise,
+        genre="cozy mystery",
+    )
+    tonal = build_tonal_audit_prompt(
+        part_script="<HERO>The scones know too much.</HERO>",
+        genre="cozy mystery",
+    )
+    review = build_chapter_review_prompt(
+        part_scripts=["<HERO>The clue was buttercream.</HERO>"],
+        cast_roles=plan.cast_roles,
+        genre="cozy mystery",
+    )
+
+    assert "cozy mystery audio chapter" in prompt
+    assert "Genre/style: cozy mystery" in prompt
+    assert "XP, loot" not in prompt
+    assert "clues, promises, secrets" in prompt
+    assert "cozy mystery story logic" in mechanics
+    assert "XP totals" not in mechanics
+    assert "genre_pressure" in tonal
+    assert "SYSTEM/announcer" not in review
+
+
 def test_part_prompt_requires_roles_and_review_before_render():
     plan = build_chapter_plan(premise="A clerk enters a dungeon office.")
     part = plan.parts[1]

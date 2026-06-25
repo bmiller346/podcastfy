@@ -32,6 +32,7 @@ USAGE_DIR = PROJECT_ROOT / "usage"
 DATA_DIR = PROJECT_ROOT / "data" / "litrpg"
 SETTINGS_PATH = DEFAULT_SETTINGS_PATH
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+TASK_FILE_PREFIXES = ("litrpg", "story", "audio_story")
 
 
 @dataclass
@@ -399,11 +400,16 @@ def package_module_status() -> dict[str, Any]:
 
 
 def list_tasks() -> list[dict[str, str]]:
-    """List usage/litrpg*.json task files."""
+    """List supported local story task files."""
     if not USAGE_DIR.exists():
         return []
+    paths = {
+        path
+        for prefix in TASK_FILE_PREFIXES
+        for path in USAGE_DIR.glob(f"{prefix}*.json")
+    }
     tasks = []
-    for path in sorted(USAGE_DIR.glob("litrpg*.json")):
+    for path in sorted(paths):
         if path.is_file():
             tasks.append({"name": path.name, "path": _display_path(path)})
     return tasks
@@ -595,6 +601,8 @@ def _task_summary(
         "mode": str(task_data.get("mode") or "episode"),
         "render_audio": bool(task_data.get("render_audio", True)),
     }
+    if task_data.get("genre") or task_data.get("style"):
+        summary["genre"] = str(task_data.get("genre") or task_data.get("style"))
     premise = str(task_data.get("premise") or "").strip()
     if premise:
         summary["premise"] = premise[:160]
@@ -662,11 +670,19 @@ def resolve_task_path(value: Any) -> Path:
     usage_root = USAGE_DIR.resolve()
     if not _is_relative_to(resolved, usage_root):
         raise ValueError("Task path must stay inside usage/")
-    if not resolved.name.startswith("litrpg") or resolved.suffix.lower() != ".json":
-        raise ValueError("Task must be a usage/litrpg*.json file")
+    if not _is_supported_task_file(resolved):
+        prefixes = ", ".join(f"{prefix}*.json" for prefix in TASK_FILE_PREFIXES)
+        raise ValueError(f"Task must be a usage/ file matching: {prefixes}")
     if not resolved.is_file():
         raise ValueError("Task file does not exist")
     return resolved
+
+
+def _is_supported_task_file(path: Path) -> bool:
+    name = path.name.lower()
+    return path.suffix.lower() == ".json" and any(
+        name.startswith(prefix) for prefix in TASK_FILE_PREFIXES
+    )
 
 
 def resolve_audio_path(value: str) -> Path:

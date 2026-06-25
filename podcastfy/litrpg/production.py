@@ -1,4 +1,4 @@
-"""Production planning helpers for cast-rich LitRPG audio chapters."""
+"""Production planning helpers for cast-rich local audio chapters."""
 
 from __future__ import annotations
 
@@ -26,6 +26,37 @@ DEFAULT_CAST_ROLES = {
 }
 
 
+GENERIC_CAST_ROLES = {
+    "NARRATOR": "Cinematic narrator who keeps action clear and momentum high.",
+    "HERO": "Primary point-of-view character with grounded reactions.",
+    "SIDEKICK": "Loyal counterpoint who turns exposition into pressure and banter.",
+    "RIVAL": "Competitive or oppositional character with a distinct agenda.",
+    "MENTOR": "Experienced guide who knows more than they admit.",
+    "VILLAIN": "Long-arc antagonist who should feel different from a scene threat.",
+    "AUTHORITY": "Institutional pressure voice: boss, officer, judge, parent, or official.",
+    "WITNESS": "Information-bearing character with a specific bias or memory.",
+    "COMIC_RELIEF": "Funny pressure valve whose jokes do not erase consequences.",
+    "SKEPTIC": "Character who challenges plans and forces clearer reasoning.",
+    "ALLY": "Support character with practical help and independent wants.",
+    "EXPERT": "Specialist who explains rules, history, clues, or constraints under stress.",
+    "THREAT": "Immediate antagonist, danger, monster, culprit, or disaster voice.",
+    "CROWD": "Background voices for social texture and public pressure.",
+    "HOST": "Optional announcer, interviewer, showrunner, or framing-device voice.",
+    "MYSTERY": "Unresolved force, clue trail, hidden patron, or eerie recurring presence.",
+}
+
+
+@dataclass(slots=True)
+class StoryProfile:
+    genre: str
+    is_litrpg: bool
+    script_label: str
+    mechanics_label: str
+    mechanics_examples: str
+    tonal_target: str
+    showmanship_label: str
+
+
 @dataclass(slots=True)
 class ChapterPart:
     part_id: str
@@ -48,6 +79,33 @@ class ChapterPlan:
         return asdict(self)
 
 
+def story_profile(genre: str = "") -> StoryProfile:
+    clean_genre = str(genre or "").strip()
+    is_litrpg = "litrpg" in clean_genre.casefold() or not clean_genre
+    label = "LitRPG" if is_litrpg else clean_genre
+    return StoryProfile(
+        genre=label,
+        is_litrpg=is_litrpg,
+        script_label=f"{label} audio chapter",
+        mechanics_label="LitRPG mechanics" if is_litrpg else f"{label} story logic",
+        mechanics_examples=(
+            "XP, loot, quest, status, cooldown, stat, skill, or class"
+            if is_litrpg
+            else "clues, promises, secrets, relationships, resources, motives, rules, debts, injuries, or constraints"
+        ),
+        tonal_target=(
+            "absurd dungeon spectacle with emotionally real stakes"
+            if is_litrpg
+            else f"{label} with emotionally real stakes and genre-appropriate contrast"
+        ),
+        showmanship_label=(
+            "dungeon audience and sponsor desk"
+            if is_litrpg
+            else "audio-series audience, editor, and engagement desk"
+        ),
+    )
+
+
 def default_cast_roles(extra_roles: Mapping[str, str] | None = None) -> dict[str, str]:
     cast = dict(DEFAULT_CAST_ROLES)
     if extra_roles:
@@ -63,12 +121,43 @@ def build_chapter_plan(
     target_minutes: int = 30,
     cast_roles: Mapping[str, str] | None = None,
     injected_beats: Sequence[str] | None = None,
+    genre: str = "",
 ) -> ChapterPlan:
     """Build a deterministic starter chapter plan with cast-rich parts."""
-    cast = default_cast_roles(cast_roles)
+    profile = story_profile(genre)
+    cast = default_cast_roles(cast_roles) if profile.is_litrpg else _default_story_cast_roles(cast_roles)
     beats = list(injected_beats or [])
     part_minutes = max(3, target_minutes // 5)
-    part_templates = [
+    part_templates = _litrpg_part_templates() if profile.is_litrpg else _generic_part_templates()
+    parts = [
+        ChapterPart(
+            part_id=part_id,
+            title=part_title,
+            purpose=purpose,
+            required_roles=roles,
+            injected_beats=beats if index == 0 else [],
+            target_minutes=part_minutes,
+        )
+        for index, (part_id, part_title, purpose, roles) in enumerate(part_templates)
+    ]
+    return ChapterPlan(
+        chapter_number=chapter_number,
+        title=title or f"Chapter {chapter_number}",
+        premise=premise,
+        cast_roles=cast,
+        parts=parts,
+    )
+
+
+def _default_story_cast_roles(extra_roles: Mapping[str, str] | None = None) -> dict[str, str]:
+    cast = dict(GENERIC_CAST_ROLES)
+    if extra_roles:
+        cast.update({str(role).upper(): str(description) for role, description in extra_roles.items()})
+    return cast
+
+
+def _litrpg_part_templates() -> list[tuple[str, str, str, list[str]]]:
+    return [
         (
             "cold-open",
             "Cold Open",
@@ -100,24 +189,41 @@ def build_chapter_plan(
             ["NARRATOR", "HERO", "SYSTEM", "VILLAIN", "RIVAL", "MENTOR"],
         ),
     ]
-    parts = [
-        ChapterPart(
-            part_id=part_id,
-            title=part_title,
-            purpose=purpose,
-            required_roles=roles,
-            injected_beats=beats if index == 0 else [],
-            target_minutes=part_minutes,
-        )
-        for index, (part_id, part_title, purpose, roles) in enumerate(part_templates)
+
+
+def _generic_part_templates() -> list[tuple[str, str, str, list[str]]]:
+    return [
+        (
+            "cold-open",
+            "Cold Open",
+            "Open with immediate pressure, a clear POV, and one distinctive audio hook.",
+            ["NARRATOR", "HERO", "SIDEKICK", "THREAT", "CROWD"],
+        ),
+        (
+            "social-pressure",
+            "Social Pressure",
+            "Introduce relationship friction, competing agendas, and a breath of humor.",
+            ["NARRATOR", "HERO", "RIVAL", "ALLY", "SKEPTIC", "AUTHORITY"],
+        ),
+        (
+            "rules-reveal",
+            "Rules Reveal",
+            "Reveal the story constraint, clue, bargain, setting rule, or emotional cost that changes the plan.",
+            ["NARRATOR", "HERO", "EXPERT", "MENTOR", "WITNESS", "HOST"],
+        ),
+        (
+            "setpiece",
+            "Setpiece",
+            "Escalate into a staged confrontation, chase, reveal, performance, or disaster.",
+            ["NARRATOR", "HERO", "THREAT", "SIDEKICK", "COMIC_RELIEF", "CROWD"],
+        ),
+        (
+            "fallout-cliffhanger",
+            "Fallout and Cliffhanger",
+            "Resolve immediate consequences, update relationships, and end with a long-arc question.",
+            ["NARRATOR", "HERO", "VILLAIN", "RIVAL", "MENTOR", "MYSTERY"],
+        ),
     ]
-    return ChapterPlan(
-        chapter_number=chapter_number,
-        title=title or f"Chapter {chapter_number}",
-        premise=premise,
-        cast_roles=cast,
-        parts=parts,
-    )
 
 
 def build_chapter_part_prompt(
@@ -128,7 +234,9 @@ def build_chapter_part_prompt(
     story_bible_summary: str = "",
     series_package_summary: str = "",
     showrunner_context: str = "",
+    genre: str = "",
 ) -> str:
+    profile = story_profile(genre)
     roles = ", ".join(part.required_roles)
     cast = "\n".join(
         f"- {role}: {chapter_plan.cast_roles[role]}"
@@ -136,9 +244,10 @@ def build_chapter_part_prompt(
         if role in chapter_plan.cast_roles
     )
     injections = "\n".join(f"- {beat}" for beat in part.injected_beats) or "- None"
-    return f"""Write one production-ready LitRPG audio chapter part.
+    return f"""Write one production-ready {profile.script_label} part.
 
 Chapter {chapter_plan.chapter_number}: {chapter_plan.title}
+Genre/style: {profile.genre}
 Chapter premise: {chapter_plan.premise}
 Part: {part.title}
 Purpose: {part.purpose}
@@ -168,7 +277,7 @@ Requirements:
 - Do not collapse the cast into narrator monologue. Let characters speak.
 - Every required role must appear at least once unless physically impossible.
 - Keep each spoken block short enough for TTS regeneration and later review.
-- Include audible LitRPG mechanics where relevant: XP, loot, quest, status, cooldown, stat, skill, or class.
+- Include audible {profile.mechanics_label} where relevant: {profile.mechanics_examples}.
 - Preserve continuity and leave a clear handoff into the next part.
 """
 
@@ -178,9 +287,11 @@ def build_part_review_prompt(
     part_script: str,
     required_roles: Sequence[str],
     series_package_summary: str = "",
+    genre: str = "",
 ) -> str:
+    profile = story_profile(genre)
     roles = ", ".join(required_roles)
-    return f"""Review this LitRPG audio script part before it is rendered.
+    return f"""Review this {profile.script_label} script part before it is rendered.
 
 Required roles: {roles}
 
@@ -191,9 +302,9 @@ Check for:
 - Missing required role voices.
 - Overlong monologues that should be split for TTS.
 - Flat or generic dialogue.
-- Confusing LitRPG mechanics.
+- Confusing or unsupported {profile.mechanics_label}.
 - Continuity mistakes or unresolved injected beats.
-- Places where a SYSTEM or announcer-style insert would improve pacing.
+- Places where a narrator, host, announcer, or recurring audio device would improve pacing.
 
 Return actionable fixes first, then a concise pass/fail recommendation.
 
@@ -207,9 +318,11 @@ def build_director_pass_prompt(
     part_script: str,
     required_roles: Sequence[str],
     series_package_summary: str = "",
+    genre: str = "",
 ) -> str:
+    profile = story_profile(genre)
     roles = ", ".join(required_roles)
-    return f"""Mark performance intent for this LitRPG audio script part.
+    return f"""Mark performance intent for this {profile.script_label} script part.
 
 Required roles: {roles}
 
@@ -241,9 +354,17 @@ def build_mechanics_audit_prompt(
     prior_parts_summary: str = "",
     story_bible_summary: str = "",
     series_package_summary: str = "",
+    genre: str = "",
 ) -> str:
-    return f"""Audit LitRPG mechanics credibility for this chapter part.
+    profile = story_profile(genre)
+    primary_check = (
+        "XP totals, loot, inventory, cooldowns, class abilities, stats, quests, and status effects."
+        if profile.is_litrpg
+        else f"Track {profile.mechanics_examples}."
+    )
+    return f"""Audit {profile.mechanics_label} credibility for this chapter part.
 
+Genre/style: {profile.genre}
 Chapter premise: {chapter_premise}
 Prior parts summary:
 {prior_parts_summary or "This is the first part."}
@@ -255,11 +376,11 @@ Series package context:
 {series_package_summary or "No separate series package is available yet."}
 
 Check:
-- XP totals, loot, inventory, cooldowns, class abilities, stats, quests, and status effects.
+- {primary_check}
 - Whether consumed items are removed or consequences are acknowledged.
-- Whether the solution uses tools or abilities available in the script or prior summary.
-- Whether a character gains a power, item, or class feature without earning it.
-- Whether mechanics are audible enough for listeners to follow.
+- Whether the solution uses tools, facts, relationships, abilities, resources, or constraints available in the script or prior summary.
+- Whether a character gains a new advantage, clue, item, alliance, or ability without earning it.
+- Whether the story logic is audible enough for listeners to follow.
 
 Return:
 - verdict: pass, revise, or block.
@@ -275,8 +396,10 @@ def build_description_audit_prompt(
     *,
     part_script: str,
     story_bible_summary: str = "",
+    genre: str = "",
 ) -> str:
-    return f"""Audit physical description and character visual continuity for this LitRPG chapter part.
+    profile = story_profile(genre)
+    return f"""Audit physical description and character visual continuity for this {profile.script_label} part.
 
 Story bible continuity:
 {story_bible_summary or "No separate story bible is available yet."}
@@ -315,8 +438,10 @@ def build_visual_state_extraction_prompt(
     *,
     final_script: str,
     story_bible_summary: str = "",
+    genre: str = "",
 ) -> str:
-    return f"""Extract updates for the character and visual continuity bible from this finalized LitRPG script.
+    profile = story_profile(genre)
+    return f"""Extract updates for the character and visual continuity bible from this finalized {profile.script_label} script.
 
 Existing story bible continuity:
 {story_bible_summary or "No separate story bible is available yet."}
@@ -338,20 +463,21 @@ Final script:
 """
 
 
-def build_tonal_audit_prompt(*, part_script: str, target_tone: str = "") -> str:
-    return f"""Score the LitRPG chapter part on tonal dissonance.
+def build_tonal_audit_prompt(*, part_script: str, target_tone: str = "", genre: str = "") -> str:
+    profile = story_profile(genre)
+    return f"""Score the chapter part on tonal control for {profile.genre}.
 
-Target tone: {target_tone or "absurd dungeon spectacle with emotionally real stakes"}
+Target tone: {target_tone or profile.tonal_target}
 
 Give two independent 1-10 ratings:
 - stakes_seriousness: consequences feel emotionally real.
-- absurdity_pressure: dungeon/game layer is weird and active enough.
+- genre_pressure: the chosen genre engine is active enough.
 
-Reject or revise if the part is only goofy, only grim, or lets jokes erase consequences.
+Reject or revise if the part is tonally flat, generic, or lets jokes erase consequences.
 
 Return:
 - stakes_seriousness
-- absurdity_pressure
+- genre_pressure
 - verdict: pass, revise, or block.
 - fixes: concrete changes that preserve the script's best material.
 
@@ -360,18 +486,19 @@ Script:
 """
 
 
-def build_showmanship_audit_prompt(*, part_script: str) -> str:
-    return f"""Simulate the dungeon audience and sponsor desk reviewing this chapter part.
+def build_showmanship_audit_prompt(*, part_script: str, genre: str = "") -> str:
+    profile = story_profile(genre)
+    return f"""Simulate the {profile.showmanship_label} reviewing this chapter part.
 
 Score 1-10:
 - crowd_engagement
-- brutality
+- intensity
 - creativity
-- humiliation
+- emotional_payoff
 - meme_potential
 - sponsor_appeal
 
-Then recommend one reward, announcement, punishment, or complication for the next part if useful.
+Then recommend one reveal, announcement, reward, punishment, or complication for the next part if useful.
 
 Return:
 - scores
@@ -394,9 +521,11 @@ def build_part_revision_prompt(
     required_roles: Sequence[str],
     description_audit: str = "",
     series_package_summary: str = "",
+    genre: str = "",
 ) -> str:
+    profile = story_profile(genre)
     roles = ", ".join(required_roles)
-    return f"""Revise this LitRPG audio script part for render readiness.
+    return f"""Revise this {profile.script_label} script part for render readiness.
 
 Allowed role tags: {roles}
 
@@ -407,12 +536,12 @@ Use the review material below as constraints, not as decorative notes.
 Preserve strong jokes, character choices, and continuity. Fix blocking issues.
 Keep XML-style role blocks only. Do not include markdown, explanations, or JSON.
 Add style attributes sparingly when director intent matters, for example:
-<SYSTEM style="smug announcer, slapback">ACHIEVEMENT UNLOCKED.</SYSTEM>
+<HOST style="smug announcer, slapback">The room goes quiet.</HOST>
 
 Director pass:
 {director_tags}
 
-Mechanics audit:
+Story logic audit:
 {mechanics_audit}
 
 Description and character audit:
@@ -434,20 +563,28 @@ def build_chapter_review_prompt(
     part_scripts: Sequence[str],
     cast_roles: Mapping[str, str],
     series_package_summary: str = "",
+    genre: str = "",
 ) -> str:
+    profile = story_profile(genre)
     cast = ", ".join(cast_roles)
     scripts = "\n\n".join(part_scripts)
-    return f"""Review the completed LitRPG audio chapter as a produced audio drama.
+    device_check = (
+        "Whether SYSTEM/announcer moments land as events, not plain narration."
+        if profile.is_litrpg
+        else "Whether narrator, host, announcer, or recurring audio-device moments land as events, not plain narration."
+    )
+    return f"""Review the completed {profile.script_label} as a produced audio drama.
 
 Cast roles available: {cast}
+Genre/style: {profile.genre}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
 
 Check:
 - Character voice separation across at least 15 distinct roles where applicable.
-- Whether SYSTEM/announcer moments land as events, not plain narration.
-- Chapter pacing across parts: hook, escalation, mechanics reveal, setpiece, fallout, cliffhanger.
+- {device_check}
+- Chapter pacing across parts: hook, escalation, rules reveal, setpiece, fallout, cliffhanger.
 - Whether any role appears redundant and should be merged or rewritten.
 - Whether any missing injected scene should be added before render.
 
