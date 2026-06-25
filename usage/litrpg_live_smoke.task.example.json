@@ -1,0 +1,68 @@
+{
+  "mode": "chapter",
+  "series_id": "live-smoke",
+  "premise": "A burned-out warehouse clerk discovers the forklift certification course is a dungeon tutorial with an audience.",
+  "chapter_number": 1,
+  "chapter_title": "Forklift Paladin",
+  "target_minutes": 8,
+  "storage_dir": "../data/litrpg",
+  "result_path": "../data/litrpg/live-smoke/chapter-001.json",
+  "checkpoint_dir": "../data/litrpg/live-smoke/chapter-001_checkpoints",
+  "settings_path": "../settings.local.json",
+  "persist_state": true,
+  "render_audio": false,
+  "generation": {
+    "provider": "openai",
+    "model": "gpt-5.5",
+    "reasoning_effort": "low",
+    "verbosity": "low",
+    "max_retries": 2,
+    "retry_backoff_seconds": 1,
+    "timeout_seconds": 60
+  },
+  "reviews": {
+    "enabled": false,
+    "rewrite": false
+  },
+  "tone": "deadly serious survival inside absurd warehouse-dungeon game-show rules",
+  "injected_beats": [
+    "The SYSTEM announces a safety violation as if it is a boss encounter.",
+    "The hero must solve danger with only mundane warehouse gear.",
+    "A fake audience reaction changes the reward."
+  ],
+  "part_overrides": {
+    "cold-open": {
+      "target_minutes": 2,
+      "required_roles": [
+        "NARRATOR",
+        "HERO",
+        "SYSTEM",
+        "SIDEKICK",
+        "MINION"
+      ],
+      "extra_injected_beats": [
+        "Open mid-incident with the hero ducking under a possessed pallet jack."
+      ]
+    },
+    "party-pressure": {
+      "target_minutes": 2,
+      "required_roles": [
+        "NARRATOR",
+        "HERO",
+        "RIVAL",
+        "HEALER",
+        "TANK",
+        "ROGUE",
+        "MAGE"
+      ],
+      "extra_injected_beats": [
+        "The party argues over whether OSHA rules still apply."
+      ]
+    }
+  },
+  "locked_part_scripts": {
+    "mechanics-reveal": "<NARRATOR>The tutorial display flickered, waiting for the next real smoke run.</NARRATOR><SYSTEM>MECHANICS PLACEHOLDER: Reward tables deferred.</SYSTEM><GUIDE>Further details will unlock after the live smoke passes.</GUIDE><HERO>Fine. I will be annoyed later.</HERO><MERCHANT>Excellent. Annoyance has resale value.</MERCHANT><MENTOR>Keep the receipt.</MENTOR>",
+    "boss-setpiece": "<NARRATOR>The loading bay doors groaned like they were rehearsing for a larger chapter.</NARRATOR><HERO>This is where a boss fight goes.</HERO><SYSTEM>BOSS PLACEHOLDER ACCEPTED.</SYSTEM><BOSS>Return when the budget allows screaming.</BOSS><BEAST>Rrr.</BEAST><MINION>We support fiscal restraint.</MINION><SIDEKICK>That is somehow worse.</SIDEKICK>",
+    "fallout-cliffhanger": "<NARRATOR>The dungeon saved the recording and marked the chapter incomplete but alive.</NARRATOR><HERO>I survived the smoke test. That counts.</HERO><SYSTEM>CLIFFHANGER: Audio rendering remains disabled.</SYSTEM><VILLAIN>For now.</VILLAIN><RIVAL>Do not get smug.</RIVAL><MENTOR>Too late.</MENTOR>"
+  }
+}

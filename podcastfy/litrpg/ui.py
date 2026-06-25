@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
-import os
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -13,23 +16,41 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from podcastfy.litrpg.settings import API_KEY_FIELDS
-from podcastfy.litrpg.task import run_litrpg_task
+from podcastfy.litrpg import library as episode_library
+from podcastfy.litrpg.settings import (
+    DEFAULT_SETTINGS_PATH,
+    redacted_litrpg_settings_status,
+    save_litrpg_settings,
+)
+from podcastfy.litrpg.task import run_litrpg_task, run_litrpg_task_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 USAGE_DIR = PROJECT_ROOT / "usage"
 DATA_DIR = PROJECT_ROOT / "data" / "litrpg"
-SETTINGS_PATH = PROJECT_ROOT / "settings.local.json"
+SETTINGS_PATH = DEFAULT_SETTINGS_PATH
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-API_KEY_SETTING_KEYS = tuple(dict.fromkeys(value[0] for value in API_KEY_FIELDS.values()))
-ALLOWED_SETTING_KEYS = {
-    *API_KEY_SETTING_KEYS,
-    "default_generation_provider",
-    "default_tts_provider",
-    "default_model",
-    "default_tts_model",
-}
+
+@dataclass
+class TaskJob:
+    """Tracked background task started from the local UI."""
+
+    job_id: str
+    task_path: str | None = None
+    task_id: str | None = None
+    phase: str = "queued"
+    status: str = "queued"
+    task_summary: dict[str, Any] = field(default_factory=dict)
+    created_at: float = field(default_factory=time.time)
+    started_at: float | None = None
+    finished_at: float | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    checkpoint_paths: list[str] = field(default_factory=list)
+
+
+_JOBS: dict[str, TaskJob] = {}
+_JOBS_LOCK = threading.Lock()
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8765) -> None:
@@ -59,10 +80,42 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
             return self._send_json(settings_status())
         if parsed.path == "/api/tasks":
             return self._send_json({"tasks": list_tasks()})
+        if parsed.path == "/api/jobs":
+            return self._send_json({"jobs": list_jobs()})
+        if parsed.path.startswith("/api/jobs/"):
+            try:
+                return self._send_json(get_job_response(parsed.path.removeprefix("/api/jobs/")))
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.NOT_FOUND)
+        if parsed.path == "/api/library/series":
+            try:
+                return self._send_json({"series": list_library_series()})
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if parsed.path == "/api/library/episodes":
+            params = parse_qs(parsed.query)
+            try:
+                return self._send_json(
+                    {"episodes": list_library_episodes(params.get("series_id", [""])[0] or None)}
+                )
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if parsed.path.startswith("/api/library/episodes/"):
+            try:
+                relative = parsed.path.removeprefix("/api/library/episodes/").strip("/")
+                series_id, episode_id = relative.split("/", 1)
+                return self._send_json(
+                    {"episode": get_library_episode(series_id=series_id, episode_id=episode_id)}
+                )
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/api/library":
             return self._send_json({"library": list_library()})
         if parsed.path == "/audio":
-            return self._serve_audio(parsed.query)
+            try:
+                return self._serve_audio(parsed.query)
+            except ValueError as exc:
+                return self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
         if parsed.path.startswith("/static/"):
             self.path = parsed.path.removeprefix("/static")
             return super().do_GET()
@@ -76,9 +129,16 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
                 write_settings(payload)
                 return self._send_json(settings_status())
             if parsed.path == "/api/run-task":
-                task_path = resolve_task_path(payload.get("path"))
-                result = run_litrpg_task(task_path)
+                task_path, task_data = resolve_task_request(payload)
+                result = _run_task_request(task_path=task_path, task_data=task_data)
                 return self._send_json({"ok": True, "result": result})
+            if parsed.path == "/api/jobs":
+                task_path, task_data = resolve_task_request(payload)
+                job = submit_task_job(task_path=task_path, task_data=task_data)
+                return self._send_json(
+                    {"ok": True, "job": serialize_job(job)},
+                    HTTPStatus.ACCEPTED,
+                )
             self.send_error(HTTPStatus.NOT_FOUND)
         except ValueError as exc:
             self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -115,7 +175,7 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
 
     def _serve_audio(self, query: str) -> None:
         params = parse_qs(query)
-        audio_path = resolve_audio_path(params.get("path", [""])[0])
+        audio_path = resolve_audio_request(params)
         content_type = mimetypes.guess_type(audio_path.name)[0] or "application/octet-stream"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
@@ -129,56 +189,12 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
 
 def settings_status() -> dict[str, Any]:
     """Return local settings and environment status without revealing secrets."""
-    file_settings = _load_settings_file()
-    api_keys: dict[str, dict[str, Any]] = {}
-    for provider, (setting_key, env_key) in sorted(API_KEY_FIELDS.items()):
-        if provider in api_keys:
-            continue
-        file_configured = bool(file_settings.get(setting_key))
-        env_configured = bool(os.getenv(env_key))
-        api_keys[provider] = {
-            "setting_key": setting_key,
-            "env_key": env_key,
-            "file": file_configured,
-            "env": env_configured,
-            "configured": file_configured or env_configured,
-            "value": "redacted" if file_configured or env_configured else "",
-        }
-    defaults = {
-        key: file_settings.get(key, "")
-        for key in sorted(ALLOWED_SETTING_KEYS)
-        if key not in API_KEY_SETTING_KEYS
-    }
-    return {
-        "settings_path": str(SETTINGS_PATH),
-        "exists": SETTINGS_PATH.exists(),
-        "api_keys": api_keys,
-        "defaults": defaults,
-    }
+    return redacted_litrpg_settings_status(SETTINGS_PATH)
 
 
 def write_settings(payload: dict[str, Any]) -> None:
-    """Write allowed local settings fields to settings.local.json."""
-    existing = _load_settings_file()
-    next_settings = {
-        key: value for key, value in existing.items() if key in ALLOWED_SETTING_KEYS
-    }
-    for key, value in payload.items():
-        if key not in ALLOWED_SETTING_KEYS:
-            continue
-        if value is None:
-            next_settings.pop(key, None)
-            continue
-        if value == "":
-            continue
-        if not isinstance(value, (str, int, float, bool)):
-            raise ValueError(f"Unsupported settings value for {key}")
-        next_settings[key] = value
-
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with SETTINGS_PATH.open("w", encoding="utf-8") as settings_file:
-        json.dump(next_settings, settings_file, ensure_ascii=True, indent=2, sort_keys=True)
-        settings_file.write("\n")
+    """Write allowed local settings fields to the local ignored settings file."""
+    save_litrpg_settings(payload, SETTINGS_PATH)
 
 
 def list_tasks() -> list[dict[str, str]]:
@@ -192,40 +208,247 @@ def list_tasks() -> list[dict[str, str]]:
     return tasks
 
 
+def submit_task_job(
+    task_path: Path | None = None,
+    task_data: dict[str, Any] | None = None,
+) -> TaskJob:
+    """Start a task in the background and return its tracking record."""
+    task_id = uuid.uuid4().hex
+    job = TaskJob(
+        job_id=task_id,
+        task_id=task_id,
+        task_path=_display_path(task_path) if task_path is not None else None,
+        task_summary=_task_summary(task_path=task_path, task_data=task_data),
+    )
+    with _JOBS_LOCK:
+        _JOBS[job.job_id] = job
+    thread = threading.Thread(
+        target=_run_task_job,
+        args=(job.job_id, task_path, task_data),
+        name=f"litrpg-task-{job.job_id[:8]}",
+        daemon=True,
+    )
+    thread.start()
+    return job
+
+
+def list_jobs() -> list[dict[str, Any]]:
+    """Return newest known jobs first."""
+    with _JOBS_LOCK:
+        jobs = list(_JOBS.values())
+    return [serialize_job(job) for job in sorted(jobs, key=lambda item: item.created_at, reverse=True)]
+
+
+def get_job_response(job_id: str) -> dict[str, Any]:
+    """Return a single job response object for API polling."""
+    normalized = job_id.strip("/")
+    with _JOBS_LOCK:
+        job = _JOBS.get(normalized)
+    if job is None:
+        raise ValueError("Job not found")
+    return {"job": serialize_job(job)}
+
+
+def serialize_job(job: TaskJob) -> dict[str, Any]:
+    """Serialize a task job without exposing local object references."""
+    return {
+        "job_id": job.job_id,
+        "task_id": job.task_id or job.job_id,
+        "task_path": job.task_path,
+        "phase": job.phase,
+        "status": job.status,
+        "task_summary": job.task_summary,
+        "created_at": job.created_at,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "duration_seconds": _duration_seconds(job),
+        "result": job.result,
+        "error": job.error,
+        "checkpoint_paths": job.checkpoint_paths,
+    }
+
+
+def _run_task_job(
+    job_id: str,
+    task_path: Path | None,
+    task_data: dict[str, Any] | None,
+) -> None:
+    _update_job(job_id, status="running", phase="running", started_at=time.time())
+    try:
+        result = _run_task_request(task_path=task_path, task_data=task_data)
+        _update_job(
+            job_id,
+            status="succeeded",
+            phase="complete",
+            finished_at=time.time(),
+            result=_result_metadata(result),
+            checkpoint_paths=_checkpoint_paths(result),
+        )
+    except Exception as exc:  # pragma: no cover - direct behavior covered through HTTP.
+        _update_job(
+            job_id,
+            status="failed",
+            phase="failed",
+            finished_at=time.time(),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def _update_job(job_id: str, **changes: Any) -> TaskJob | None:
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        if job is None:
+            return None
+        for key, value in changes.items():
+            setattr(job, key, value)
+        return job
+
+
+def _duration_seconds(job: TaskJob) -> float | None:
+    if job.started_at is None:
+        return None
+    end = job.finished_at or time.time()
+    return round(max(0.0, end - job.started_at), 3)
+
+
+def _result_metadata(result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {"value": result}
+    keys = (
+        "series_id",
+        "episode_id",
+        "episode_number",
+        "chapter_id",
+        "chapter_number",
+        "mode",
+        "status",
+        "result_path",
+        "bundle_dir",
+        "episode_dir",
+        "checkpoint_dir",
+        "audio_path",
+    )
+    metadata = {key: result[key] for key in keys if key in result}
+    for key in ("script_path", "metadata_path", "audio_metadata_path"):
+        if key in result:
+            metadata[key] = result[key]
+    if not metadata:
+        metadata = dict(result)
+    return metadata
+
+
+def _checkpoint_paths(result: Any) -> list[str]:
+    if not isinstance(result, dict):
+        return []
+    raw_paths: list[Any] = []
+    for key in ("checkpoint_paths", "checkpoints", "part_paths", "approved_part_paths"):
+        value = result.get(key)
+        if isinstance(value, list):
+            raw_paths.extend(value)
+    for key in ("checkpoint_dir", "result_path"):
+        value = result.get(key)
+        if value:
+            raw_paths.append(value)
+    return [str(path) for path in raw_paths]
+
+
+def _run_task_request(
+    *,
+    task_path: Path | None,
+    task_data: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if task_path is not None:
+        return run_litrpg_task(task_path)
+    if task_data is not None:
+        return run_litrpg_task_data(task_data, base_dir=PROJECT_ROOT)
+    raise ValueError("Task path or task payload is required")
+
+
+def resolve_task_request(payload: dict[str, Any]) -> tuple[Path | None, dict[str, Any] | None]:
+    task_value = payload.get("task")
+    path_value = payload.get("path")
+    if task_value is not None:
+        if path_value is not None:
+            raise ValueError("Provide either path or task, not both")
+        if not isinstance(task_value, dict):
+            raise ValueError("task must be a JSON object")
+        return None, dict(task_value)
+    if path_value is not None:
+        return resolve_task_path(path_value), None
+    raise ValueError("Task path or task payload is required")
+
+
+def _task_summary(
+    *,
+    task_path: Path | None,
+    task_data: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if task_data is None:
+        summary: dict[str, Any] = {"source": "task-file"}
+        if task_path is not None:
+            summary["path"] = _display_path(task_path)
+        return summary
+    summary = {
+        "source": "inline",
+        "series_id": str(task_data.get("series_id") or "default-series"),
+        "mode": str(task_data.get("mode") or "episode"),
+        "render_audio": bool(task_data.get("render_audio", True)),
+    }
+    premise = str(task_data.get("premise") or "").strip()
+    if premise:
+        summary["premise"] = premise[:160]
+    generation = task_data.get("generation")
+    if isinstance(generation, dict):
+        if generation.get("provider"):
+            summary["generation_provider"] = str(generation["provider"])
+        if generation.get("model"):
+            summary["generation_model"] = str(generation["model"])
+    tts = task_data.get("tts")
+    if isinstance(tts, dict):
+        if tts.get("provider"):
+            summary["tts_provider"] = str(tts["provider"])
+        if tts.get("model"):
+            summary["tts_model"] = str(tts["model"])
+    return summary
+
+
 def list_library() -> list[dict[str, Any]]:
     """List saved series/episode metadata and playable audio under data/litrpg."""
-    episodes_root = DATA_DIR / "episodes"
-    if not episodes_root.exists():
-        return []
-    library = []
-    for series_dir in sorted(path for path in episodes_root.iterdir() if path.is_dir()):
-        episodes = []
-        for episode_dir in sorted(path for path in series_dir.iterdir() if path.is_dir()):
-            metadata = _read_json_file(episode_dir / "metadata.json")
-            audio_metadata = _read_json_file(episode_dir / "audio_metadata.json")
-            audio_path = _audio_path_from_metadata(episode_dir, audio_metadata)
-            if audio_path is None:
-                audio_path = next(iter(sorted((episode_dir / "audio").glob("*"))), None)
-            audio = None
-            if audio_path and audio_path.is_file():
-                relative = _relative_to_data(audio_path)
-                audio = {
-                    "path": relative,
-                    "url": f"/audio?path={quote(relative)}",
-                    "format": audio_metadata.get("format") or audio_path.suffix.lstrip("."),
-                    "bytes": audio_path.stat().st_size,
-                }
-            episodes.append(
-                {
-                    "episode_id": str(metadata.get("episode_id") or episode_dir.name),
-                    "episode_number": metadata.get("episode_number"),
-                    "prompt": metadata.get("prompt", ""),
-                    "path": _display_path(episode_dir),
-                    "audio": audio,
-                }
-            )
-        library.append({"series_id": series_dir.name, "episodes": episodes})
-    return library
+    series_records = list_library_series()
+    return [
+        {
+            "series_id": series["series_id"],
+            "title": series.get("title") or series["series_id"],
+            "episode_count": series.get("episode_count", 0),
+            "incomplete_count": series.get("incomplete_count", 0),
+            "episodes": list_library_episodes(series_id=str(series["series_id"])),
+        }
+        for series in series_records
+    ]
+
+
+def list_library_series() -> list[dict[str, Any]]:
+    """List local series summaries for the replay library."""
+
+    return episode_library.list_series(DATA_DIR)
+
+
+def list_library_episodes(series_id: str | None = None) -> list[dict[str, Any]]:
+    """List replayable episode payloads, optionally for one series."""
+
+    return [
+        _episode_payload(episode)
+        for episode in episode_library.list_episodes(DATA_DIR, series_id=series_id)
+    ]
+
+
+def get_library_episode(series_id: str, episode_id: str) -> dict[str, Any]:
+    """Return one episode payload for the replay library."""
+
+    episode = episode_library.get_episode(DATA_DIR, series_id, episode_id)
+    if episode is None:
+        raise ValueError("Episode not found")
+    return _episode_payload(episode)
 
 
 def resolve_task_path(value: Any) -> Path:
@@ -262,39 +485,87 @@ def resolve_audio_path(value: str) -> Path:
     return resolved
 
 
-def _load_settings_file() -> dict[str, Any]:
-    if not SETTINGS_PATH.exists():
-        return {}
-    with SETTINGS_PATH.open("r", encoding="utf-8") as settings_file:
-        data = json.load(settings_file)
-    if not isinstance(data, dict):
-        raise ValueError("LitRPG settings file must contain a JSON object")
-    return data
+def resolve_audio_request(params: dict[str, list[str]]) -> Path:
+    """Resolve an audio request from safe series/episode IDs or legacy path."""
+    series_id = params.get("series_id", [""])[0]
+    episode_id = params.get("episode_id", [""])[0]
+    if series_id and episode_id:
+        audio_path = episode_library.get_audio_path(DATA_DIR, series_id, episode_id)
+        if not audio_path:
+            raise ValueError("Audio file does not exist")
+        return resolve_audio_path(audio_path)
+    return resolve_audio_path(params.get("path", [""])[0])
 
 
-def _read_json_file(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8") as json_file:
-        data = json.load(json_file)
-    return data if isinstance(data, dict) else {}
+def _episode_payload(episode: dict[str, Any]) -> dict[str, Any]:
+    audio_path = episode.get("audio_path")
+    audio = None
+    replay = {
+        "available": False,
+        "mode": "cached",
+        "status": "missing_audio",
+    }
+    if audio_path:
+        path = Path(str(audio_path))
+        relative = _relative_to_data(path)
+        audio = {
+            "path": relative,
+            "url": (
+                "/audio?"
+                f"series_id={quote(str(episode['series_id']))}"
+                f"&episode_id={quote(str(episode['episode_id']))}"
+            ),
+            "legacy_url": f"/audio?path={quote(relative)}",
+            "format": _audio_format(path, episode.get("audio_metadata", {})),
+            "bytes": path.stat().st_size,
+        }
+        replay = {
+            "available": True,
+            "mode": "cached",
+            "status": "ready",
+            "format": audio["format"],
+            "bytes": audio["bytes"],
+            "url": audio["url"],
+        }
+    return {
+        "series_id": episode.get("series_id"),
+        "episode_id": episode.get("episode_id"),
+        "episode_number": episode.get("episode_number"),
+        "status": episode.get("status"),
+        "qa": _qa_summary(episode),
+        "prompt": episode.get("prompt", ""),
+        "path": _display_path(Path(str(episode.get("path", "")))),
+        "audio": audio,
+        "replay": replay,
+        "regenerable_parts": episode.get("regenerable_parts", []),
+    }
 
 
-def _audio_path_from_metadata(
-    episode_dir: Path, audio_metadata: dict[str, Any]
-) -> Path | None:
-    raw_path = audio_metadata.get("audio_path")
-    if not raw_path:
-        return None
-    path = Path(str(raw_path))
-    candidates = [path]
-    if not path.is_absolute():
-        candidates.extend([PROJECT_ROOT / path, episode_dir / path])
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if _is_relative_to(resolved, DATA_DIR.resolve()) and resolved.exists():
-            return resolved
-    return None
+def _audio_format(path: Path, audio_metadata: Any) -> str:
+    if isinstance(audio_metadata, dict) and audio_metadata.get("format"):
+        return str(audio_metadata["format"])
+    return path.suffix.lstrip(".")
+
+
+def _qa_summary(episode: dict[str, Any]) -> dict[str, Any]:
+    metadata = episode.get("metadata") if isinstance(episode.get("metadata"), dict) else {}
+    qa = metadata.get("qa") if isinstance(metadata.get("qa"), dict) else {}
+    review = metadata.get("review") if isinstance(metadata.get("review"), dict) else {}
+    return {
+        "status": str(
+            qa.get("status")
+            or review.get("status")
+            or metadata.get("qa_status")
+            or metadata.get("review_status")
+            or "unknown"
+        ),
+        "ready": bool(
+            qa.get("ready")
+            or review.get("ready")
+            or metadata.get("qa_ready")
+            or metadata.get("ready_for_audio")
+        ),
+    }
 
 
 def _relative_to_data(path: Path) -> str:

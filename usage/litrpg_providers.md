@@ -15,6 +15,8 @@ LitRPG task files use separate providers for story generation and text-to-speech
 
 ## Example TTS Settings
 
+The local UI writes these values to `data/litrpg/settings.json` by default. You can override that path with `LITRPG_SETTINGS_PATH`.
+
 ```json
 {
   "default_tts_provider": "openai",

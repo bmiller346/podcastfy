@@ -7,6 +7,7 @@ from podcastfy.litrpg.library import (
     delete_episode,
     get_audio_path,
     get_episode,
+    get_series,
     list_episodes,
     list_regenerable_parts,
     list_series,
@@ -51,6 +52,7 @@ def test_library_lists_complete_episode_and_reads_metadata(tmp_path):
     assert episode["config"]["minutes"] == 8
     assert episode["metadata"]["cache_key"] == "cache-1"
     assert episode["audio_path"] == str(audio_path.resolve())
+    assert get_series(tmp_path, "ember-keep")["title"] == "Ember Keep"
     assert get_audio_path(tmp_path, "ember-keep", "episode-0001") == str(
         audio_path.resolve()
     )

@@ -94,8 +94,19 @@ episode directory inside `storage_dir`.
 
 ## Future UI Notes
 
-A library screen can call `list_series()` for the left navigation,
-`list_episodes()` for a series timeline, `get_episode()` for an inspector panel,
-and `get_audio_path()` for replay. Regeneration controls can start with
-`list_regenerable_parts()` and pass the selected part path to a future chapter
-renderer without coupling the UI to the TTS provider.
+The local UI at `python -m podcastfy.litrpg.ui` uses these helpers for its
+Episode Library section. It lists series, status, QA summary, cached audio path,
+and saved script part counts. Playback uses cached audio only; pressing play on
+an episode calls:
+
+```text
+/audio?series_id=<series_id>&episode_id=<episode_id>
+```
+
+The server resolves that pair through `get_audio_path()` and serves the existing
+file under `data/litrpg`. The older `/audio?path=<relative_audio_path>` form is
+kept for compatibility, but new UI links should prefer series and episode IDs.
+
+Regeneration controls can start with `list_regenerable_parts()` and pass the
+selected part path to a future chapter renderer without coupling the UI to the
+TTS provider.

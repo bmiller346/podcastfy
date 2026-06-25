@@ -51,18 +51,35 @@ def run_litrpg_task(
     """Run a LitRPG task JSON file through the local episode pipeline."""
     task_file = Path(task_path)
     task = load_litrpg_task(task_file)
+    return run_litrpg_task_data(task, task_path=task_file, llm=llm, tts=tts)
+
+
+def run_litrpg_task_data(
+    task: Mapping[str, Any],
+    *,
+    task_path: str | Path | None = None,
+    base_dir: str | Path | None = None,
+    llm: Any | None = None,
+    tts: Any | None = None,
+) -> dict[str, Any]:
+    """Run a LitRPG task from an in-memory JSON object."""
+    if not isinstance(task, Mapping):
+        raise ValueError("LitRPG task must be a JSON object")
+
+    task_file = Path(task_path) if task_path is not None else None
+    resolved_base_dir = _task_base_dir(task_file, base_dir)
     settings = load_litrpg_settings(
-        _resolve_task_path(task_file, task["settings_path"])
+        _resolve_task_path(resolved_base_dir, task["settings_path"])
         if task.get("settings_path")
         else None
     )
     resolved_llm = llm or _llm_from_task(task, settings=settings)
 
     if str(task.get("mode") or "episode") == "chapter":
-        chapter_task = _chapter_task_with_paths(task_file, task)
+        chapter_task = _chapter_task_with_paths(resolved_base_dir, task)
         result = generate_litrpg_chapter(chapter_task, llm=resolved_llm)
-        _save_chapter_state_if_requested(task_file, chapter_task, result)
-        _write_result_if_requested(task_file, task, result)
+        _save_chapter_state_if_requested(resolved_base_dir, chapter_task, result)
+        _write_result_if_requested(resolved_base_dir, task, result)
         return result
 
     config = _config_from_task(task)
@@ -70,7 +87,7 @@ def run_litrpg_task(
     result = generate_litrpg_audio_episode(
         premise=str(task.get("premise") or ""),
         series_id=str(task.get("series_id") or "default-series"),
-        storage_dir=_resolve_task_path(task_file, task.get("storage_dir", "data/litrpg")),
+        storage_dir=_resolve_task_path(resolved_base_dir, task.get("storage_dir", "data/litrpg")),
         episode_number=task.get("episode_number"),
         render_audio=bool(task.get("render_audio", True)),
         tts=tts,
@@ -80,13 +97,13 @@ def run_litrpg_task(
         litrpg_config=config,
         replay_existing=bool(task.get("replay_existing", True)),
         settings_path=(
-            _resolve_task_path(task_file, task["settings_path"])
+            _resolve_task_path(resolved_base_dir, task["settings_path"])
             if task.get("settings_path")
             else None
         ),
         llm=resolved_llm,
     )
-    _write_result_if_requested(task_file, task, result)
+    _write_result_if_requested(resolved_base_dir, task, result)
     return result
 
 
@@ -127,17 +144,25 @@ def _config_from_task(task: Mapping[str, Any]) -> LitRPGConfig | None:
     return LitRPGConfig.from_mapping(config)
 
 
-def _resolve_task_path(task_file: Path, value: Any) -> Path:
+def _task_base_dir(task_file: Path | None, base_dir: str | Path | None) -> Path:
+    if base_dir is not None:
+        return Path(base_dir)
+    if task_file is not None:
+        return task_file.parent
+    return Path.cwd()
+
+
+def _resolve_task_path(base_dir: Path, value: Any) -> Path:
     path = Path(str(value))
     if path.is_absolute():
         return path
-    return task_file.parent / path
+    return base_dir / path
 
 
-def _chapter_task_with_paths(task_file: Path, task: Mapping[str, Any]) -> dict[str, Any]:
+def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[str, Any]:
     chapter_task = dict(task)
     storage_dir = (
-        _resolve_task_path(task_file, task["storage_dir"])
+        _resolve_task_path(base_dir, task["storage_dir"])
         if task.get("storage_dir")
         else None
     )
@@ -145,7 +170,7 @@ def _chapter_task_with_paths(task_file: Path, task: Mapping[str, Any]) -> dict[s
     reuse_path = task.get("reuse_ready_parts_from") or task.get("lock_ready_parts_from")
     if reuse_path:
         reused_locks = locked_part_scripts_from_ready_parts(
-            _resolve_task_path(task_file, reuse_path)
+            _resolve_task_path(base_dir, reuse_path)
         )
         explicit_locks = task.get("locked_part_scripts") or {}
         if not isinstance(explicit_locks, Mapping):
@@ -155,9 +180,9 @@ def _chapter_task_with_paths(task_file: Path, task: Mapping[str, Any]) -> dict[s
             **{str(part_id): str(script) for part_id, script in explicit_locks.items()},
         }
     if task.get("checkpoint_dir"):
-        chapter_task["checkpoint_dir"] = str(_resolve_task_path(task_file, task["checkpoint_dir"]))
+        chapter_task["checkpoint_dir"] = str(_resolve_task_path(base_dir, task["checkpoint_dir"]))
     elif task.get("result_path"):
-        result_path = _resolve_task_path(task_file, task["result_path"])
+        result_path = _resolve_task_path(base_dir, task["result_path"])
         chapter_task["checkpoint_dir"] = str(
             result_path.parent / f"{result_path.stem}_checkpoints"
         )
@@ -178,7 +203,7 @@ def _chapter_task_with_paths(task_file: Path, task: Mapping[str, Any]) -> dict[s
 
 
 def _save_chapter_state_if_requested(
-    task_file: Path,
+    base_dir: Path,
     task: Mapping[str, Any],
     result: Mapping[str, Any],
 ) -> None:
@@ -187,7 +212,7 @@ def _save_chapter_state_if_requested(
     if not task.get("storage_dir"):
         return
 
-    storage_dir = _resolve_task_path(task_file, task["storage_dir"])
+    storage_dir = _resolve_task_path(base_dir, task["storage_dir"])
     series_id = str(result.get("series_id") or task.get("series_id") or "default-series")
     series_dir = storage_dir / "series" / series_id
     state = load_series_state(series_dir)
@@ -213,12 +238,12 @@ def _mechanics_context_from_state(state: Any) -> dict[str, Any]:
 
 
 def _write_result_if_requested(
-    task_file: Path, task: Mapping[str, Any], result: Mapping[str, Any]
+    base_dir: Path, task: Mapping[str, Any], result: Mapping[str, Any]
 ) -> None:
     result_path = task.get("result_path")
     if not result_path:
         return
-    path = _resolve_task_path(task_file, result_path)
+    path = _resolve_task_path(base_dir, result_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as result_file:
         json.dump(result, result_file, ensure_ascii=True, indent=2, sort_keys=True)

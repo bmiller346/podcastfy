@@ -15,7 +15,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -35,7 +36,8 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 38px;
   border: 1px solid #c6cdd5;
@@ -43,6 +45,11 @@ select {
   background: #fff;
   color: #1d252c;
   padding: 7px 9px;
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .shell {
@@ -75,6 +82,23 @@ h2 {
   font-size: 18px;
 }
 
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.section-heading h2 {
+  margin-bottom: 0;
+}
+
+.section-heading p {
+  color: #66717d;
+  font-size: 13px;
+}
+
 .topbar p {
   margin-top: 6px;
   color: #5d6874;
@@ -104,6 +128,50 @@ label {
 .actions {
   display: flex;
   align-items: end;
+}
+
+.task-form .wide {
+  grid-column: 1 / -1;
+}
+
+.task-form .toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding-top: 26px;
+}
+
+.task-form .toggle input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+}
+
+.task-actions {
+  justify-content: flex-end;
+}
+
+.output-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.output-header h3,
+.output-header p {
+  margin: 0;
+}
+
+.output-header h3 {
+  font-size: 15px;
+}
+
+.output-header p {
+  color: #66717d;
+  font-size: 13px;
 }
 
 .status-list {
@@ -144,9 +212,58 @@ label {
   gap: 14px;
 }
 
+.series-block {
+  display: grid;
+  gap: 8px;
+}
+
+.series-header,
+.episode-heading,
+.audio-meta,
+.badges,
+.series-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.series-header,
+.episode-heading {
+  justify-content: space-between;
+}
+
 .series-title {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 16px;
+}
+
+.library-count,
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid #d4dae1;
+  border-radius: 999px;
+  background: #f7f9fb;
+  color: #495560;
+  padding: 2px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.library-count.warning,
+.status-incomplete,
+.status-missing_audio,
+.status-failed_render {
+  border-color: #e2c36e;
+  background: #fff7df;
+  color: #6b5200;
+}
+
+.status-complete {
+  border-color: #9ac8a6;
+  background: #eef8f0;
+  color: #286237;
 }
 
 .episode {
@@ -166,9 +283,20 @@ label {
 }
 
 .episode-prompt,
+.episode-path,
+.audio-meta,
 .muted {
   color: #66717d;
   font-size: 13px;
+}
+
+.episode-path,
+.audio-meta {
+  overflow-wrap: anywhere;
+}
+
+.audio-meta {
+  flex-wrap: wrap;
 }
 
 audio {
@@ -177,17 +305,30 @@ audio {
 
 @media (max-width: 720px) {
   .topbar,
+  .section-heading,
+  .output-header,
+  .series-header,
+  .episode-heading,
   .task-row {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
 
-  .topbar {
+  .topbar,
+  .section-heading,
+  .output-header,
+  .series-header,
+  .episode-heading {
     display: grid;
   }
 
   .grid-form,
   .status-list {
     grid-template-columns: 1fr;
+  }
+
+  .task-form .toggle,
+  .task-actions {
+    padding-top: 0;
   }
 }

@@ -59,6 +59,74 @@
       </section>
 
       <section class="panel">
+        <div class="section-heading">
+          <h2>Create Task</h2>
+          <p>Build a local LitRPG run without hand-editing task JSON.</p>
+        </div>
+        <form id="task-form" class="grid-form task-form">
+          <label>
+            Series ID
+            <input name="series_id" type="text" placeholder="paper-cuts" required>
+          </label>
+          <label class="wide">
+            Premise
+            <textarea name="premise" rows="3" placeholder="A warehouse clerk discovers the forklift training course is a dungeon tutorial." required></textarea>
+          </label>
+          <label>
+            Mode
+            <select name="mode">
+              <option value="episode">episode</option>
+              <option value="chapter">chapter</option>
+            </select>
+          </label>
+          <label>
+            Generation provider
+            <input name="generation_provider" type="text" placeholder="openai">
+          </label>
+          <label>
+            Generation model
+            <input name="generation_model" type="text" placeholder="gpt-5.5">
+          </label>
+          <label>
+            TTS provider
+            <input name="tts_provider" type="text" placeholder="openai">
+          </label>
+          <label>
+            TTS model
+            <input name="tts_model" type="text" placeholder="gpt-4o-mini-tts">
+          </label>
+          <label>
+            TTS format
+            <input name="tts_format" type="text" placeholder="mp3">
+          </label>
+          <label>
+            Result path
+            <input name="result_path" type="text" placeholder="../data/litrpg/paper-cuts/latest.json">
+          </label>
+          <label>
+            Checkpoint dir
+            <input name="checkpoint_dir" type="text" placeholder="../data/litrpg/paper-cuts/checkpoints">
+          </label>
+          <label>
+            Storage dir
+            <input name="storage_dir" type="text" placeholder="../data/litrpg">
+          </label>
+          <label class="toggle">
+            <input name="render_audio" type="checkbox" checked>
+            <span>Render audio after generation</span>
+          </label>
+          <div class="actions task-actions">
+            <button id="submit-task" type="submit">Queue Generation</button>
+          </div>
+        </form>
+        <div class="output-header">
+          <h3>Task Preview</h3>
+          <p>Submitted payload is local-only and stays in your browser until you queue it.</p>
+        </div>
+        <pre id="task-preview" class="output" aria-live="polite"></pre>
+      </section>
+
+      <section class="panel">
         <h2>Tasks</h2>
         <div class="task-row">
           <select id="task-select"></select>
@@ -68,7 +136,10 @@
       </section>
 
       <section class="panel">
-        <h2>Episode Library</h2>
+        <div class="section-heading">
+          <h2>Episode Library</h2>
+          <p>Saved episodes replay from cached audio only.</p>
+        </div>
         <div id="library" class="library"></div>
       </section>
     </main>

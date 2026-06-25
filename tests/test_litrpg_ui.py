@@ -1,6 +1,7 @@
 import http.client
 import json
 import threading
+import time
 from functools import partial
 from http.server import ThreadingHTTPServer
 
@@ -19,7 +20,9 @@ def ui_roots(tmp_path, monkeypatch):
     monkeypatch.setattr(ui, "PROJECT_ROOT", project_root)
     monkeypatch.setattr(ui, "USAGE_DIR", usage_dir)
     monkeypatch.setattr(ui, "DATA_DIR", data_dir)
-    monkeypatch.setattr(ui, "SETTINGS_PATH", project_root / "settings.local.json")
+    monkeypatch.setattr(ui, "SETTINGS_PATH", data_dir / "settings.json")
+    with ui._JOBS_LOCK:
+        ui._JOBS.clear()
     return project_root
 
 
@@ -60,6 +63,41 @@ def request_bytes(server, path):
         connection.close()
 
 
+def test_index_page_exposes_task_creation_form(ui_server):
+    status, body, content_type = request_bytes(ui_server, "/")
+    html = body.decode("utf-8")
+
+    assert status == 200
+    assert content_type == "text/html"
+    assert 'id="task-form"' in html
+    assert 'name="series_id"' in html
+    assert 'name="premise"' in html
+    assert 'name="mode"' in html
+    assert 'name="generation_provider"' in html
+    assert 'name="generation_model"' in html
+    assert 'name="tts_provider"' in html
+    assert 'name="tts_model"' in html
+    assert 'name="tts_format"' in html
+    assert 'name="render_audio"' in html
+    assert 'name="result_path"' in html
+    assert 'name="checkpoint_dir"' in html
+    assert 'name="storage_dir"' in html
+    assert 'id="task-preview"' in html
+
+
+def wait_for_job(server, job_id, status, timeout=2):
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        response_status, data = request_json(server, "GET", f"/api/jobs/{job_id}")
+        assert response_status == 200
+        last = data["job"]
+        if last["status"] == status:
+            return last
+        time.sleep(0.02)
+    raise AssertionError(f"Job {job_id} did not reach {status}; last={last}")
+
+
 def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "from-env")
 
@@ -71,17 +109,85 @@ def test_settings_round_trip_redacts_secret_values(ui_server, ui_roots, monkeypa
             "openai_api_key": "from-file",
             "gemini_api_key": "",
             "default_tts_provider": "edge",
+            "default_model": "gpt-5.5",
+            "default_tts_model": "gpt-4o-mini-tts",
+            "default_tts_format": "mp3",
             "unexpected": "ignored",
         },
     )
 
-    stored = json.loads((ui_roots / "settings.local.json").read_text(encoding="utf-8"))
+    settings_path = ui_roots / "data" / "litrpg" / "settings.json"
+    stored = json.loads(settings_path.read_text(encoding="utf-8"))
     assert status == 200
-    assert stored == {"default_tts_provider": "edge", "openai_api_key": "from-file"}
+    assert stored == {
+        "default_model": "gpt-5.5",
+        "default_tts_format": "mp3",
+        "default_tts_model": "gpt-4o-mini-tts",
+        "default_tts_provider": "edge",
+        "openai_api_key": "from-file",
+    }
+    assert data["settings_path"] == str(settings_path)
     assert data["api_keys"]["openai"]["configured"] is True
     assert data["api_keys"]["openai"]["value"] == "redacted"
+    assert data["defaults"]["default_model"] == "gpt-5.5"
+    assert data["defaults"]["default_tts_model"] == "gpt-4o-mini-tts"
+    assert data["defaults"]["default_tts_format"] == "mp3"
     assert "from-file" not in json.dumps(data)
     assert "from-env" not in json.dumps(data)
+
+
+def test_settings_get_does_not_return_plaintext_saved_or_env_keys(
+    ui_server, ui_roots, monkeypatch
+):
+    settings_path = ui_roots / "data" / "litrpg" / "settings.json"
+    settings_path.write_text(
+        json.dumps({"elevenlabs_api_key": "eleven-secret"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret")
+
+    status, data = request_json(ui_server, "GET", "/api/settings")
+    encoded = json.dumps(data)
+
+    assert status == 200
+    assert data["api_keys"]["elevenlabs"]["value"] == "redacted"
+    assert data["api_keys"]["gemini"]["env"] is True
+    assert "eleven-secret" not in encoded
+    assert "gemini-secret" not in encoded
+
+
+def test_settings_post_can_clear_non_secret_defaults_without_clearing_saved_keys(
+    ui_server, ui_roots
+):
+    settings_path = ui_roots / "data" / "litrpg" / "settings.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "openai_api_key": "openai-secret",
+                "default_model": "gpt-5.5",
+                "default_tts_format": "wav",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/settings",
+        {
+            "openai_api_key": "",
+            "default_model": "",
+            "default_tts_format": "",
+        },
+    )
+    stored = json.loads(settings_path.read_text(encoding="utf-8"))
+
+    assert status == 200
+    assert stored == {"openai_api_key": "openai-secret"}
+    assert data["defaults"]["default_model"] == ""
+    assert data["defaults"]["default_tts_format"] == ""
+    assert data["api_keys"]["openai"]["configured"] is True
 
 
 def test_tasks_endpoint_lists_litrpg_json_files(ui_server, ui_roots):
@@ -127,6 +233,204 @@ def test_run_task_calls_task_runner_with_safe_task_path(
     assert data["result"]["series_id"] == "paper-cuts"
 
 
+def test_run_task_accepts_inline_task_payload(ui_server, monkeypatch):
+    calls = []
+
+    def fake_run_litrpg_task_data(task, *, base_dir, llm=None, tts=None):
+        calls.append((task, base_dir, llm, tts))
+        return {"series_id": task["series_id"], "mode": task.get("mode", "episode")}
+
+    monkeypatch.setattr(ui, "run_litrpg_task_data", fake_run_litrpg_task_data)
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/run-task",
+        {
+            "task": {
+                "series_id": "paper-cuts",
+                "premise": "A clerk descends into the office basement.",
+                "mode": "chapter",
+            }
+        },
+    )
+
+    assert status == 200
+    assert data["result"] == {"series_id": "paper-cuts", "mode": "chapter"}
+    assert calls[0][0]["series_id"] == "paper-cuts"
+    assert calls[0][1] == ui.PROJECT_ROOT
+
+
+def test_submit_task_job_tracks_success_metadata(
+    ui_server, ui_roots, monkeypatch
+):
+    task_path = ui_roots / "usage" / "litrpg_task.json"
+    task_path.write_text("{}", encoding="utf-8")
+    calls = []
+
+    def fake_run_litrpg_task(path):
+        calls.append(path)
+        return {
+            "series_id": "paper-cuts",
+            "episode_number": 1,
+            "checkpoint_dir": "data/litrpg/checkpoints/paper-cuts",
+            "checkpoint_paths": ["part-1.json", "part-1_approved.xml"],
+            "ignored_large_payload": "not needed",
+        }
+
+    monkeypatch.setattr(ui, "run_litrpg_task", fake_run_litrpg_task)
+
+    status, data = request_json(
+        ui_server, "POST", "/api/jobs", {"path": "usage/litrpg_task.json"}
+    )
+    job = data["job"]
+    final_job = wait_for_job(ui_server, job["job_id"], "succeeded")
+    list_status, list_data = request_json(ui_server, "GET", "/api/jobs")
+
+    assert status == 202
+    assert calls == [task_path.resolve()]
+    assert job["status"] in {"queued", "running", "succeeded"}
+    assert final_job["result"]["series_id"] == "paper-cuts"
+    assert final_job["result"]["episode_number"] == 1
+    assert final_job["result"]["checkpoint_dir"] == "data/litrpg/checkpoints/paper-cuts"
+    assert "ignored_large_payload" not in final_job["result"]
+    assert final_job["checkpoint_paths"] == [
+        "part-1.json",
+        "part-1_approved.xml",
+        "data/litrpg/checkpoints/paper-cuts",
+    ]
+    assert final_job["error"] is None
+    assert final_job["duration_seconds"] is not None
+    assert list_status == 200
+    assert list_data["jobs"][0]["job_id"] == job["job_id"]
+
+
+def test_submit_inline_task_job_tracks_summary_and_status(
+    ui_server, monkeypatch
+):
+    started = threading.Event()
+    release = threading.Event()
+    captured = []
+
+    def fake_run_litrpg_task_data(task, *, base_dir, llm=None, tts=None):
+        captured.append((task, base_dir))
+        started.set()
+        release.wait(timeout=2)
+        return {
+            "series_id": task["series_id"],
+            "mode": task.get("mode", "episode"),
+            "status": "cached",
+            "audio_path": "data/litrpg/episodes/paper-cuts/episode-0001/audio/final.mp3",
+        }
+
+    monkeypatch.setattr(ui, "run_litrpg_task_data", fake_run_litrpg_task_data)
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/jobs",
+        {
+            "task": {
+                "series_id": "paper-cuts",
+                "premise": "A clerk descends into the office basement.",
+                "mode": "episode",
+                "render_audio": True,
+                "generation": {"provider": "openai", "model": "gpt-5.5"},
+                "tts": {"provider": "openai", "model": "gpt-4o-mini-tts"},
+            }
+        },
+    )
+
+    job = data["job"]
+    assert started.wait(timeout=2)
+    poll_status, poll_data = request_json(ui_server, "GET", f"/api/jobs/{job['job_id']}")
+    release.set()
+    final_job = wait_for_job(ui_server, job["job_id"], "succeeded")
+
+    assert status == 202
+    assert poll_status == 200
+    assert job["task_id"] == job["job_id"]
+    assert job["task_path"] is None
+    assert job["task_summary"]["source"] == "inline"
+    assert job["task_summary"]["generation_provider"] == "openai"
+    assert job["task_summary"]["tts_provider"] == "openai"
+    assert poll_data["job"]["phase"] == "running"
+    assert final_job["phase"] == "complete"
+    assert final_job["result"]["status"] == "cached"
+    assert captured[0][0]["series_id"] == "paper-cuts"
+    assert captured[0][1] == ui.PROJECT_ROOT
+
+
+def test_submit_task_job_exposes_running_status(
+    ui_server, ui_roots, monkeypatch
+):
+    task_path = ui_roots / "usage" / "litrpg_task.json"
+    task_path.write_text("{}", encoding="utf-8")
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_run_litrpg_task(path):
+        started.set()
+        release.wait(timeout=2)
+        return {"series_id": "paper-cuts"}
+
+    monkeypatch.setattr(ui, "run_litrpg_task", fake_run_litrpg_task)
+
+    status, data = request_json(
+        ui_server, "POST", "/api/jobs", {"path": "usage/litrpg_task.json"}
+    )
+    job_id = data["job"]["job_id"]
+    assert started.wait(timeout=2)
+    poll_status, poll_data = request_json(ui_server, "GET", f"/api/jobs/{job_id}")
+    release.set()
+    final_job = wait_for_job(ui_server, job_id, "succeeded")
+
+    assert status == 202
+    assert poll_status == 200
+    assert poll_data["job"]["status"] == "running"
+    assert final_job["status"] == "succeeded"
+
+
+def test_submit_task_job_rejects_path_and_task_together(ui_server):
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/jobs",
+        {"path": "usage/litrpg_task.json", "task": {"series_id": "paper-cuts"}},
+    )
+
+    assert status == 400
+    assert "either path or task" in data["error"]
+
+
+def test_submit_task_job_captures_errors(
+    ui_server, ui_roots, monkeypatch
+):
+    task_path = ui_roots / "usage" / "litrpg_task.json"
+    task_path.write_text("{}", encoding="utf-8")
+
+    def fake_run_litrpg_task(path):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(ui, "run_litrpg_task", fake_run_litrpg_task)
+
+    status, data = request_json(
+        ui_server, "POST", "/api/jobs", {"path": "usage/litrpg_task.json"}
+    )
+    final_job = wait_for_job(ui_server, data["job"]["job_id"], "failed")
+
+    assert status == 202
+    assert final_job["result"] is None
+    assert final_job["error"] == "RuntimeError: provider unavailable"
+
+
+def test_poll_unknown_job_returns_404(ui_server):
+    status, data = request_json(ui_server, "GET", "/api/jobs/not-real")
+
+    assert status == 404
+    assert data["error"] == "Job not found"
+
+
 def test_library_lists_audio_and_audio_endpoint_serves_only_data_dir(
     ui_server, ui_roots
 ):
@@ -140,12 +444,16 @@ def test_library_lists_audio_and_audio_endpoint_serves_only_data_dir(
             {
                 "episode_id": "episode-0001",
                 "episode_number": 1,
+                "files": {"script": "script.xml"},
                 "prompt": "A clerk finds a dungeon.",
+                "qa": {"ready": True, "status": "ready"},
                 "series_id": "paper-cuts",
             }
         ),
         encoding="utf-8",
     )
+    (episode_dir / "config.json").write_text(json.dumps({"minutes": 2}), encoding="utf-8")
+    (episode_dir / "script.xml").write_text("<NARRATOR>Begin.</NARRATOR>", encoding="utf-8")
     audio_path = audio_dir / "final.mp3"
     audio_path.write_bytes(b"audio-bytes")
     (episode_dir / "audio_metadata.json").write_text(
@@ -158,7 +466,11 @@ def test_library_lists_audio_and_audio_endpoint_serves_only_data_dir(
     audio_status, body, content_type = request_bytes(ui_server, audio["url"])
 
     assert status == 200
+    assert data["library"][0]["title"] == "Paper Cuts"
+    assert data["library"][0]["episodes"][0]["status"] == "complete"
+    assert data["library"][0]["episodes"][0]["qa"] == {"ready": True, "status": "ready"}
     assert audio["path"] == "episodes/paper-cuts/episode-0001/audio/final.mp3"
+    assert audio["url"] == "/audio?series_id=paper-cuts&episode_id=episode-0001"
     assert audio_status == 200
     assert body == b"audio-bytes"
     assert content_type == "audio/mpeg"
@@ -167,3 +479,12 @@ def test_library_lists_audio_and_audio_endpoint_serves_only_data_dir(
 def test_resolve_audio_path_blocks_traversal(ui_roots):
     with pytest.raises(ValueError, match="inside data/litrpg"):
         ui.resolve_audio_path("../secret.mp3")
+
+
+def test_audio_endpoint_rejects_unsafe_series_id(ui_server):
+    status, body, _content_type = request_bytes(
+        ui_server, "/audio?series_id=..&episode_id=episode-0001"
+    )
+
+    assert status == 400
+    assert b"Unsafe path segment" in body

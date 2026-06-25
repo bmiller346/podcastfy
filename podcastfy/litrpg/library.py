@@ -69,6 +69,17 @@ def list_series(storage_dir: str | Path) -> list[dict[str, Any]]:
     return series
 
 
+def get_series(storage_dir: str | Path, series_id: str) -> dict[str, Any] | None:
+    """Return one series summary, or None when it does not exist."""
+
+    root = _storage_root(storage_dir)
+    _safe_join(root, "episodes", series_id)
+    for series in list_series(root):
+        if str(series.get("series_id")) == series_id:
+            return series
+    return None
+
+
 def list_episodes(
     storage_dir: str | Path, series_id: str | None = None
 ) -> list[dict[str, Any]]:
