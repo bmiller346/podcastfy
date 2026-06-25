@@ -1,5 +1,7 @@
 from podcastfy.litrpg.sfx import (
     build_mix_plan,
+    generate_sfx_candidate,
+    load_asset_manifest,
     map_assets_for_cue,
     map_assets_for_cue_sheet,
     parse_cue_sheet,
@@ -74,6 +76,16 @@ def test_asset_mapping_falls_back_to_layer_slug_for_unknown_tags():
         "local/assets/ambience/crystal_elevator.mp3",
         "local/assets/ambience/crystal_elevator.ogg",
     ]
+    assert mapping.metadata["assets"][0]["source"] == "fallback_slug"
+
+
+def test_asset_mapping_uses_token_matching_not_raw_substrings():
+    cue_sheet = parse_cue_sheet("[SFX: buildup]")
+
+    mapping = map_assets_for_cue(cue_sheet.cues[0])
+
+    assert mapping.metadata["matched_library"] is False
+    assert mapping.candidates[0].endswith("/sfx/buildup.wav")
 
 
 def test_asset_mapping_treats_stop_cues_as_control_metadata():
@@ -118,3 +130,59 @@ def test_mix_plan_describes_layers_ducking_panning_eq_and_timing_anchors():
         "music_stop",
     ]
     assert plan["metadata"]["cue_count"] == 5
+    assert plan["issues"] == []
+    assert plan["metadata"]["issue_count"] == 0
+
+
+def test_mix_plan_reports_stop_cues_without_active_beds():
+    cue_sheet = parse_cue_sheet("[BGM_STOP]\n[AMBIENCE_STOP]")
+
+    plan = build_mix_plan(cue_sheet)
+
+    assert plan["metadata"]["issue_count"] == 2
+    assert "BGM_STOP without active BGM_START" in plan["issues"][0]
+    assert "AMBIENCE_STOP without active AMBIENCE_START" in plan["issues"][1]
+    assert [automation["target_layer_id"] for automation in plan["automations"]] == [None, None]
+
+
+def test_asset_manifest_loads_structured_metadata(tmp_path):
+    manifest_path = tmp_path / "asset_manifest.json"
+    manifest_path.write_text(
+        """
+{
+  "assets": [
+    {
+      "stem": "sfx/concrete_shatter_01",
+      "tags": ["concrete shatter", "stone impact"],
+      "loopable": false,
+      "default_lufs": -16,
+      "intensity": 8
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    library = load_asset_manifest(manifest_path)
+    cue_sheet = parse_cue_sheet("[SFX: concrete shatter pan=left]")
+
+    mapping = map_assets_for_cue(cue_sheet.cues[0], asset_library=library)
+
+    assert mapping.metadata["matched_library"] is True
+    assert mapping.candidates[0] == "assets/litrpg/sfx/concrete_shatter_01.wav"
+    assert mapping.metadata["assets"][0]["loopable"] is False
+    assert mapping.metadata["assets"][0]["default_lufs"] == -16
+
+
+def test_ai_sfx_fallback_is_untrusted_metadata_only():
+    cue_sheet = parse_cue_sheet("[SFX: impossible office dragon]")
+
+    mapping = map_assets_for_cue(cue_sheet.cues[0], use_ai_fallback=True)
+
+    assert mapping.candidates == []
+    assert mapping.metadata["source"] == "ai_generated"
+    assert mapping.metadata["trusted"] is False
+    assert mapping.metadata["status"] == "local_generation_not_configured"
+    candidate = generate_sfx_candidate("laser stapler")
+    assert candidate.metadata["provider"] == "local_audiogen"
+    assert candidate.metadata["model"] == "audiogen-medium"

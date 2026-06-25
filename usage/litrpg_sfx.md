@@ -65,3 +65,56 @@ Asset mapping returns local candidate paths such as
 `assets/litrpg/sfx/sword_clash.wav`, but it does not require those files to
 exist. A future mixer can choose the first available candidate or apply richer
 asset selection rules.
+
+## Asset Manifest
+
+The production path is a curated manifest rather than model free-choice. A
+starter schema lives at `assets/litrpg/asset_manifest.json`:
+
+```json
+{
+  "stem": "sfx/ui_chime",
+  "tags": ["ui", "quest", "notification"],
+  "cue_types": ["sfx"],
+  "loopable": false,
+  "default_lufs": -18,
+  "intensity": 3,
+  "pan_safe": true,
+  "transient": true,
+  "source": "curated_placeholder",
+  "trusted": false
+}
+```
+
+Load it with:
+
+```python
+from podcastfy.litrpg.sfx import load_asset_manifest
+
+library = load_asset_manifest("assets/litrpg/asset_manifest.json")
+asset_mappings = map_assets_for_cue_sheet(cue_sheet, asset_library=library)
+```
+
+Generated or placeholder assets should remain `trusted: false` until reviewed.
+
+## Local AI Fallback Policy
+
+`generate_sfx_candidate(...)` is intentionally metadata-only. It records an
+untrusted local AI-generation request without calling a paid API or claiming the
+asset is ready. The intended production loop is:
+
+1. Try curated trusted assets.
+2. If none match, create a local generation request, for example with
+   AudioGen/AudioCraft.
+3. Cache the generated sound.
+4. Review, normalize, tag, and mark it trusted before final mix use.
+
+The default fallback provider metadata is `local_audiogen`, with model metadata
+set to `audiogen-medium`. This is a placeholder for a future local generator,
+not a network call.
+
+## Mix Plan Issues
+
+`build_mix_plan(...)` reports structural problems in `mix_plan["issues"]`. For
+example, `[BGM_STOP]` before `[BGM_START: ...]` produces a visible issue instead
+of silently leaving a null automation target.

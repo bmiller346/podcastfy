@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
@@ -129,9 +131,10 @@ def parse_cue_sheet(script: str) -> CueSheet:
 def map_assets_for_cue(
     cue: AudioCue | Mapping[str, Any],
     *,
-    asset_library: Mapping[str, Sequence[str]] | None = None,
+    asset_library: Mapping[str, Any] | None = None,
     asset_root: str = DEFAULT_ASSET_ROOT,
     extensions: Sequence[str] = DEFAULT_EXTENSIONS,
+    use_ai_fallback: bool = False,
 ) -> AssetCandidate:
     """Map a semantic cue to deterministic local asset candidates.
 
@@ -148,13 +151,16 @@ def map_assets_for_cue(
             metadata={"matched_library": False, "candidate_count": 0, "control_cue": True},
         )
     library = asset_library or DEFAULT_ASSET_LIBRARY
-    stems = _library_stems_for_tag(tag, library)
-    matched_library = bool(stems)
-    if not stems:
+    entries = _library_entries_for_tag(tag, library)
+    matched_library = bool(entries)
+    if not entries and use_ai_fallback:
+        return generate_sfx_candidate(tag, cue_type=cue_type)
+    if not entries:
         stems = [_fallback_asset_stem(cue_type, tag)]
+        entries = [{"stem": stem, "metadata": {"source": "fallback_slug"}} for stem in stems]
     candidates = [
-        f"{asset_root.rstrip('/')}/{stem}{extension}"
-        for stem in stems
+        f"{asset_root.rstrip('/')}/{entry['stem']}{extension}"
+        for entry in entries
         for extension in extensions
     ]
     return AssetCandidate(
@@ -164,6 +170,7 @@ def map_assets_for_cue(
         metadata={
             "matched_library": matched_library,
             "candidate_count": len(candidates),
+            "assets": [dict(entry["metadata"], stem=entry["stem"]) for entry in entries],
         },
     )
 
@@ -171,14 +178,63 @@ def map_assets_for_cue(
 def map_assets_for_cue_sheet(
     cue_sheet: CueSheet | Mapping[str, Any],
     *,
-    asset_library: Mapping[str, Sequence[str]] | None = None,
+    asset_library: Mapping[str, Any] | None = None,
     asset_root: str = DEFAULT_ASSET_ROOT,
+    use_ai_fallback: bool = False,
 ) -> list[AssetCandidate]:
     cues = _cue_sheet_cues(cue_sheet)
     return [
-        map_assets_for_cue(cue, asset_library=asset_library, asset_root=asset_root)
+        map_assets_for_cue(
+            cue,
+            asset_library=asset_library,
+            asset_root=asset_root,
+            use_ai_fallback=use_ai_fallback,
+        )
         for cue in cues
     ]
+
+
+def load_asset_manifest(path: str | Path) -> dict[str, list[dict[str, Any]]]:
+    """Load a structured asset manifest for semantic cue mapping.
+
+    Supported JSON shapes:
+    - {"assets": [{"stem": "sfx/hit", "tags": ["hit"], ...}]}
+    - {"hit": [{"stem": "sfx/hit", ...}, "sfx/hit_alt"]}
+    """
+    with Path(path).open("r", encoding="utf-8") as manifest_file:
+        data = json.load(manifest_file)
+    if not isinstance(data, Mapping):
+        raise ValueError("Asset manifest must contain a JSON object")
+    return _asset_manifest_from_mapping(data)
+
+
+def generate_sfx_candidate(
+    tag: str,
+    *,
+    cue_type: str = "sfx",
+    provider: str = "local_audiogen",
+) -> AssetCandidate:
+    """Return metadata for an untrusted AI-generated SFX candidate.
+
+    This is intentionally a safe stub: it records generation intent without
+    calling a paid or network API, and without pretending a reviewed asset
+    exists. A future local generator can consume this request and promote the
+    resulting file only after review.
+    """
+    return AssetCandidate(
+        semantic_tag=str(tag or ""),
+        cue_type=str(cue_type or "sfx"),
+        candidates=[],
+        metadata={
+            "matched_library": False,
+            "candidate_count": 0,
+            "source": "ai_generated",
+            "provider": provider,
+            "model": "audiogen-medium",
+            "trusted": False,
+            "status": "local_generation_not_configured",
+        },
+    )
 
 
 def build_mix_plan(
@@ -208,6 +264,7 @@ def build_mix_plan(
         }
     ]
     automations: list[dict[str, Any]] = []
+    issues: list[str] = []
     active_music: dict[str, Any] | None = None
     active_ambience: dict[str, Any] | None = None
 
@@ -224,6 +281,8 @@ def build_mix_plan(
             layers.append(active_music)
             continue
         if cue_type == "bgm_stop":
+            if active_music is None:
+                issues.append(f"{_cue_value(cue, 'cue_id')}: BGM_STOP without active BGM_START")
             automations.append(_stop_automation("music", cue, active_music, anchor))
             active_music = None
             continue
@@ -232,6 +291,10 @@ def build_mix_plan(
             layers.append(active_ambience)
             continue
         if cue_type == "ambience_stop":
+            if active_ambience is None:
+                issues.append(
+                    f"{_cue_value(cue, 'cue_id')}: AMBIENCE_STOP without active AMBIENCE_START"
+                )
             automations.append(_stop_automation("ambience", cue, active_ambience, anchor))
             active_ambience = None
             continue
@@ -242,9 +305,11 @@ def build_mix_plan(
         "timing_model": "cue anchors use clean script character offsets until renderer timestamps exist",
         "layers": layers,
         "automations": automations,
+        "issues": issues,
         "metadata": {
             "cue_count": len(cues),
             "layer_count": len(layers),
+            "issue_count": len(issues),
             "ducking_policy": "dialogue priority; music and ambience may duck when requested or by default",
         },
     }
@@ -295,16 +360,89 @@ def _cue_type_counts(cues: Sequence[AudioCue]) -> dict[str, int]:
     return counts
 
 
-def _library_stems_for_tag(
+def _asset_manifest_from_mapping(data: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    if isinstance(data.get("assets"), Sequence) and not isinstance(data.get("assets"), (str, bytes)):
+        library: dict[str, list[dict[str, Any]]] = {}
+        for asset in data["assets"]:
+            if not isinstance(asset, Mapping):
+                continue
+            stem = str(asset.get("stem") or asset.get("path") or "").strip()
+            if not stem:
+                continue
+            tags = asset.get("tags") or asset.get("tag") or []
+            if isinstance(tags, str):
+                tags = [tags]
+            if not isinstance(tags, Sequence):
+                tags = []
+            metadata = {str(key): value for key, value in asset.items() if key not in {"stem", "path"}}
+            for tag in tags:
+                normalized = _normalize_tag(str(tag))
+                if not normalized:
+                    continue
+                library.setdefault(normalized, []).append({"stem": stem, "metadata": metadata})
+        return library
+
+    library = {}
+    for tag, entries in data.items():
+        if tag == "version":
+            continue
+        normalized = _normalize_tag(str(tag))
+        if not normalized:
+            continue
+        library[normalized] = _asset_entries_from_value(entries)
+    return library
+
+
+def _library_entries_for_tag(
     tag: str,
-    asset_library: Mapping[str, Sequence[str]],
-) -> list[str]:
+    asset_library: Mapping[str, Any],
+) -> list[dict[str, Any]]:
     normalized = _normalize_tag(tag)
+    tag_tokens = set(normalized.split("_"))
+    exact_matches: list[dict[str, Any]] = []
+    token_matches: list[dict[str, Any]] = []
+    prefix_matches: list[dict[str, Any]] = []
     for key, stems in asset_library.items():
         normalized_key = _normalize_tag(key)
-        if normalized == normalized_key or normalized_key in normalized:
-            return [str(stem).strip().lstrip("/").replace("\\", "/") for stem in stems]
+        if not normalized_key:
+            continue
+        entries = _asset_entries_from_value(stems)
+        if normalized == normalized_key:
+            exact_matches.extend(entries)
+        elif normalized_key in tag_tokens:
+            token_matches.extend(entries)
+        elif normalized.startswith(f"{normalized_key}_"):
+            prefix_matches.extend(entries)
+    for matches in (exact_matches, token_matches, prefix_matches):
+        if matches:
+            return matches
     return []
+
+
+def _asset_entries_from_value(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        return [_asset_entry(value)]
+    if isinstance(value, Mapping):
+        stem = str(value.get("stem") or value.get("path") or "").strip()
+        metadata = dict(value.get("metadata") or {}) if isinstance(value.get("metadata"), Mapping) else {}
+        metadata.update({key: item for key, item in value.items() if key != "metadata"})
+        return [_asset_entry(stem, metadata=metadata)] if stem else []
+    if isinstance(value, Sequence):
+        entries = []
+        for item in value:
+            entries.extend(_asset_entries_from_value(item))
+        return entries
+    return []
+
+
+def _asset_entry(stem: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    normalized_stem = str(stem).strip().lstrip("/").replace("\\", "/")
+    clean_metadata = {
+        str(key): value
+        for key, value in dict(metadata or {}).items()
+        if key not in {"stem", "path"}
+    }
+    return {"stem": normalized_stem, "metadata": clean_metadata}
 
 
 def _fallback_asset_stem(cue_type: str, tag: str) -> str:

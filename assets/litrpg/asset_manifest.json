@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "stem": "sfx/ui_chime",
+      "tags": ["ui", "quest", "notification"],
+      "cue_types": ["sfx"],
+      "loopable": false,
+      "default_lufs": -18,
+      "intensity": 3,
+      "pan_safe": true,
+      "transient": true,
+      "source": "curated_placeholder",
+      "trusted": false
+    },
+    {
+      "stem": "music/battle_loop",
+      "tags": ["battle", "combat", "high tempo"],
+      "cue_types": ["bgm_start"],
+      "loopable": true,
+      "default_lufs": -24,
+      "intensity": 7,
+      "pan_safe": true,
+      "transient": false,
+      "source": "curated_placeholder",
+      "trusted": false
+    },
+    {
+      "stem": "ambience/dungeon_room",
+      "tags": ["dungeon", "stone room", "underground"],
+      "cue_types": ["ambience_start"],
+      "loopable": true,
+      "default_lufs": -28,
+      "intensity": 4,
+      "pan_safe": true,
+      "transient": false,
+      "source": "curated_placeholder",
+      "trusted": false
+    }
+  ]
+}

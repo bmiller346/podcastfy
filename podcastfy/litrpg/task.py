@@ -223,6 +223,7 @@ def _save_chapter_state_if_requested(
     memory_entry = f"Chapter {chapter_number}: {chapter.get('title') or task.get('chapter_title') or 'Untitled'}"
     if memory_entry not in state.memory:
         state.memory.append(memory_entry)
+    _apply_chapter_mechanics_to_state(state, result)
     save_series_state(series_dir, state)
 
 
@@ -235,6 +236,90 @@ def _mechanics_context_from_state(state: Any) -> dict[str, Any]:
         "level": character.level,
         "stats": dict(character.stats),
     }
+
+
+def _apply_chapter_mechanics_to_state(state: Any, result: Mapping[str, Any]) -> None:
+    character = state.character
+    stats = dict(character.stats)
+    xp_total = _optional_int(stats.get("xp"))
+    inventory = list(character.inventory)
+    skills = list(character.skills)
+
+    for event in _chapter_mechanics_events(result):
+        kind = str(event.get("kind") or "")
+        display = str(event.get("display") or event.get("term") or "").strip()
+        term = str(event.get("term") or display).strip()
+        amount = _optional_int(event.get("amount"))
+        if kind == "xp_gain" and amount is not None:
+            xp_total = (xp_total or 0) + amount
+        elif kind == "xp_spend" and amount is not None:
+            xp_total = max(0, (xp_total or 0) - amount)
+        elif kind == "xp_total" and amount is not None:
+            xp_total = amount
+        elif kind == "loot_gain" and display:
+            _append_unique(inventory, display)
+        elif kind in {"item_consumed", "inventory_remove"} and (term or display):
+            _remove_normalized(inventory, term or display)
+        elif kind == "skill_learned" and display:
+            _append_unique(skills, display)
+
+    if xp_total is not None:
+        stats["xp"] = xp_total
+    character.stats = stats
+    character.inventory = inventory
+    character.skills = skills
+
+
+def _chapter_mechanics_events(result: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    events: list[Mapping[str, Any]] = []
+    parts = result.get("parts")
+    if not isinstance(parts, list):
+        return events
+    for part in parts:
+        if not isinstance(part, Mapping):
+            continue
+        gate = part.get("gate")
+        if not isinstance(gate, Mapping):
+            continue
+        final_gate = gate.get("final")
+        if not isinstance(final_gate, Mapping):
+            continue
+        mechanics = final_gate.get("mechanics")
+        if not isinstance(mechanics, Mapping):
+            continue
+        raw_events = mechanics.get("events")
+        if not isinstance(raw_events, list):
+            continue
+        events.extend(event for event in raw_events if isinstance(event, Mapping))
+    return events
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    normalized = _normalize_state_term(value)
+    if not normalized:
+        return
+    if normalized not in {_normalize_state_term(item) for item in values}:
+        values.append(value)
+
+
+def _remove_normalized(values: list[str], value: str) -> None:
+    normalized = _normalize_state_term(value)
+    if not normalized:
+        return
+    values[:] = [item for item in values if _normalize_state_term(item) != normalized]
+
+
+def _normalize_state_term(value: str) -> str:
+    return " ".join(str(value or "").lower().split())
 
 
 def _write_result_if_requested(

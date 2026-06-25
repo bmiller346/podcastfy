@@ -226,6 +226,75 @@ def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(
     assert captured["mechanics_context"]["class"] == "Intern"
 
 
+def test_run_litrpg_task_persists_validated_mechanics_deltas_for_chapters(tmp_path, monkeypatch):
+    storage_dir = tmp_path / "library"
+    series_dir = storage_dir / "series" / "paper-cuts"
+    save_series_state(
+        series_dir,
+        SeriesState(
+            series_id="paper-cuts",
+            title="Paper Cuts",
+            episode_number=2,
+            character=CharacterState(
+                name="Hero",
+                level=3,
+                character_class="Intern",
+                stats={"xp": 100},
+                skills=["Paper Cut"],
+                inventory=["mana flask"],
+            ),
+        ),
+    )
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "chapter_number": 3,
+                "chapter_title": "The Break Room Bites Back",
+                "premise": "A clerk discovers the office is a dungeon.",
+                "storage_dir": "library",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_generate(task, *, llm):
+        return {
+            "mode": "chapter",
+            "series_id": task["series_id"],
+            "chapter": {"number": 3, "title": "The Break Room Bites Back"},
+            "parts": [
+                {
+                    "gate": {
+                        "final": {
+                            "mechanics": {
+                                "events": [
+                                    {"kind": "xp_gain", "display": "+25 XP", "amount": 25},
+                                    {"kind": "loot_gain", "display": "brass key", "term": "brass key"},
+                                    {"kind": "item_consumed", "display": "mana flask", "term": "mana flask"},
+                                    {"kind": "skill_learned", "display": "Staple Guard", "term": "staple guard"},
+                                ]
+                            }
+                        }
+                    }
+                }
+            ],
+        }
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    run_litrpg_task(task_path, llm=object())
+
+    state = json.loads((series_dir / "series_state.json").read_text(encoding="utf-8"))
+    assert state["episode_number"] == 3
+    assert state["character"]["stats"]["xp"] == 125
+    assert state["character"]["inventory"] == ["brass key"]
+    assert "Staple Guard" in state["character"]["skills"]
+    assert "Chapter 3: The Break Room Bites Back" in state["memory"]
+
+
 def test_checked_in_episode_example_replays_with_fake_tts(tmp_path):
     task = load_litrpg_task(EPISODE_EXAMPLE)
     task["storage_dir"] = "library"

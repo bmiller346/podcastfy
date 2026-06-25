@@ -219,7 +219,7 @@ Next acceptance criteria:
 
 ## 7. Cinematic Audio and SFX
 
-Status: foundation implemented for cue sheets and metadata-only mix planning.
+Status: cue sheets, asset-manifest mapping, and metadata-only mix planning implemented.
 
 Purpose: let scripts carry semantic cinematic audio intent without requiring final
 assets or a real mixer during story generation.
@@ -239,18 +239,23 @@ Implemented behavior:
 - Cue modifiers such as `pan=left`, `volume=-6db`, and `duck=true` are stored as metadata.
 - Semantic tags map to deterministic local asset candidates under an asset root without requiring files to exist.
 - Mix plans describe dialogue, music, ambience, and SFX layers with ducking, panning, EQ intent, and timing anchors.
+- `assets/litrpg/asset_manifest.json` defines the structured manifest schema for curated assets.
+- Stop cues without active beds are reported in `mix_plan["issues"]`.
+- AI fallback candidates are marked `source: ai_generated` and `trusted: false`.
+- Cue sheets, asset mappings, and mix plans are attached to chapter render output.
 
 Current entry points:
 
 - `parse_cue_sheet(...)`
 - `map_assets_for_cue(...)`
 - `map_assets_for_cue_sheet(...)`
+- `load_asset_manifest(...)`
+- `generate_sfx_candidate(...)`
 - `build_mix_plan(...)`
 - `tests/test_litrpg_sfx.py`
 
 Next acceptance criteria:
 
-- Cue sheets, asset mappings, and mix plans are attached to chapter render output.
 - Convert clean script offsets into renderer timestamps after TTS segmentation.
 - Add an actual mixer that resolves selected assets and renders a final stem.
 
