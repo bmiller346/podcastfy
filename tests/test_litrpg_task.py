@@ -4,11 +4,17 @@ from pathlib import Path
 import pytest
 
 from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible, save_story_bible
+from podcastfy.litrpg.continuity import ContinuityLedger, LedgerEntry
+from podcastfy.litrpg.continuity import save_continuity_ledger
+from podcastfy.litrpg.foreshadowing import ForeshadowEntry, ForeshadowLedger
+from podcastfy.litrpg.foreshadowing import save_foreshadow_ledger
 from podcastfy.litrpg.models import CharacterState, SeriesState
 from podcastfy.litrpg.series_architect import ChapterOutlineEntry, SeriesShape
 from podcastfy.litrpg.series_architect import bootstrap_series, save_chapter_outline
 from podcastfy.litrpg.state_store import save_series_state
 from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task, run_litrpg_task_data
+from podcastfy.litrpg.task import _llm_from_task
+from podcastfy.litrpg.voice_cards import VoiceCard, VoiceCardDeck, save_voice_cards
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -144,6 +150,65 @@ def test_run_litrpg_task_rejects_unknown_generation_provider(tmp_path):
 
     with pytest.raises(ValueError, match="generation.provider=openai"):
         run_litrpg_task(task_path, tts=FakeTTS())
+
+
+def test_llm_from_task_builds_ollama_generator_from_generation_config():
+    llm = _llm_from_task(
+        {
+            "generation": {
+                "provider": "ollama",
+                "ollama_model": "dcc-writer",
+                "ollama_host": "http://127.0.0.1:11434",
+                "ollama_options": {"temperature": 0.8},
+                "ollama_timeout_seconds": 99,
+            }
+        },
+        settings={},
+    )
+
+    assert llm.model == "dcc-writer"
+    assert llm.host == "http://127.0.0.1:11434"
+    assert llm.options == {"temperature": 0.8}
+    assert llm.timeout_seconds == 99
+
+
+def test_llm_from_task_uses_ollama_base_url_env(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11435")
+
+    llm = _llm_from_task({"generation": {"provider": "ollama"}}, settings={})
+
+    assert llm.host == "http://localhost:11435"
+
+
+def test_llm_from_task_builds_hybrid_router_with_custom_stage_rules(monkeypatch):
+    class FakeOpenAIResponsesGenerator:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    monkeypatch.setattr(
+        "podcastfy.litrpg.task.OpenAIResponsesGenerator",
+        FakeOpenAIResponsesGenerator,
+    )
+
+    llm = _llm_from_task(
+        {
+            "generation": {
+                "provider": "hybrid",
+                "local_model": "dolphin3",
+                "commercial_model": "gpt-5.5",
+                "local_exact_stages": ["script", "announcer_lines"],
+                "local_stage_prefixes": ["part:", "revise:", "voice:"],
+                "allow_local_fallback": True,
+            }
+        },
+        settings={"openai_api_key": "test-key"},
+    )
+
+    assert llm.local.model == "dolphin3"
+    assert llm.default.model == "gpt-5.5"
+    assert llm.routing.local_exact == ("script", "announcer_lines")
+    assert llm.routing.local_prefixes == ("part:", "revise:", "voice:")
+    assert llm.allow_local_fallback is True
 
 
 def test_run_litrpg_task_data_uses_base_dir_for_relative_outputs(tmp_path):
@@ -387,6 +452,75 @@ def test_run_litrpg_task_injects_series_architect_chapter_contract(tmp_path, mon
     assert "HR System origin" in captured["chapter_contract"]["must_not_spend"]
     assert "Chapter Contract:" in captured["showrunner_context"]
     assert captured["showrunner"]["contract_source"] == "series_architect"
+
+
+def test_run_litrpg_task_injects_story_engine_storage_context(tmp_path, monkeypatch):
+    storage_dir = tmp_path / "library"
+    save_continuity_ledger(
+        storage_dir,
+        "paper-cuts",
+        ContinuityLedger(
+            series_id="paper-cuts",
+            running_gags=[LedgerEntry(text="The copier demands tribute.", chapter=1)],
+        ),
+    )
+    save_voice_cards(
+        storage_dir,
+        VoiceCardDeck(
+            series_id="paper-cuts",
+            cards={
+                "Hero": VoiceCard(
+                    name="Hero",
+                    roles=["HERO"],
+                    sentence_pattern_rules=["Short denial, then procedural panic."],
+                )
+            },
+        ),
+    )
+    save_foreshadow_ledger(
+        storage_dir,
+        ForeshadowLedger(
+            series_id="paper-cuts",
+            planted=[
+                ForeshadowEntry(
+                    detail="The toner cartridge clicks before anyone touches it.",
+                    planted_chapter=1,
+                    intended_payoff_start=2,
+                    intended_payoff_end=3,
+                    mystery="What lives inside office supplies.",
+                )
+            ],
+        ),
+    )
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "chapter_number": 2,
+                "premise": "The office bites back.",
+                "storage_dir": "library",
+                "chapter_contract": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_generate(task, *, llm):
+        captured.update(task)
+        return {"mode": "chapter", "series_id": task["series_id"]}
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    run_litrpg_task(task_path, llm=object())
+
+    context = captured["story_engine_context"]
+    assert "The copier demands tribute" in context
+    assert "Short denial, then procedural panic" in context
+    assert "The toner cartridge clicks" in context
+    assert "ready_to_pay" in context
 
 
 def test_checked_in_episode_example_replays_with_fake_tts(tmp_path):

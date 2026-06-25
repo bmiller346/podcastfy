@@ -1,0 +1,92 @@
+{
+  "mode": "chapter",
+  "series_id": "paper-cuts-hybrid",
+  "premise": "A junior office clerk discovers the company's basement is a dungeon that promotes employees through combat reviews.",
+  "chapter_number": 1,
+  "chapter_title": "Local Draft, Cloud Polish",
+  "target_minutes": 8,
+  "storage_dir": "../data/litrpg",
+  "result_path": "../data/litrpg/paper-cuts-hybrid/chapter-001.json",
+  "checkpoint_dir": "../data/litrpg/paper-cuts-hybrid/chapter-001_checkpoints",
+  "settings_path": "../settings.local.json",
+  "persist_state": true,
+  "render_audio": false,
+  "series_package": {
+    "premise": "Office workers survive dungeon performance reviews.",
+    "metadata": {
+      "title": "Paper Cuts: Hybrid Smoke"
+    },
+    "system_announcer": {
+      "name": "System Announcer",
+      "tone": "hostile corporate game-show host"
+    },
+    "home_base": {
+      "name": "Break Room Safe Zone",
+      "summary": "A barely legal sanctuary with vending-machine politics."
+    }
+  },
+  "generation": {
+    "provider": "hybrid",
+    "local_provider": "ollama",
+    "local_model": "llama3.1:8b-instruct",
+    "ollama_host": "http://127.0.0.1:11434",
+    "commercial_provider": "openai",
+    "commercial_model": "gpt-5.5",
+    "local_stage_prefixes": [
+      "part:",
+      "revise:"
+    ],
+    "local_exact_stages": [
+      "script"
+    ],
+    "reasoning_effort": "low",
+    "verbosity": "low",
+    "max_retries": 2,
+    "retry_backoff_seconds": 1,
+    "timeout_seconds": 120
+  },
+  "reviews": {
+    "enabled": true,
+    "rewrite": true
+  },
+  "injected_beats": [
+    "The local model drafts the cursed stapler scene before the first SYSTEM alert.",
+    "The cloud review pass must preserve LitRPG tags and fix malformed XML.",
+    "The hero earns a suspiciously specific office-themed skill."
+  ],
+  "part_overrides": {
+    "cold-open": {
+      "target_minutes": 2,
+      "required_roles": [
+        "NARRATOR",
+        "HERO",
+        "SYSTEM",
+        "SIDEKICK",
+        "MINION"
+      ],
+      "extra_injected_beats": [
+        "Open on a failed stealth roll near the time clock."
+      ]
+    },
+    "party-pressure": {
+      "target_minutes": 2,
+      "required_roles": [
+        "NARRATOR",
+        "HERO",
+        "RIVAL",
+        "HEALER",
+        "TANK",
+        "ROGUE",
+        "MAGE"
+      ],
+      "extra_injected_beats": [
+        "The party argues over whether HR policy still matters underground."
+      ]
+    }
+  },
+  "locked_part_scripts": {
+    "mechanics-reveal": "<NARRATOR>The tutorial display flickered, saving room for a real mechanics pass later.</NARRATOR><SYSTEM>MECHANICS PLACEHOLDER: Reward tables deferred.</SYSTEM><GUIDE>The audience will forgive one temporary mystery.</GUIDE><HERO>I won't.</HERO><MERCHANT>Excellent. Resentment is collectible.</MERCHANT><MENTOR>Keep moving.</MENTOR>",
+    "boss-setpiece": "<NARRATOR>The loading-bay doors shuddered like they were rehearsing for a larger episode.</NARRATOR><HERO>This is where the expensive screaming goes.</HERO><SYSTEM>BOSS PLACEHOLDER ACCEPTED.</SYSTEM><BOSS>Return when the budget allows smoke.</BOSS><BEAST>Rrr.</BEAST><MINION>We respect fiscal restraint.</MINION><SIDEKICK>That is somehow worse.</SIDEKICK>",
+    "fallout-cliffhanger": "<NARRATOR>The dungeon saved the recording and marked the chapter incomplete but alive.</NARRATOR><HERO>I survived the hybrid smoke version. That still counts.</HERO><SYSTEM>CLIFFHANGER: Audio rendering remains disabled.</SYSTEM><VILLAIN>For now.</VILLAIN><RIVAL>Do not get smug.</RIVAL><MENTOR>Too late.</MENTOR>"
+  }
+}

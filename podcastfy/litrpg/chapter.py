@@ -26,6 +26,8 @@ from podcastfy.litrpg.production import build_part_revision_prompt
 from podcastfy.litrpg.production import build_showmanship_audit_prompt
 from podcastfy.litrpg.production import build_tonal_audit_prompt
 from podcastfy.litrpg.production import build_visual_state_extraction_prompt
+from podcastfy.litrpg.rhythm import build_prose_rhythm_prompt
+from podcastfy.litrpg.rhythm import build_reader_proxy_prompt
 from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
 from podcastfy.litrpg.sfx import parse_cue_sheet
@@ -74,6 +76,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         contract=chapter_contract or showrunner_payload,
         previous_hook_context=hook_context,
     )
+    story_engine_context = str(task.get("story_engine_context") or "").strip()
     mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
     checkpoint_dir = _checkpoint_dir(task)
@@ -89,6 +92,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             series_package_summary=series_package_summary,
             showrunner_context=showrunner_context,
             hook_context=hook_context,
+            story_engine_context=story_engine_context,
             genre=genre,
         )
         locked_script = locked_part_scripts.get(part.part_id)
@@ -279,6 +283,10 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     visual_state_update = ""
     hook_prompt = ""
     hook_review = ""
+    rhythm_prompt = ""
+    rhythm_review = ""
+    reader_proxy_prompt = ""
+    reader_proxy_review = ""
     if reviews_enabled:
         visual_state_update_prompt = build_visual_state_extraction_prompt(
             final_script=combined_script,
@@ -302,6 +310,28 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             llm,
             prompt=hook_prompt,
             stage="hook",
+            retry_options=retry_options,
+        )
+        rhythm_prompt = build_prose_rhythm_prompt(
+            combined_script,
+            chapter_contract or showrunner_payload,
+            genre or "LitRPG",
+        )
+        rhythm_review = _generate_with_retry(
+            llm,
+            prompt=rhythm_prompt,
+            stage="rhythm",
+            retry_options=retry_options,
+        )
+        reader_proxy_prompt = build_reader_proxy_prompt(
+            combined_script,
+            chapter_contract or showrunner_payload,
+            genre or "LitRPG",
+        )
+        reader_proxy_review = _generate_with_retry(
+            llm,
+            prompt=reader_proxy_prompt,
+            stage="reader_proxy",
             retry_options=retry_options,
         )
     cue_sheet = parse_cue_sheet(combined_script)
@@ -330,6 +360,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "showrunner_context": showrunner_context,
             "chapter_contract": dict(chapter_contract),
             "hook_context": hook_context,
+            "story_engine_context": story_engine_context,
             "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),
@@ -343,6 +374,10 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "visual_state_update": visual_state_update,
         "hook_prompt": hook_prompt,
         "hook_review": hook_review,
+        "rhythm_prompt": rhythm_prompt,
+        "rhythm_review": rhythm_review,
+        "reader_proxy_prompt": reader_proxy_prompt,
+        "reader_proxy_review": reader_proxy_review,
         "qa": qa,
         "combined_script": combined_script,
         "render": {
@@ -361,6 +396,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 "chapter_title": title,
                 "genre": genre,
                 "hook_review": hook_review,
+                "rhythm_review": rhythm_review,
+                "reader_proxy_review": reader_proxy_review,
             },
         },
     }

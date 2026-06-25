@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
 from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
-from podcastfy.litrpg.llm import OpenAIResponsesGenerator
+from podcastfy.litrpg.continuity import format_chapter_memory_context
+from podcastfy.litrpg.continuity import load_continuity_ledger
+from podcastfy.litrpg.continuity import load_emotional_arcs
+from podcastfy.litrpg.continuity import load_world_register
+from podcastfy.litrpg.foreshadowing import format_foreshadow_context
+from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger
+from podcastfy.litrpg.llm import OllamaGenerator, OpenAIResponsesGenerator, StageRouterLLM
+from podcastfy.litrpg.llm import StageRouting
 from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
@@ -19,6 +27,8 @@ from podcastfy.litrpg.series_architect import SeriesArchitect, format_chapter_co
 from podcastfy.litrpg.showrunner import build_showrunner_payload, format_showrunner_context
 from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, save_series_state
+from podcastfy.litrpg.voice_cards import format_voice_card_context
+from podcastfy.litrpg.voice_cards import load_voice_cards
 
 
 class TaskScriptLLM:
@@ -117,26 +127,138 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
     if outline and script:
         return TaskScriptLLM(outline=outline, script=script)
     generation = dict(task.get("generation") or {})
-    provider = str(generation.get("provider") or "openai")
+    provider = str(
+        generation.get("provider")
+        or settings.get("default_generation_provider")
+        or "openai"
+    ).lower()
     if provider == "openai":
-        return OpenAIResponsesGenerator(
-            api_key=get_provider_api_key("openai", settings),
-            model=str(generation.get("model") or "gpt-5.5"),
-            reasoning_effort=str(generation.get("reasoning_effort") or "medium"),
-            verbosity=str(generation.get("verbosity") or "medium"),
-            max_retries=int(generation.get("max_retries") or 3),
-            retry_backoff_seconds=float(generation.get("retry_backoff_seconds") or 2.0),
-            timeout_seconds=(
-                None
-                if "timeout_seconds" in generation and generation.get("timeout_seconds") is None
-                else float(generation.get("timeout_seconds"))
-                if "timeout_seconds" in generation
-                else 120.0
+        return _openai_generator_from_config(generation, settings=settings)
+    if provider == "ollama":
+        return _ollama_generator_from_config(generation)
+    if provider == "hybrid":
+        return StageRouterLLM(
+            local=_ollama_generator_from_config(generation),
+            default=_openai_generator_from_config(
+                _commercial_generation_config(generation),
+                settings=settings,
             ),
+            routing=StageRouting(
+                local_exact=_string_tuple(
+                    generation.get("local_exact_stages"),
+                    default=("script",),
+                ),
+                local_prefixes=_string_tuple(
+                    generation.get("local_stage_prefixes"),
+                    default=("part:", "revise:"),
+                ),
+            ),
+            allow_local_fallback=bool(generation.get("allow_local_fallback", False)),
         )
     raise ValueError(
-        "Task must include outline and script fields, pass an llm, or configure generation.provider=openai"
+        "Task must include outline and script fields, pass an llm, or configure "
+        "generation.provider=openai, generation.provider=ollama, or generation.provider=hybrid"
     )
+
+
+def _openai_generator_from_config(
+    generation: Mapping[str, Any], *, settings: Mapping[str, Any]
+) -> OpenAIResponsesGenerator:
+    return OpenAIResponsesGenerator(
+        api_key=get_provider_api_key(str(generation.get("provider") or "openai"), settings)
+        or get_provider_api_key("openai", settings),
+        model=str(
+            generation.get("model")
+            or generation.get("commercial_model")
+            or settings.get("default_model")
+            or "gpt-5.5"
+        ),
+        base_url=(
+            str(generation.get("base_url") or generation.get("api_base_url"))
+            if generation.get("base_url") or generation.get("api_base_url")
+            else None
+        ),
+        reasoning_effort=str(generation.get("reasoning_effort") or "medium"),
+        verbosity=str(generation.get("verbosity") or "medium"),
+        max_retries=int(generation.get("max_retries") or 3),
+        retry_backoff_seconds=float(generation.get("retry_backoff_seconds") or 2.0),
+        timeout_seconds=_optional_timeout(generation, default=120.0),
+    )
+
+
+def _ollama_generator_from_config(generation: Mapping[str, Any]) -> OllamaGenerator:
+    options = generation.get("ollama_options") or generation.get("local_options") or {}
+    if not isinstance(options, Mapping):
+        raise ValueError("generation.ollama_options must be a JSON object")
+    system = generation.get("local_system") or generation.get("ollama_system")
+    return OllamaGenerator(
+        model=str(
+            generation.get("ollama_model")
+            or generation.get("local_model")
+            or generation.get("model")
+            or "dolphin3"
+        ),
+        host=str(
+            generation.get("ollama_host")
+            or generation.get("local_base_url")
+            or generation.get("local_host")
+            or os.getenv("OLLAMA_BASE_URL")
+            or os.getenv("OLLAMA_HOST")
+            or "http://localhost:11434"
+        ),
+        system=str(system) if system else None,
+        options=dict(options),
+        timeout_seconds=_optional_timeout(generation, default=180.0, key="ollama_timeout_seconds"),
+        max_retries=int(generation.get("ollama_max_retries") or generation.get("max_retries") or 2),
+        retry_backoff_seconds=float(
+            generation.get("ollama_retry_backoff_seconds")
+            or generation.get("retry_backoff_seconds")
+            or 1.0
+        ),
+        keep_alive=(
+            str(generation.get("ollama_keep_alive"))
+            if generation.get("ollama_keep_alive") is not None
+            else None
+        ),
+    )
+
+
+def _commercial_generation_config(generation: Mapping[str, Any]) -> dict[str, Any]:
+    provider = str(
+        generation.get("commercial_provider") or generation.get("cloud_provider") or "openai"
+    ).lower()
+    if provider != "openai":
+        raise ValueError("generation.commercial_provider currently supports only openai")
+    config = dict(generation)
+    config["provider"] = provider
+    if generation.get("commercial_model") or generation.get("cloud_model"):
+        config["model"] = generation.get("commercial_model") or generation["cloud_model"]
+    if generation.get("commercial_base_url") or generation.get("commercial_api_base_url"):
+        config["base_url"] = generation.get("commercial_base_url") or generation.get(
+            "commercial_api_base_url"
+        )
+    if generation.get("cloud_base_url") or generation.get("cloud_api_base_url"):
+        config["base_url"] = generation.get("cloud_base_url") or generation.get(
+            "cloud_api_base_url"
+        )
+    return config
+
+
+def _optional_timeout(
+    generation: Mapping[str, Any],
+    *,
+    default: float,
+    key: str = "timeout_seconds",
+) -> float | None:
+    if key in generation:
+        value = generation.get(key)
+    elif key != "timeout_seconds" and "timeout_seconds" in generation:
+        value = generation.get("timeout_seconds")
+    else:
+        return default
+    if value is None:
+        return None
+    return float(value)
 
 
 def _config_from_task(task: Mapping[str, Any]) -> LitRPGConfig | None:
@@ -256,6 +378,14 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
             "showrunner_context",
             format_showrunner_context(chapter_task["showrunner"]),
         )
+    if storage_dir is not None and not chapter_task.get("story_engine_context"):
+        chapter_task["story_engine_context"] = _story_engine_context_from_storage(
+            storage_dir=storage_dir,
+            series_id=series_id,
+            task=task,
+            chapter_task=chapter_task,
+            chapter_contract=chapter_contract,
+        )
     if storage_dir is not None:
         explicit_mechanics = task.get("mechanics_context")
         if explicit_mechanics is not None and not isinstance(explicit_mechanics, Mapping):
@@ -267,6 +397,90 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
             **dict(explicit_mechanics or {}),
         }
     return chapter_task
+
+
+def _story_engine_context_from_storage(
+    *,
+    storage_dir: Path,
+    series_id: str,
+    task: Mapping[str, Any],
+    chapter_task: Mapping[str, Any],
+    chapter_contract: Mapping[str, Any] | None,
+) -> str:
+    contract = dict(chapter_contract or {})
+    showrunner = chapter_task.get("showrunner")
+    if isinstance(showrunner, Mapping):
+        contract.setdefault("phase", showrunner.get("phase"))
+        contract.setdefault("tension", showrunner.get("tension"))
+        contract.setdefault("creativity", showrunner.get("creativity"))
+        contract.setdefault("absurdity", showrunner.get("absurdity"))
+    for key in ("floor", "location", "character_focus"):
+        if key in task and key not in contract:
+            contract[key] = task[key]
+    book_number = int(task.get("book_number") or task.get("book") or contract.get("book") or 1)
+    chapter_number = int(
+        task.get("chapter_number")
+        or task.get("episode_number")
+        or contract.get("chapter")
+        or 1
+    )
+
+    blocks = [
+        str(task.get("continuity_context") or "").strip(),
+        str(task.get("voice_card_context") or task.get("voice_context") or "").strip(),
+        str(task.get("foreshadow_context") or "").strip(),
+        str(task.get("world_context") or "").strip(),
+        str(task.get("emotional_context") or "").strip(),
+    ]
+    try:
+        blocks.append(
+            format_chapter_memory_context(
+                ledger=load_continuity_ledger(storage_dir, series_id),
+                emotional_arcs=load_emotional_arcs(storage_dir, series_id),
+                world_register=load_world_register(storage_dir, series_id),
+                chapter_contract=contract,
+            )
+        )
+    except Exception:
+        pass
+    try:
+        deck = load_voice_cards(storage_dir, series_id)
+        blocks.append(
+            format_voice_card_context(
+                deck,
+                relevant_names=_string_list(contract.get("character_focus")),
+                relevant_roles=_string_list(task.get("required_roles")),
+            )
+        )
+    except Exception:
+        pass
+    try:
+        blocks.append(
+            format_foreshadow_context(
+                load_foreshadow_ledger(storage_dir, series_id),
+                book=book_number,
+                chapter=chapter_number,
+            )
+        )
+    except Exception:
+        pass
+    return "\n\n".join(block for block in blocks if block)
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def _string_tuple(value: Any, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    if value is None:
+        return default
+    return tuple(_string_list(value))
 
 
 def _series_package_summary_from_task(

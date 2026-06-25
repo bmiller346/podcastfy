@@ -235,6 +235,7 @@ def build_chapter_part_prompt(
     series_package_summary: str = "",
     showrunner_context: str = "",
     hook_context: str = "",
+    story_engine_context: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -275,6 +276,9 @@ Showrunner pacing and constraint context:
 
 Hook continuity and binge-read context:
 {hook_context or "No prior hook obligation is available yet."}
+
+Story engine continuity context:
+{story_engine_context or "No additional continuity, voice, foreshadowing, or world-register context is available yet."}
 
 Requirements:
 - Use XML-style role blocks only, for example <HERO>...</HERO>.

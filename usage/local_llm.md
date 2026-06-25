@@ -49,6 +49,44 @@ To use a local LLM model via the command-line interface, you can use the `--loca
 python -m podcastfy.client --url https://example.com/article1 --transcript-only --local
 ```
 
+## LitRPG Hybrid Generation With Ollama
+
+The classic podcast transcript path above uses `is_local=True` and a llamafile-compatible local server. The LitRPG chapter/task pipeline uses its own `generation` block and can use the hybrid provider once that provider is available in the task runner.
+
+The hybrid path is intended for long-form writing work where a local model drafts scene prose and a cloud model handles strict formatting, review, and continuity-style stages. Local prose does not fall back to the cloud unless `allow_local_fallback` is explicitly set to `true`. Text-to-speech remains configured separately under `tts`.
+
+Start Ollama locally:
+
+```bash
+ollama pull llama3.1:8b-instruct
+ollama serve
+```
+
+Then configure a LitRPG task with a hybrid generation block:
+
+```json
+{
+  "generation": {
+    "provider": "hybrid",
+    "local_provider": "ollama",
+    "local_model": "llama3.1:8b-instruct",
+    "ollama_host": "http://127.0.0.1:11434",
+    "commercial_provider": "openai",
+    "commercial_model": "gpt-5.5",
+    "local_stage_prefixes": ["part:", "revise:"],
+    "local_exact_stages": ["script"],
+    "reasoning_effort": "low",
+    "verbosity": "low",
+    "max_retries": 2,
+    "retry_backoff_seconds": 1,
+    "timeout_seconds": 120
+  },
+  "render_audio": false
+}
+```
+
+Use this first with chapter smoke tasks and `render_audio: false`. After the checkpoints and approved XML look stable, enable your normal TTS provider in a separate pass.
+
 ## Notes of caution
 
 When using local LLM models versus widely known private large language models:

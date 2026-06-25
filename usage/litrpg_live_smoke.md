@@ -26,6 +26,7 @@ Exact variables used by the current pipeline:
 - `ELEVENLABS_API_KEY`
 - `LITRPG_SETTINGS_PATH`
 - `RUN_LITRPG_LIVE_SMOKE`
+- `OLLAMA_BASE_URL` when using the optional hybrid/Ollama example
 
 Minimal local settings file:
 
@@ -60,6 +61,22 @@ Expected bundle:
 - `data/litrpg/series/paper-cuts/series_state.json`
 
 This task keeps `render_audio` set to `false`, so no audio file should be produced. That is intentional. It proves generation, checkpointing, and state persistence first.
+
+## Optional Hybrid/Ollama Chapter Smoke
+
+Use `usage/litrpg_task_hybrid.example.json` for a local-writer smoke:
+
+```powershell
+ollama pull llama3.1:8b-instruct
+ollama serve
+python -m podcastfy.litrpg.task usage/litrpg_task_hybrid.example.json
+```
+
+Expected behavior:
+
+- Ollama handles the local writing pass through `http://127.0.0.1:11434`.
+- The commercial provider configured in the same `generation` block handles review-style stages. Local prose fallback is opt-in with `allow_local_fallback`.
+- Audio remains disabled, so the run should only produce the chapter bundle and checkpoints.
 
 ## Step 2: Audio And Replay Verification
 

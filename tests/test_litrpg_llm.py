@@ -1,4 +1,9 @@
-from podcastfy.litrpg.llm import OpenAIResponsesGenerator
+import json
+
+import pytest
+
+from podcastfy.litrpg.llm import OllamaGenerator, OpenAIResponsesGenerator
+from podcastfy.litrpg.llm import StageRouterLLM, StageRouting
 
 
 class FakeResponses:
@@ -65,3 +70,97 @@ def test_openai_responses_generator_retries_transient_failures(monkeypatch):
     assert text == "recovered"
     assert client.responses.calls == 3
     assert sleeps == [0.5, 1.0]
+
+
+class FakeHTTPResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def test_ollama_generator_posts_generate_payload(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeHTTPResponse({"response": "local prose"})
+
+    monkeypatch.setattr("podcastfy.litrpg.llm.urllib.request.urlopen", fake_urlopen)
+    generator = OllamaGenerator(
+        model="dcc-writer",
+        host="http://localhost:11434/",
+        system="Write as dark satire.",
+        options={"temperature": 0.85, "num_ctx": 32768},
+        timeout_seconds=42,
+        max_retries=1,
+    )
+
+    text = generator.generate(prompt="Draft", stage="part:cold-open")
+
+    assert text == "local prose"
+    assert captured["url"] == "http://localhost:11434/api/generate"
+    assert captured["timeout"] == 42
+    assert captured["payload"] == {
+        "model": "dcc-writer",
+        "prompt": "Draft",
+        "stream": False,
+        "system": "Write as dark satire.",
+        "options": {"temperature": 0.85, "num_ctx": 32768},
+    }
+
+
+class RecordingLLM:
+    def __init__(self, label, *, fail=False):
+        self.label = label
+        self.fail = fail
+        self.calls = []
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        if self.fail:
+            raise RuntimeError(f"{self.label} failed")
+        return f"{self.label}:{stage}"
+
+
+def test_stage_router_sends_prose_to_local_and_reviews_to_default():
+    local = RecordingLLM("local")
+    default = RecordingLLM("default")
+    router = StageRouterLLM(local=local, default=default)
+
+    assert router.generate(prompt="draft", stage="part:cold-open") == "local:part:cold-open"
+    assert router.generate(prompt="revise", stage="revise:cold-open") == "local:revise:cold-open"
+    assert router.generate(prompt="audit", stage="mechanics:cold-open") == "default:mechanics:cold-open"
+
+    assert [call["stage"] for call in local.calls] == ["part:cold-open", "revise:cold-open"]
+    assert [call["stage"] for call in default.calls] == ["mechanics:cold-open"]
+
+
+def test_stage_router_supports_custom_stage_rules_and_opt_in_fallback():
+    local = RecordingLLM("local", fail=True)
+    default = RecordingLLM("default")
+    router = StageRouterLLM(
+        local=local,
+        default=default,
+        routing=StageRouting(local_exact=("announcer_lines",), local_prefixes=("voice:",)),
+        allow_local_fallback=True,
+    )
+
+    assert router.generate(prompt="line", stage="announcer_lines") == "default:announcer_lines"
+    assert router.calls == [{"stage": "announcer_lines", "backend": "default_after_local_error"}]
+
+
+def test_stage_router_raises_without_default_for_non_local_stage():
+    router = StageRouterLLM(local=RecordingLLM("local"))
+
+    with pytest.raises(RuntimeError, match="No default generation backend"):
+        router.generate(prompt="audit", stage="chapter_review")

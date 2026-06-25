@@ -79,6 +79,7 @@ def test_part_prompt_requires_roles_and_review_before_render():
         part=part,
         series_package_summary="System announcer: hostile office PA.",
         showrunner_context="Director's Console: PACING: SLOW.",
+        story_engine_context="Continuity Ledger: Pedro invoices every insult.",
     )
     review = build_part_review_prompt(
         part_script="<HERO>We move.</HERO>",
@@ -93,6 +94,7 @@ def test_part_prompt_requires_roles_and_review_before_render():
     assert "Return actionable fixes first" in review
     assert "System announcer: hostile office PA." in prompt
     assert "PACING: SLOW" in prompt
+    assert "Pedro invoices every insult" in prompt
     assert "System announcer: hostile office PA." in review
 
 

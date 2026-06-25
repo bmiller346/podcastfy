@@ -46,6 +46,10 @@ class FakeChapterLLM:
                 '"implied_cost":"the clerk has to touch it again",'
                 '"next_chapter_obligation":"Open on the stapler grin."}'
             )
+        if stage == "rhythm":
+            return '{"verdict":"pass","scores":{"tempo_match":9}}'
+        if stage == "reader_proxy":
+            return '{"verdict":"pass","scores":{"binge_worthiness":9}}'
         raise AssertionError(f"unexpected stage {stage}")
 
 
@@ -197,6 +201,8 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "chapter_review",
         "visual_state_update",
         "hook",
+        "rhythm",
+        "reader_proxy",
     ]
     assert "The cursed stapler must appear." in llm.calls[0]["prompt"]
     assert result["chapter"]["number"] == 2
@@ -216,6 +222,9 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     assert result["visual_state_update"].startswith('{"characters"')
     assert result["hook_review"].startswith('{"verdict"')
     assert result["render"]["metadata"]["hook_review"].startswith('{"verdict"')
+    assert result["rhythm_review"].startswith('{"verdict"')
+    assert result["reader_proxy_review"].startswith('{"verdict"')
+    assert result["render"]["metadata"]["reader_proxy_review"].startswith('{"verdict"')
     assert "Hook Engine:" in llm.calls[0]["prompt"]
     assert result["qa"]["parts"][0]["revision_targets"][0]["audit"] == "mechanics"
     assert "NARRATOR logs XP and loot" in result["combined_script"]
