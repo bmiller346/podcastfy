@@ -8,10 +8,14 @@ const packageForm = document.querySelector("#package-form");
 const packageStatus = document.querySelector("#package-status");
 const packageSummary = document.querySelector("#package-summary");
 const packageOutput = document.querySelector("#package-output");
+const roleList = document.querySelector("#role-list");
 const loadPackageButton = document.querySelector("#load-package");
 const savePackageButton = document.querySelector("#save-package");
 const generatePackageButton = document.querySelector("#generate-package");
 const copyPackageButton = document.querySelector("#copy-package");
+const addRoleButton = document.querySelector("#add-role");
+const rebuildRolesButton = document.querySelector("#rebuild-roles");
+const saveRolesButton = document.querySelector("#save-roles");
 const diagnosticsSummary = document.querySelector("#diagnostics-summary");
 const diagnosticsOutput = document.querySelector("#diagnostics-output");
 const refreshDiagnosticsButton = document.querySelector("#refresh-diagnostics");
@@ -245,7 +249,184 @@ function renderSeriesPackage(data) {
   ].join("");
   packageSummary.textContent = data.summary || "No saved package summary yet.";
   packageOutput.textContent = JSON.stringify(data.package || {}, null, 2);
+  renderRoleEditor(data.package || buildPackageDraft());
   updateDiagnostics();
+}
+
+function renderRoleEditor(packageValue) {
+  if (!roleList) return;
+  const roles = roleArrayFromPackage(packageValue);
+  if (!roles.length) {
+    roleList.innerHTML = `<div class="muted">No roles yet. Add one manually or generate a package from your premise.</div>`;
+    return;
+  }
+  roleList.innerHTML = roles.map((role, index) => renderRoleCard(role, index)).join("");
+}
+
+function renderRoleCard(role, index) {
+  return `<article class="role-card" data-role-index="${index}">
+    <div class="role-card-header">
+      <strong>${escapeHtml(role.name || role.role || role.role_id || `Role ${index + 1}`)}</strong>
+      <button class="remove-role" type="button" data-role-index="${index}">Remove</button>
+    </div>
+    <div class="role-grid">
+      ${roleField(index, "name", "Name", role.name)}
+      ${roleField(index, "role", "Role tag", role.role || role.role_id)}
+      ${roleField(index, "character_class", "Class", role.character_class || role.class_candidate)}
+      ${roleField(index, "voice", "Voice", roleScalarValue(role.voice || role.voice_profile))}
+      ${roleTextarea(index, "personality", "Personality", role.personality)}
+      ${roleTextarea(index, "arc", "Arc", role.arc)}
+      ${roleTextarea(index, "rules", "Rules", listToText(role.rules || role.avoid || role.portrayal_guardrails))}
+      ${roleTextarea(index, "sample_lines", "Sample lines", listToText(role.sample_lines))}
+      ${roleTextarea(index, "relationships", "Relationships", listToText(role.relationships))}
+      ${roleTextarea(index, "notes", "Notes", listToText(role.notes || role.audio_notes))}
+    </div>
+  </article>`;
+}
+
+function roleField(index, name, label, value) {
+  return `<label>
+    ${escapeHtml(label)}
+    <input data-role-index="${index}" data-role-field="${escapeHtml(name)}" type="text" value="${escapeHtml(value || "")}">
+  </label>`;
+}
+
+function roleTextarea(index, name, label, value) {
+  return `<label class="wide">
+    ${escapeHtml(label)}
+    <textarea data-role-index="${index}" data-role-field="${escapeHtml(name)}" rows="3">${escapeHtml(value || "")}</textarea>
+  </label>`;
+}
+
+function roleArrayFromPackage(packageValue) {
+  const characters = packageValue && packageValue.characters;
+  if (Array.isArray(characters)) {
+    return characters.map((item) => ({ ...(item || {}) }));
+  }
+  if (characters && typeof characters === "object") {
+    return Object.entries(characters).map(([key, value]) => {
+      const role = value && typeof value === "object" ? { ...value } : {};
+      if (!role.name) role.name = key;
+      return role;
+    });
+  }
+  return [];
+}
+
+function packageFromRoleEditor(basePackage) {
+  const packageValue = basePackage && typeof basePackage === "object" ? { ...basePackage } : buildPackageDraft();
+  packageValue.series_id = packageSeriesId();
+  packageValue.premise = packageValue.premise || buildTaskPayload().premise || "";
+  packageValue.baseline_text = baselinePackageText() || packageValue.baseline_text || "";
+  packageValue.characters = readRolesFromEditor();
+  return packageValue;
+}
+
+function readRolesFromEditor() {
+  if (!roleList) return [];
+  const originalRoles = roleArrayFromPackage(currentPackageJson());
+  const cards = [...roleList.querySelectorAll(".role-card")];
+  return cards
+    .map((card, index) => {
+      const role = { ...(originalRoles[index] || {}) };
+      for (const field of card.querySelectorAll("[data-role-field]")) {
+        const name = field.getAttribute("data-role-field");
+        const value = cleanValue(field.value);
+        if (!value) {
+          delete role[name];
+          continue;
+        }
+        if (["rules", "sample_lines", "relationships", "notes"].includes(name)) {
+          role[name] = textToList(value);
+        } else if (name === "voice" && role.voice && typeof role.voice === "object") {
+          role.voice = { ...role.voice, delivery: value };
+        } else {
+          role[name] = value;
+        }
+      }
+      return role;
+    })
+    .filter((role) => role.name || role.role);
+}
+
+function addRole(initial = {}) {
+  const current = packageFromRoleEditor(currentPackageJson()).characters || [];
+  current.push({
+    role: initial.role || `SUPPORT_${current.length + 1}`,
+    name: initial.name || "",
+    character_class: initial.character_class || "",
+    voice: initial.voice || "",
+    personality: initial.personality || "",
+    arc: initial.arc || "",
+    rules: initial.rules || [],
+    sample_lines: initial.sample_lines || [],
+    relationships: initial.relationships || [],
+    notes: initial.notes || [],
+  });
+  const packageValue = currentPackageJson() || buildPackageDraft();
+  packageValue.characters = current;
+  renderRoleEditor(packageValue);
+  syncPackageOutputFromRoleEditor();
+}
+
+function removeRole(index) {
+  const packageValue = packageFromRoleEditor(currentPackageJson());
+  packageValue.characters.splice(index, 1);
+  renderRoleEditor(packageValue);
+  packageOutput.textContent = JSON.stringify(packageValue, null, 2);
+  latestPackage = { ...(latestPackage || {}), package: packageValue, available: true };
+  updateDiagnostics();
+}
+
+function currentPackageJson() {
+  const currentText = packageOutput ? cleanValue(packageOutput.textContent) : "";
+  if (!currentText || currentText === "{}") return buildPackageDraft();
+  try {
+    const parsed = JSON.parse(currentText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch (_error) {
+    return buildPackageDraft();
+  }
+  return buildPackageDraft();
+}
+
+function syncPackageOutputFromRoleEditor() {
+  if (!packageOutput) return;
+  const packageValue = packageFromRoleEditor(currentPackageJson());
+  packageOutput.textContent = JSON.stringify(packageValue, null, 2);
+  latestPackage = { ...(latestPackage || {}), package: packageValue, available: true };
+  updateDiagnostics();
+}
+
+function listToText(value) {
+  if (Array.isArray(value)) return value.join("\n");
+  return value || "";
+}
+
+function roleScalarValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value !== "object") return String(value);
+  return [
+    value.voice,
+    value.archetype,
+    value.delivery,
+    value.tone,
+    value.accent,
+    value.pacing,
+  ]
+    .map((item) => cleanValue(item))
+    .filter(Boolean)
+    .join("; ");
+}
+
+function textToList(value) {
+  return cleanValue(value)
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
+    .filter(Boolean);
 }
 
 function statusItem(label, value) {
@@ -261,18 +442,7 @@ async function loadSeriesPackage() {
 
 async function saveSeriesPackage() {
   const seriesId = packageSeriesId();
-  let packageValue = buildPackageDraft();
-  const currentText = packageOutput ? cleanValue(packageOutput.textContent) : "";
-  if (currentText && currentText !== "{}") {
-    try {
-      const parsed = JSON.parse(currentText);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        packageValue = parsed;
-      }
-    } catch (_error) {
-      packageValue = buildPackageDraft();
-    }
-  }
+  const packageValue = packageFromRoleEditor(currentPackageJson());
   const data = await api("/api/series-package", {
     method: "POST",
     body: JSON.stringify({
@@ -573,8 +743,20 @@ taskForm.addEventListener("input", () => {
 });
 
 packageForm.addEventListener("input", () => {
+  syncPackageOutputFromRoleEditor();
   updateDiagnostics();
 });
+
+if (roleList) {
+  roleList.addEventListener("input", () => {
+    syncPackageOutputFromRoleEditor();
+  });
+  roleList.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!target || !target.classList || !target.classList.contains("remove-role")) return;
+    removeRole(Number(target.getAttribute("data-role-index")));
+  });
+}
 
 loadPackageButton.addEventListener("click", async () => {
   loadPackageButton.disabled = true;
@@ -621,6 +803,34 @@ copyPackageButton.addEventListener("click", () => {
     taskOutput.textContent = error.message;
   });
 });
+
+if (addRoleButton) {
+  addRoleButton.addEventListener("click", () => {
+    addRole();
+  });
+}
+
+if (rebuildRolesButton) {
+  rebuildRolesButton.addEventListener("click", () => {
+    renderRoleEditor(currentPackageJson());
+    taskOutput.textContent = "Role editor loaded from package JSON.";
+  });
+}
+
+if (saveRolesButton) {
+  saveRolesButton.addEventListener("click", async () => {
+    saveRolesButton.disabled = true;
+    taskOutput.textContent = "Saving role package...";
+    try {
+      await saveSeriesPackage();
+      taskOutput.textContent = "Role package saved.";
+    } catch (error) {
+      taskOutput.textContent = error.message;
+    } finally {
+      saveRolesButton.disabled = false;
+    }
+  });
+}
 
 taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();

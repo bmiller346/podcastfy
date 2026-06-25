@@ -94,6 +94,11 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="generate-package"' in html
     assert 'id="copy-package"' in html
     assert 'id="package-output"' in html
+    assert 'id="role-package-panel"' in html
+    assert 'id="role-list"' in html
+    assert 'id="add-role"' in html
+    assert 'id="rebuild-roles"' in html
+    assert 'id="save-roles"' in html
 
 
 def test_series_package_save_and_load_uses_local_storage_fallback(ui_server, ui_roots):

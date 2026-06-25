@@ -142,7 +142,7 @@
       <section class="panel">
         <div class="section-heading">
           <h2>Series Package</h2>
-          <p>Build or review the reusable style bible before chapter generation.</p>
+          <p>Build or review reusable story context before chapter generation.</p>
         </div>
         <form id="package-form" class="grid-form package-form">
           <label>
@@ -161,12 +161,30 @@
           </div>
         </form>
         <div id="package-status" class="status-list"></div>
-        <div class="output-header">
-          <h3>Package Summary</h3>
-          <p>Reusable context for announcer, characters, home base, floor rules, and factions.</p>
-        </div>
-        <pre id="package-summary" class="output small-output" aria-live="polite"></pre>
-        <pre id="package-output" class="output package-output" aria-live="polite"></pre>
+        <details id="role-package-panel" class="editor-panel" open>
+          <summary>
+            <span>Role Package Editor</span>
+            <small>Creative control for cast, voices, arcs, and rules.</small>
+          </summary>
+          <div class="editor-actions">
+            <button id="add-role" type="button">Add Role</button>
+            <button id="rebuild-roles" type="button">Load Roles From JSON</button>
+            <button id="save-roles" type="button">Save Roles</button>
+          </div>
+          <div id="role-list" class="role-list" aria-live="polite"></div>
+        </details>
+        <details class="editor-panel">
+          <summary>
+            <span>Package Summary And JSON</span>
+            <small>Advanced view for copy, diagnostics, and manual edits.</small>
+          </summary>
+          <div class="output-header">
+            <h3>Package Summary</h3>
+            <p>Reusable context for announcer, characters, home base, floor rules, and factions.</p>
+          </div>
+          <pre id="package-summary" class="output small-output" aria-live="polite"></pre>
+          <pre id="package-output" class="output package-output" contenteditable="true" aria-live="polite"></pre>
+        </details>
       </section>
 
       <section class="panel">

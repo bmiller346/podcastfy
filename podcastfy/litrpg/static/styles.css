@@ -236,6 +236,77 @@ label {
   max-height: 420px;
 }
 
+.editor-panel {
+  margin-top: 16px;
+  border: 1px solid #e1e5ea;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 0;
+}
+
+.editor-panel summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  padding: 12px 14px;
+  color: #26323d;
+  font-weight: 700;
+}
+
+.editor-panel summary small {
+  color: #66717d;
+  font-weight: 400;
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #e7eaee;
+  padding: 12px 14px;
+}
+
+.role-list {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.role-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dbe1e7;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.role-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.role-card-header button {
+  min-height: 32px;
+  border-color: #a8483c;
+  background: #b85245;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.role-grid .wide {
+  grid-column: 1 / -1;
+}
+
 .small-output {
   min-height: 52px;
   max-height: 140px;
@@ -369,12 +440,14 @@ audio {
   .topbar,
   .section-heading,
   .output-header,
+  .editor-panel summary,
   .series-header,
   .episode-heading {
     display: grid;
   }
 
   .grid-form,
+  .role-grid,
   .status-list,
   .diagnostics-grid {
     grid-template-columns: 1fr;
@@ -390,7 +463,8 @@ audio {
     justify-content: stretch;
   }
 
-  .package-actions button {
+  .package-actions button,
+  .editor-actions button {
     width: 100%;
   }
 }
