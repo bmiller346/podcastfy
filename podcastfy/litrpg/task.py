@@ -478,14 +478,18 @@ def _story_engine_context_from_storage(
         str(task.get("emotional_context") or "").strip(),
     ]
     try:
-        blocks.append(
+        world_register = load_world_register(storage_dir, series_id)
+        memory_context = (
             format_chapter_memory_context(
                 ledger=load_continuity_ledger(storage_dir, series_id),
                 emotional_arcs=load_emotional_arcs(storage_dir, series_id),
-                world_register=load_world_register(storage_dir, series_id),
+                world_register=world_register,
                 chapter_contract=contract,
             )
         )
+        blocks.append(memory_context)
+        if "Locations:" not in memory_context and "Entity ecology:" not in memory_context:
+            blocks.append(_broad_world_register_context(world_register))
     except Exception:
         pass
     try:
@@ -510,6 +514,43 @@ def _story_engine_context_from_storage(
     except Exception:
         pass
     return "\n\n".join(block for block in blocks if block)
+
+
+def _broad_world_register_context(world_register: Any) -> str:
+    sections = []
+    locations = [
+        f"{item.name}: {item.detail}"
+        for item in getattr(world_register, "locations", [])[:3]
+        if getattr(item, "name", "") or getattr(item, "detail", "")
+    ]
+    entities = [
+        f"{item.entity}: {item.detail}"
+        for item in getattr(world_register, "entity_ecology", [])[:3]
+        if getattr(item, "entity", "") or getattr(item, "detail", "")
+    ]
+    rules = [
+        (
+            f"{item.rule}: {item.detail}"
+            if getattr(item, "detail", "")
+            else str(getattr(item, "rule", ""))
+        )
+        for item in getattr(world_register, "rules", [])[:3]
+        if getattr(item, "rule", "") or getattr(item, "detail", "")
+    ]
+    economy = [
+        f"{item.name}: {item.detail}"
+        for item in getattr(world_register, "economy_anchors", [])[:3]
+        if getattr(item, "name", "") or getattr(item, "detail", "")
+    ]
+    for title, values in (
+        ("Locations", locations),
+        ("Entity ecology", entities),
+        ("Rules", rules),
+        ("Economy anchors", economy),
+    ):
+        if values:
+            sections.append(title + ":\n" + "\n".join(f"- {value}" for value in values))
+    return "\n".join(sections)
 
 
 def _string_list(value: Any) -> list[str]:

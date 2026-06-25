@@ -3,8 +3,10 @@ import json
 from podcastfy.litrpg.bible import load_story_bible
 from podcastfy.litrpg.continuity import load_continuity_ledger, load_world_register
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger
+from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
 from podcastfy.litrpg.premise_intake import extract_premise_intake_json
 from podcastfy.litrpg.premise_intake import run_premise_intake
+from podcastfy.litrpg.premise_intake import save_premise_intake_payload
 from podcastfy.litrpg.series_architect import SeriesArchitect, load_chapter_outline
 from podcastfy.litrpg.task import run_litrpg_task_data
 from podcastfy.litrpg.voice_cards import load_voice_cards
@@ -24,6 +26,111 @@ def test_extract_premise_intake_json_accepts_fenced_output():
     parsed = extract_premise_intake_json('Here:\n```json\n{"series_shape": {"target_books": 1}}\n```')
 
     assert parsed["series_shape"]["target_books"] == 1
+
+
+def test_extract_premise_intake_json_accepts_plain_json():
+    parsed = extract_premise_intake_json('{"series_shape": {"series_title": "Plain"}}')
+
+    assert parsed["series_shape"]["series_title"] == "Plain"
+
+
+def test_build_premise_intake_prompt_requires_story_architecture_artifacts():
+    prompt = build_premise_intake_prompt(
+        premise="Edward, Kelli, Pedro, and The Knotty Buoy face Gallowgate.",
+        series_id="knotty-buoy",
+        chapters_per_book=30,
+        series_title="The Knotty Buoy",
+    )
+
+    assert "Return ONLY a JSON object" in prompt
+    assert "voice_cards: object compatible with VoiceCardDeck" in prompt
+    assert "diction, sentence rhythm, taboo phrases" in prompt
+    assert "Visual continuity is mandatory" in prompt
+    assert "dynamic degradation" in prompt
+    assert "use ends_on for the final image" in prompt
+    assert "foreshadow_ledger plants" in prompt
+    assert "payoff windows" in prompt
+    assert "faction agendas" in prompt
+    assert "currencies, trade goods, costs, scarcity" in prompt
+    assert '"chapters_per_book": 30' in prompt
+    assert "Edward, Kelli, Pedro" in prompt
+
+
+def test_save_premise_intake_payload_repairs_partial_payload(tmp_path):
+    result = save_premise_intake_payload(
+        storage_dir=tmp_path,
+        series_id="partial-series",
+        payload={
+            "book_outlines": {
+                "1": [
+                    {
+                        "chapter": 1,
+                        "title": "First Wake",
+                        "premise": "The system message arrives.",
+                    }
+                ]
+            }
+        },
+        fallback_shape={
+            "series_title": "Fallback Title",
+            "target_books": 1,
+            "chapters_per_book": 1,
+            "series_promise": "Fallback promise.",
+        },
+    )
+
+    contract = SeriesArchitect(tmp_path, "partial-series").get_chapter_contract(
+        book_number=1,
+        chapter_number=1,
+    )
+
+    assert result.series_id == "partial-series"
+    assert contract["series_title"] == "Fallback Title"
+    assert contract["title"] == "First Wake"
+    assert any(path.endswith("series_arc.json") for path in result.written_files)
+
+
+def test_save_premise_intake_payload_allows_missing_optional_ledgers(tmp_path):
+    result = save_premise_intake_payload(
+        storage_dir=tmp_path,
+        series_id="no-ledgers",
+        payload={"series_shape": {"series_title": "No Ledgers", "chapters_per_book": 1}},
+    )
+
+    assert (tmp_path / "series" / "no-ledgers" / "series_plan.json").exists()
+    assert not (tmp_path / "series" / "no-ledgers" / "continuity_ledger.json").exists()
+    assert any(path.endswith("series_plan.json") for path in result.written_files)
+
+
+def test_save_premise_intake_payload_reports_bad_outline_shape(tmp_path):
+    try:
+        save_premise_intake_payload(
+            storage_dir=tmp_path,
+            series_id="bad-outline",
+            payload={"book_outlines": {"1": [{"chapter": "two"}]}},
+        )
+    except ValueError as exc:
+        message = str(exc)
+    else:  # pragma: no cover - defensive clarity.
+        raise AssertionError("Expected bad outline to raise")
+
+    assert "book 1 chapter two" in message
+
+
+def test_save_premise_intake_payload_blocks_series_path_traversal(tmp_path):
+    try:
+        save_premise_intake_payload(
+            storage_dir=tmp_path,
+            series_id="../escape",
+            payload={"series_shape": {"series_title": "Unsafe"}},
+        )
+    except ValueError as exc:
+        message = str(exc)
+    else:  # pragma: no cover - defensive clarity.
+        raise AssertionError("Expected unsafe series_id to raise")
+
+    assert "storage_dir/series" in message
+    assert not (tmp_path / "escape").exists()
 
 
 def test_run_premise_intake_writes_story_engine_artifacts(tmp_path):

@@ -1,0 +1,28 @@
+{
+  "mode": "premise_intake",
+  "series_id": "knotty-buoy",
+  "storage_dir": "library",
+  "series_title": "The Knotty Buoy",
+  "series_promise": "A retired South Jersey couple survives impossible dungeon seas through union logic, maritime repairs, old-married friction, and an eldritch macaw.",
+  "endgame_direction": "Expose Gallowgate's debt machinery and force the Grand Dredger's purpose into the open.",
+  "target_books": 1,
+  "chapters_per_book": 30,
+  "book_length_mode": "tight",
+  "arc_style": "escalating_floor_survival",
+  "power_curve": "logarithmic",
+  "merge_existing": true,
+  "premise_path": "usage/knotty_buoy_premise.md",
+  "generation": {
+    "provider": "hybrid",
+    "ollama_model": "dolphin3",
+    "commercial_model": "gpt-5.5",
+    "local_exact_stages": [
+      "script"
+    ],
+    "local_stage_prefixes": [
+      "part:",
+      "revise:"
+    ]
+  },
+  "result_path": "library/knotty-buoy/premise_intake_result.json"
+}

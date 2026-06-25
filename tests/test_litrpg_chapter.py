@@ -225,6 +225,18 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     assert result["rhythm_review"].startswith('{"verdict"')
     assert result["reader_proxy_review"].startswith('{"verdict"')
     assert result["render"]["metadata"]["reader_proxy_review"].startswith('{"verdict"')
+    assert result["render"]["metadata"]["chapter_review"] == "chapter review: render ready"
+    assert result["render"]["metadata"]["visual_state_update"].startswith('{"characters"')
+    assert result["render"]["metadata"]["qa_ready"] is True
+    assert result["render"]["metadata"]["qa"]["parts"][0]["audits"]["director"]["raw"].startswith(
+        '{"summary"'
+    )
+    assert result["render"]["metadata"]["qa"]["parts"][0]["audits"]["mechanics"]["raw"].startswith(
+        "mechanics audit"
+    )
+    assert result["render"]["metadata"]["audio_readiness"]["render_ready"] is True
+    assert result["render"]["metadata"]["audio_readiness"]["cue_count"] == 0
+    assert "SYSTEM" in result["render"]["metadata"]["audio_readiness"]["role_tags"]
     assert "Hook Engine:" in llm.calls[0]["prompt"]
     assert result["qa"]["parts"][0]["revision_targets"][0]["audit"] == "mechanics"
     assert "NARRATOR logs XP and loot" in result["combined_script"]
@@ -399,6 +411,29 @@ def test_generate_litrpg_chapter_injects_story_bible_summary_into_prompts():
     assert "Hero never jokes about the elevator vow." in llm.calls[0]["prompt"]
     mechanics_call = next(call for call in llm.calls if call["stage"] == "mechanics:cold-open")
     assert "Hero never jokes about the elevator vow." in mechanics_call["prompt"]
+
+
+def test_generate_litrpg_chapter_injects_story_engine_context_into_part_prompts():
+    llm = FakeChapterLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            story_engine_context=(
+                "Voice Cards: Hero uses short denial.\n"
+                "Foreshadow: toner clicks before anyone touches it.\n"
+                "Emotional arcs: wound=promotion trap.\n"
+                "Economy anchors: Toner Scrip buys safe passage."
+            )
+        ),
+        llm=llm,
+    )
+
+    first_prompt = next(call["prompt"] for call in llm.calls if call["stage"] == "part:cold-open")
+    assert "Story engine continuity context:" in first_prompt
+    assert "Voice Cards: Hero uses short denial" in first_prompt
+    assert "Foreshadow: toner clicks" in first_prompt
+    assert "Economy anchors: Toner Scrip" in first_prompt
+    assert result["chapter"]["story_engine_context"].startswith("Voice Cards")
 
 
 def test_generate_litrpg_chapter_injects_series_package_summary_into_prompts():

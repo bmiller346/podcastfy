@@ -35,6 +35,7 @@ from podcastfy.litrpg.foreshadowing import (
 from podcastfy.litrpg.series_architect import (
     SeriesShape,
     bootstrap_series,
+    chapter_outline_from_mapping,
     save_chapter_outline,
 )
 from podcastfy.litrpg.voice_cards import (
@@ -106,11 +107,25 @@ Return ONLY a JSON object with these top-level keys:
 
 Extraction rules:
 - If the premise gives a chapter outline, preserve its chapter count and chapter titles.
-- Put long-term mysteries in series_shape.series_mysteries and in early book must_preserve.
+- Each ChapterOutlineEntry must include a hook-ending field when supported by the
+  schema: use ends_on for the final image, open question, reversal, or emotional
+  cost that should pull the reader into the next chapter.
+- Put long-term mysteries in series_shape.series_mysteries, early book must_preserve,
+  and foreshadow_ledger plants. Track planted chapter ranges, payoff windows,
+  clue wording, red herrings, and what must not be revealed yet.
 - Character sheets should become both story_bible character facts and voice_cards.
+  Voice cards must capture diction, sentence rhythm, taboo phrases, favorite
+  insults, humor modes, pressure tells, emotional leakage, role tags, and how
+  the character sounds different in fear, anger, tenderness, and tactical focus.
 - Physical anchors, gear state, wounds, running jokes, and marriage/family pressure go in
   story_bible and emotional_arcs.
-- Locations, floor rules, factions, mobs, economy, and vehicle/base mechanics go in world_register.
+- Visual continuity is mandatory: capture static anchors, dynamic degradation,
+  current injuries, fatigue markers, gear damage/repairs, base/vehicle damage,
+  absurd physical traits, and rules for how bodies or equipment worsen over time.
+- Locations, floor rules, faction agendas, mobs, economy, currencies, trade goods, costs, scarcity, and vehicle/base mechanics go in world_register.
+  Separate registers for faction agendas, social rank, currencies, trade goods, costs, scarcity,
+  dungeon floor rules, entity ecology, home-base systems, and
+  institutional voices. Preserve invented names and local idioms.
 - Put recurring bits, memorable system achievements, and callback-ready jokes in continuity_ledger.
 - Plant 3-8 foreshadow entries for long-term mysteries and later book payoffs.
 - Keep all strings concise. Prefer usable production constraints over literary commentary.
@@ -189,6 +204,7 @@ def save_premise_intake_payload(
 
     storage = Path(storage_dir)
     series_key = str(series_id)
+    series_root = _validated_series_root(storage, series_key)
     data = dict(payload)
     shape_data = {
         **dict(fallback_shape or {}),
@@ -297,7 +313,9 @@ def save_premise_intake_payload(
     return PremiseIntakeResult(
         series_id=series_key,
         storage_dir=str(storage),
-        written_files=sorted(dict.fromkeys(written)),
+        written_files=sorted(
+            dict.fromkeys(_validated_written_path(path, series_root) for path in written)
+        ),
         payload=data,
     )
 
@@ -332,17 +350,63 @@ def _book_outline_items(value: Any) -> list[tuple[int, list[Mapping[str, Any]]]]
             try:
                 book_number = int(key)
             except (TypeError, ValueError):
-                continue
-            items.append((book_number, _list(outline)))
+                raise ValueError(f"book_outlines contains an invalid book key: {key!r}") from None
+            items.append((book_number, _validated_outline(book_number, outline)))
         return items
     items = []
-    for item in _list(value):
+    for index, item in enumerate(_list(value), 1):
         if not isinstance(item, Mapping):
-            continue
-        book_number = int(item.get("book") or item.get("book_number") or 1)
-        outline = _list(item.get("outline") or item.get("chapters"))
+            raise ValueError(f"book_outlines item {index} must be a JSON object")
+        try:
+            book_number = int(item.get("book") or item.get("book_number") or 1)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"book_outlines item {index} has an invalid book number") from exc
+        outline = _validated_outline(book_number, item.get("outline") or item.get("chapters"))
         items.append((book_number, outline))
     return items
+
+
+def _validated_outline(book_number: int, value: Any) -> list[Mapping[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError(f"book_outlines book {book_number} must be a list of chapters")
+    outline: list[Mapping[str, Any]] = []
+    for index, item in enumerate(value, 1):
+        if not isinstance(item, Mapping):
+            raise ValueError(
+                f"book_outlines book {book_number} chapter item {index} must be a JSON object"
+            )
+        try:
+            chapter_outline_from_mapping(item)
+        except Exception as exc:
+            chapter = item.get("chapter") or index
+            raise ValueError(
+                f"book_outlines book {book_number} chapter {chapter} is invalid: {exc}"
+            ) from exc
+        outline.append(item)
+    return outline
+
+
+def _validated_series_root(storage: Path, series_id: str) -> Path:
+    series_base = (storage / "series").resolve()
+    series_root = (series_base / series_id).resolve()
+    if not _is_relative_to(series_root, series_base):
+        raise ValueError("series_id must stay inside storage_dir/series")
+    return series_root
+
+
+def _validated_written_path(path: str, series_root: Path) -> str:
+    resolved = Path(path).resolve()
+    if not _is_relative_to(resolved, series_root):
+        raise ValueError("Premise intake attempted to write outside the series directory")
+    return str(Path(path))
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
 
 
 def _mapping(value: Any) -> dict[str, Any]:

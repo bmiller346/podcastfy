@@ -4,8 +4,11 @@ from pathlib import Path
 import pytest
 
 from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible, save_story_bible
-from podcastfy.litrpg.continuity import ContinuityLedger, LedgerEntry
+from podcastfy.litrpg.continuity import ContinuityLedger, EconomyAnchor, EmotionalArc
+from podcastfy.litrpg.continuity import EmotionalArcRegistry, EntityEcology, LedgerEntry
+from podcastfy.litrpg.continuity import LocationDetail, RuleEntry, WorldRegister
 from podcastfy.litrpg.continuity import save_continuity_ledger
+from podcastfy.litrpg.continuity import save_emotional_arcs, save_world_register
 from podcastfy.litrpg.foreshadowing import ForeshadowEntry, ForeshadowLedger
 from podcastfy.litrpg.foreshadowing import save_foreshadow_ledger
 from podcastfy.litrpg.models import CharacterState, SeriesState
@@ -477,6 +480,57 @@ def test_run_litrpg_task_injects_story_engine_storage_context(tmp_path, monkeypa
             },
         ),
     )
+    save_emotional_arcs(
+        storage_dir,
+        "paper-cuts",
+        EmotionalArcRegistry(
+            series_id="paper-cuts",
+            characters={
+                "Hero": EmotionalArc(
+                    character="Hero",
+                    wound="Hero still thinks every promotion is a trap.",
+                    current_coping_mode="alphabetizes terror",
+                    relationships={"System": "mutual contempt"},
+                )
+            },
+        ),
+    )
+    save_world_register(
+        storage_dir,
+        "paper-cuts",
+        WorldRegister(
+            series_id="paper-cuts",
+            locations=[
+                LocationDetail(
+                    name="Copy Room",
+                    detail="toner-scented arena with jammed doors",
+                    floor=1,
+                )
+            ],
+            entity_ecology=[
+                EntityEcology(
+                    entity="Staple Wraith",
+                    detail="feeds on unsigned forms",
+                    floor=1,
+                    location="Copy Room",
+                )
+            ],
+            rules=[
+                RuleEntry(
+                    rule="All forms bite back",
+                    detail="paperwork becomes hostile when ignored",
+                    floor=1,
+                )
+            ],
+            economy_anchors=[
+                EconomyAnchor(
+                    name="Toner Scrip",
+                    detail="accepted by vending machines and minor office spirits",
+                    floor=1,
+                )
+            ],
+        ),
+    )
     save_foreshadow_ledger(
         storage_dir,
         ForeshadowLedger(
@@ -495,14 +549,15 @@ def test_run_litrpg_task_injects_story_engine_storage_context(tmp_path, monkeypa
     task_path = tmp_path / "chapter_task.json"
     task_path.write_text(
         json.dumps(
-            {
-                "mode": "chapter",
-                "series_id": "paper-cuts",
-                "chapter_number": 2,
-                "premise": "The office bites back.",
-                "storage_dir": "library",
-                "chapter_contract": False,
-            }
+                {
+                    "mode": "chapter",
+                    "series_id": "paper-cuts",
+                    "chapter_number": 2,
+                    "premise": "The office bites back.",
+                    "floor": 1,
+                    "storage_dir": "library",
+                    "chapter_contract": False,
+                }
         ),
         encoding="utf-8",
     )
@@ -519,6 +574,12 @@ def test_run_litrpg_task_injects_story_engine_storage_context(tmp_path, monkeypa
     context = captured["story_engine_context"]
     assert "The copier demands tribute" in context
     assert "Short denial, then procedural panic" in context
+    assert "Hero still thinks every promotion is a trap" in context
+    assert "alphabetizes terror" in context
+    assert "Copy Room: toner-scented arena" in context
+    assert "Staple Wraith: feeds on unsigned forms" in context
+    assert "All forms bite back: paperwork becomes hostile" in context
+    assert "Toner Scrip: accepted by vending machines" in context
     assert "The toner cartridge clicks" in context
     assert "ready_to_pay" in context
 
