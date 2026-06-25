@@ -4,6 +4,12 @@ const taskForm = document.querySelector("#task-form");
 const taskSelect = document.querySelector("#task-select");
 const taskOutput = document.querySelector("#task-output");
 const taskPreview = document.querySelector("#task-preview");
+const activeSeriesInput = document.querySelector("#active-series-id");
+const seriesSelect = document.querySelector("#series-select");
+const seriesStatus = document.querySelector("#series-status");
+const useTaskSeriesButton = document.querySelector("#use-task-series");
+const loadActiveSeriesButton = document.querySelector("#load-active-series");
+const newSeriesPackageButton = document.querySelector("#new-series-package");
 const packageForm = document.querySelector("#package-form");
 const packageStatus = document.querySelector("#package-status");
 const packageSummary = document.querySelector("#package-summary");
@@ -29,6 +35,8 @@ let latestTasks = null;
 let latestLibrary = null;
 let latestJob = null;
 let latestPackage = null;
+let activeSeriesId = "";
+let lastSyncedPackageSeriesId = "";
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -72,20 +80,56 @@ function renderTasks(data) {
 
 function updateTaskPreview() {
   if (!taskForm || !taskPreview) return;
+  syncSeriesFromTask({ force: true });
   taskPreview.textContent = JSON.stringify(buildTaskPayload(), null, 2);
-  syncPackageSeriesId();
+  renderSeriesWorkspace();
   updateDiagnostics();
 }
 
-function syncPackageSeriesId() {
+function syncSeriesFromTask({ force = false } = {}) {
+  const seriesId = cleanValue(taskForm.elements.series_id && taskForm.elements.series_id.value) || "local-series";
+  if (!activeSeriesId || force || activeSeriesId === "local-series") {
+    setActiveSeriesId(seriesId, { syncTask: false, syncPackage: true });
+    return;
+  }
+  syncPackageSeriesId();
+}
+
+function syncPackageSeriesId({ force = false } = {}) {
   if (!packageForm || !taskForm) return;
   const packageField = packageForm.elements.package_series_id;
-  if (!packageField || cleanValue(packageField.value)) return;
-  packageField.value = buildTaskPayload().series_id || "";
+  if (!packageField) return;
+  const seriesId = currentSeriesId();
+  const current = cleanValue(packageField.value);
+  if (!force && current && current !== lastSyncedPackageSeriesId) return;
+  packageField.value = seriesId;
+  lastSyncedPackageSeriesId = seriesId;
+}
+
+function currentSeriesId() {
+  return cleanValue(activeSeriesId)
+    || cleanValue(activeSeriesInput && activeSeriesInput.value)
+    || cleanValue(taskForm.elements.series_id && taskForm.elements.series_id.value)
+    || "local-series";
+}
+
+function setActiveSeriesId(seriesId, { syncTask = true, syncPackage = true } = {}) {
+  const cleanSeries = cleanValue(seriesId) || "local-series";
+  activeSeriesId = cleanSeries;
+  if (activeSeriesInput) activeSeriesInput.value = cleanSeries;
+  if (syncTask && taskForm && taskForm.elements.series_id) {
+    taskForm.elements.series_id.value = cleanSeries;
+  }
+  if (syncPackage) syncPackageSeriesId({ force: true });
+  if (seriesSelect && [...seriesSelect.options].some((option) => option.value === cleanSeries)) {
+    seriesSelect.value = cleanSeries;
+  }
+  renderSeriesWorkspace();
 }
 
 function renderLibrary(data) {
   latestLibrary = data;
+  renderSeriesWorkspace();
   const series = data.library || [];
   if (!series.length) {
     library.innerHTML = `<p class="muted">No saved episodes found in local story storage.</p>`;
@@ -110,6 +154,42 @@ function renderLibrary(data) {
       </article>`;
     })
     .join("");
+}
+
+function renderSeriesWorkspace() {
+  if (!seriesStatus) return;
+  const librarySeries = (latestLibrary && latestLibrary.library) || [];
+  const selectedSeries = currentSeriesId();
+  if (seriesSelect) {
+    const options = [...librarySeries]
+      .sort((a, b) => String(a.series_id).localeCompare(String(b.series_id)))
+      .map((item) => {
+        const id = String(item.series_id || "");
+        const title = item.title && item.title !== id ? ` - ${item.title}` : "";
+        return `<option value="${escapeHtml(id)}">${escapeHtml(id + title)}</option>`;
+      });
+    if (!options.some((option) => option.includes(`value="${escapeHtml(selectedSeries)}"`))) {
+      options.unshift(`<option value="${escapeHtml(selectedSeries)}">${escapeHtml(selectedSeries)} - current draft</option>`);
+    }
+    seriesSelect.innerHTML = options.join("") || `<option value="${escapeHtml(selectedSeries)}">${escapeHtml(selectedSeries)}</option>`;
+    seriesSelect.value = selectedSeries;
+  }
+
+  const libraryItem = librarySeries.find((item) => String(item.series_id) === selectedSeries);
+  const packageInfo = summarizeSeriesPackage(latestPackage);
+  const selectedPackage = latestPackage && latestPackage.series_id === selectedSeries ? packageInfo : null;
+  const packageState = selectedPackage && selectedPackage.available ? "ready" : "missing";
+  const roleCount = selectedPackage ? selectedPackage.role_count : 0;
+  const bestiaryCount = selectedPackage ? selectedPackage.bestiary_count : 0;
+  const encounterCount = selectedPackage ? selectedPackage.encounter_count : 0;
+  seriesStatus.innerHTML = [
+    diagnosticsItem("Active series", selectedSeries),
+    diagnosticsItem("Package", packageState),
+    diagnosticsItem("Episodes", String((libraryItem && libraryItem.episode_count) || 0)),
+    diagnosticsItem("Roles", String(roleCount)),
+    diagnosticsItem("Bestiary", String(bestiaryCount)),
+    diagnosticsItem("Encounters", String(encounterCount)),
+  ].join("");
 }
 
 function renderEpisode(episode) {
@@ -205,9 +285,9 @@ function buildTaskPayload() {
 }
 
 function packageSeriesId() {
-  if (!packageForm) return buildTaskPayload().series_id || "local-series";
+  if (!packageForm) return currentSeriesId();
   const formData = new FormData(packageForm);
-  return cleanValue(formData.get("package_series_id")) || buildTaskPayload().series_id || "local-series";
+  return cleanValue(formData.get("package_series_id")) || currentSeriesId();
 }
 
 function baselinePackageText() {
@@ -442,6 +522,7 @@ function statusItem(label, value) {
 }
 
 async function loadSeriesPackage() {
+  syncPackageSeriesId({ force: true });
   const seriesId = packageSeriesId();
   const data = await api(`/api/series-package?series_id=${encodeURIComponent(seriesId)}`);
   renderSeriesPackage(data);
@@ -449,6 +530,7 @@ async function loadSeriesPackage() {
 }
 
 async function saveSeriesPackage() {
+  syncPackageSeriesId({ force: true });
   const seriesId = packageSeriesId();
   const packageValue = packageFromRoleEditor(currentPackageJson());
   const data = await api("/api/series-package", {
@@ -787,6 +869,7 @@ async function copyPackageJson() {
 }
 
 async function refreshAll() {
+  syncSeriesFromTask({ force: !activeSeriesId });
   const [settings, tasks, episodes] = await Promise.all([
     api("/api/settings"),
     api("/api/tasks"),
@@ -796,10 +879,11 @@ async function refreshAll() {
   renderTasks(tasks);
   renderLibrary(episodes);
   if (packageForm) {
+    syncPackageSeriesId({ force: true });
     await loadSeriesPackage().catch((error) => {
       renderSeriesPackage({
         ok: false,
-        series_id: packageSeriesId(),
+        series_id: currentSeriesId(),
         available: false,
         status: "unavailable",
         error: error.message,
@@ -826,7 +910,77 @@ taskForm.addEventListener("input", () => {
   updateTaskPreview();
 });
 
+if (activeSeriesInput) {
+  activeSeriesInput.addEventListener("input", () => {
+    setActiveSeriesId(activeSeriesInput.value, { syncTask: true, syncPackage: true });
+    updateTaskPreview();
+  });
+}
+
+if (seriesSelect) {
+  seriesSelect.addEventListener("change", async () => {
+    setActiveSeriesId(seriesSelect.value, { syncTask: true, syncPackage: true });
+    taskOutput.textContent = "Loading selected series...";
+    try {
+      await loadSeriesPackage();
+      taskOutput.textContent = "Series loaded.";
+    } catch (error) {
+      taskOutput.textContent = error.message;
+    }
+  });
+}
+
+if (useTaskSeriesButton) {
+  useTaskSeriesButton.addEventListener("click", async () => {
+    setActiveSeriesId(buildTaskPayload().series_id, { syncTask: false, syncPackage: true });
+    taskOutput.textContent = "Task series selected.";
+    await loadSeriesPackage().catch((error) => {
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+if (loadActiveSeriesButton) {
+  loadActiveSeriesButton.addEventListener("click", async () => {
+    setActiveSeriesId(currentSeriesId(), { syncTask: true, syncPackage: true });
+    taskOutput.textContent = "Loading series...";
+    try {
+      await loadSeriesPackage();
+      taskOutput.textContent = "Series loaded.";
+    } catch (error) {
+      taskOutput.textContent = error.message;
+    }
+  });
+}
+
+if (newSeriesPackageButton) {
+  newSeriesPackageButton.addEventListener("click", () => {
+    setActiveSeriesId(currentSeriesId(), { syncTask: true, syncPackage: true });
+    const draft = buildPackageDraft();
+    latestPackage = {
+      ok: true,
+      series_id: draft.series_id,
+      available: true,
+      status: "draft",
+      package: draft,
+      modules: latestPackage && latestPackage.modules ? latestPackage.modules : {},
+      summary: "",
+    };
+    packageOutput.textContent = JSON.stringify(draft, null, 2);
+    packageSummary.textContent = "Unsaved package draft.";
+    renderRoleEditor(draft);
+    renderSeriesWorkspace();
+    updateDiagnostics();
+    taskOutput.textContent = "New package draft created. Save it before generation.";
+  });
+}
+
 packageForm.addEventListener("input", () => {
+  const packageField = packageForm.elements.package_series_id;
+  if (packageField && document.activeElement === packageField) {
+    setActiveSeriesId(packageField.value, { syncTask: true, syncPackage: false });
+    lastSyncedPackageSeriesId = cleanValue(packageField.value);
+  }
   syncPackageOutputFromRoleEditor();
   updateDiagnostics();
 });
