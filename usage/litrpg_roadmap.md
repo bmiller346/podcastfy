@@ -219,7 +219,9 @@ Next acceptance criteria:
 
 ## 7. Cinematic Audio and SFX
 
-Status: cue sheets, asset-manifest mapping, and metadata-only mix planning implemented.
+Status: cue sheets, asset-manifest mapping, metadata-only mix planning,
+deterministic pre-mix validation, and local generation request scaffolding
+implemented.
 
 Purpose: let scripts carry semantic cinematic audio intent without requiring final
 assets or a real mixer during story generation.
@@ -240,8 +242,23 @@ Implemented behavior:
 - Semantic tags map to deterministic local asset candidates under an asset root without requiring files to exist.
 - Mix plans describe dialogue, music, ambience, and SFX layers with ducking, panning, EQ intent, and timing anchors.
 - `assets/litrpg/asset_manifest.json` defines the structured manifest schema for curated assets.
+- `podcastfy/litrpg/sfx_manifest.py` loads, validates, saves, scans, and promotes curated local asset manifest entries.
 - Stop cues without active beds are reported in `mix_plan["issues"]`.
 - AI fallback candidates are marked `source: ai_generated` and `trusted: false`.
+- `podcastfy/litrpg/sfx_mix.py` selects asset candidates deterministically,
+  preferring trusted metadata and respecting cue type declarations.
+- `validate_mix_plan(...)` blocks unmixable final plans with missing assets,
+  untrusted final assets, untargeted stop cues, and non-loopable bed assets.
+- `validate_mix_plan(...)` warns on loud SFX over dialogue risk and missing
+  ducking on music or ambience beds.
+- `normalize_mix_plan_defaults(...)` fills safe missing volume, ducking, and pan
+  defaults without mutating the input plan.
+- `podcastfy/litrpg/sfx_generation.py` creates local generation requests without
+  requiring a model package, paid service, or network call.
+- Request sidecars can be written to `assets/litrpg/generated/requests`.
+- Generated-audio cache paths are deterministic from normalized
+  tag/provider/model/duration metadata.
+- Promotion metadata for completed local files remains `trusted: false` until review.
 - Cue sheets, asset mappings, and mix plans are attached to chapter render output.
 
 Current entry points:
@@ -251,11 +268,21 @@ Current entry points:
 - `map_assets_for_cue_sheet(...)`
 - `load_asset_manifest(...)`
 - `generate_sfx_candidate(...)`
+- `create_generation_request(...)`
+- `promote_generated_asset_request(...)`
 - `build_mix_plan(...)`
+- `select_asset_candidates(...)`
+- `normalize_mix_plan_defaults(...)`
+- `validate_mix_plan(...)`
 - `tests/test_litrpg_sfx.py`
+- `tests/test_litrpg_sfx_mix.py`
+- `tests/test_litrpg_sfx_manifest.py`
+- `tests/test_litrpg_sfx_generation.py`
 
 Next acceptance criteria:
 
+- Add a separate opt-in local worker that consumes sidecar requests when a
+  compatible local model is installed.
 - Convert clean script offsets into renderer timestamps after TTS segmentation.
 - Add an actual mixer that resolves selected assets and renders a final stem.
 

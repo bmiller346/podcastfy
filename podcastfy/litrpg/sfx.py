@@ -8,6 +8,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.sfx_generation import DEFAULT_GENERATION_MODEL
+from podcastfy.litrpg.sfx_generation import DEFAULT_GENERATION_PROVIDER
+from podcastfy.litrpg.sfx_generation import create_generation_request
+
 
 CUE_TAG_PATTERN = re.compile(
     r"\[(BGM_START|BGM_STOP|SFX|AMBIENCE_START|AMBIENCE_STOP)(?::\s*([^\]]*?))?\]",
@@ -212,7 +216,8 @@ def generate_sfx_candidate(
     tag: str,
     *,
     cue_type: str = "sfx",
-    provider: str = "local_audiogen",
+    provider: str = DEFAULT_GENERATION_PROVIDER,
+    model: str = DEFAULT_GENERATION_MODEL,
 ) -> AssetCandidate:
     """Return metadata for an untrusted AI-generated SFX candidate.
 
@@ -221,6 +226,13 @@ def generate_sfx_candidate(
     exists. A future local generator can consume this request and promote the
     resulting file only after review.
     """
+    request = create_generation_request(
+        tag,
+        cue_type=cue_type,
+        provider=provider,
+        model=model,
+        status="local_generation_not_configured",
+    )
     return AssetCandidate(
         semantic_tag=str(tag or ""),
         cue_type=str(cue_type or "sfx"),
@@ -229,10 +241,13 @@ def generate_sfx_candidate(
             "matched_library": False,
             "candidate_count": 0,
             "source": "ai_generated",
-            "provider": provider,
-            "model": "audiogen-medium",
+            "provider": request["provider"],
+            "model": request["model"],
+            "prompt": request["prompt"],
+            "duration_seconds": request["duration_seconds"],
+            "cache_path": request["cache_path"],
             "trusted": False,
-            "status": "local_generation_not_configured",
+            "status": request["status"],
         },
     )
 

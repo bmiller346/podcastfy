@@ -27,6 +27,17 @@ from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
 from podcastfy.litrpg.sfx import build_mix_plan, generate_sfx_candidate
 from podcastfy.litrpg.sfx import load_asset_manifest, map_assets_for_cue
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet, parse_cue_sheet
+from podcastfy.litrpg.sfx_generation import build_local_sfx_prompt
+from podcastfy.litrpg.sfx_generation import create_generation_request
+from podcastfy.litrpg.sfx_generation import promote_generated_asset_request
+from podcastfy.litrpg.sfx_generation import sfx_cache_path
+from podcastfy.litrpg.sfx_manifest import add_or_promote_asset
+from podcastfy.litrpg.sfx_manifest import load_asset_manifest_file
+from podcastfy.litrpg.sfx_manifest import save_asset_manifest_file
+from podcastfy.litrpg.sfx_manifest import scan_asset_directory
+from podcastfy.litrpg.sfx_manifest import validate_asset_manifest
+from podcastfy.litrpg.sfx_mix import normalize_mix_plan_defaults
+from podcastfy.litrpg.sfx_mix import select_asset_candidates, validate_mix_plan
 from podcastfy.litrpg.state_store import load_series_state, next_episode_number
 from podcastfy.litrpg.state_store import STATE_SCHEMA_VERSION, save_series_state
 
@@ -46,11 +57,14 @@ __all__ = [
     "STATE_SCHEMA_VERSION",
     "StoryBible",
     "VoiceProfile",
+    "add_or_promote_asset",
     "build_default_cast_plan",
     "build_chapter_qa",
+    "build_local_sfx_prompt",
     "build_mix_plan",
     "build_role_tts_instructions",
     "cast_plan_from_mapping",
+    "create_generation_request",
     "delete_episode",
     "export_voices_for_litrpg_config",
     "extract_mechanics_events",
@@ -68,6 +82,7 @@ __all__ = [
     "list_series",
     "load_cast_plan_json",
     "load_asset_manifest",
+    "load_asset_manifest_file",
     "load_litrpg_task",
     "load_litrpg_settings",
     "load_series_state",
@@ -78,13 +93,21 @@ __all__ = [
     "map_assets_for_cue_sheet",
     "merge_story_bible_updates",
     "next_episode_number",
+    "normalize_mix_plan_defaults",
     "parse_part_qa_artifacts",
     "parse_cue_sheet",
+    "promote_generated_asset_request",
     "run_litrpg_task",
+    "save_asset_manifest_file",
     "save_series_state",
     "save_story_bible",
+    "scan_asset_directory",
+    "sfx_cache_path",
     "stable_cache_key",
+    "select_asset_candidates",
+    "validate_asset_manifest",
     "validate_mechanics",
+    "validate_mix_plan",
     "validate_cast_plan",
 ]
 

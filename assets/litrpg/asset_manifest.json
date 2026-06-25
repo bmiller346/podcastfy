@@ -11,7 +11,9 @@
       "pan_safe": true,
       "transient": true,
       "source": "curated_placeholder",
-      "trusted": false
+      "trusted": false,
+      "license": "placeholder_not_for_production",
+      "attribution": "Podcastfy starter manifest placeholder"
     },
     {
       "stem": "music/battle_loop",
@@ -23,7 +25,9 @@
       "pan_safe": true,
       "transient": false,
       "source": "curated_placeholder",
-      "trusted": false
+      "trusted": false,
+      "license": "placeholder_not_for_production",
+      "attribution": "Podcastfy starter manifest placeholder"
     },
     {
       "stem": "ambience/dungeon_room",
@@ -35,7 +39,9 @@
       "pan_safe": true,
       "transient": false,
       "source": "curated_placeholder",
-      "trusted": false
+      "trusted": false,
+      "license": "placeholder_not_for_production",
+      "attribution": "Podcastfy starter manifest placeholder"
     }
   ]
 }
