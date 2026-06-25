@@ -1,6 +1,11 @@
 from podcastfy.litrpg.production import build_chapter_part_prompt
 from podcastfy.litrpg.production import build_chapter_plan, build_chapter_review_prompt
+from podcastfy.litrpg.production import build_director_pass_prompt
+from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt, default_cast_roles
+from podcastfy.litrpg.production import build_part_revision_prompt
+from podcastfy.litrpg.production import build_showmanship_audit_prompt
+from podcastfy.litrpg.production import build_tonal_audit_prompt
 
 
 def test_default_cast_has_large_audio_drama_ensemble():
@@ -53,3 +58,33 @@ def test_chapter_review_checks_cast_separation_and_injected_scenes():
     assert "15 distinct roles" in prompt
     assert "SYSTEM/announcer" in prompt
     assert "missing injected scene" in prompt
+
+
+def test_review_loop_prompts_cover_director_audits_and_revision():
+    script = "<HERO>I use the stapler skill.</HERO><SYSTEM>+5 XP.</SYSTEM>"
+
+    director = build_director_pass_prompt(
+        part_script=script,
+        required_roles=["HERO", "SYSTEM"],
+    )
+    mechanics = build_mechanics_audit_prompt(
+        part_script=script,
+        chapter_premise="A clerk enters a dungeon office.",
+    )
+    tonal = build_tonal_audit_prompt(part_script=script)
+    showmanship = build_showmanship_audit_prompt(part_script=script)
+    revision = build_part_revision_prompt(
+        draft_script=script,
+        director_tags=director,
+        mechanics_audit=mechanics,
+        tonal_audit=tonal,
+        showmanship_audit=showmanship,
+        required_roles=["HERO", "SYSTEM"],
+    )
+
+    assert "emotion" in director
+    assert "XP totals" in mechanics
+    assert "stakes_seriousness" in tonal
+    assert "sponsor_appeal" in showmanship
+    assert "Allowed role tags: HERO, SYSTEM" in revision
+    assert "Do not include markdown" in revision

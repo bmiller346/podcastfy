@@ -13,6 +13,9 @@ from podcastfy.litrpg.prompts import ROLE_TAGS
 
 DEFAULT_PROVIDER = "config"
 OPENAI_TTS_MODELS = {"gpt-4o-mini-tts", "tts-1", "tts-1-hd"}
+DEFAULT_ARC_MODIFIERS = {"trauma": 0.0, "confidence": 0.0, "rage": 0.0}
+ARC_MODIFIER_MIN = 0.0
+ARC_MODIFIER_MAX = 1.0
 
 
 @dataclass(slots=True)
@@ -25,6 +28,10 @@ class VoiceProfile:
     instructions: str = ""
     style: str = ""
     tags: list[str] = field(default_factory=list)
+    baseline: dict[str, Any] = field(default_factory=dict)
+    arc_modifiers: dict[str, float] = field(
+        default_factory=lambda: dict(DEFAULT_ARC_MODIFIERS)
+    )
 
     @classmethod
     def from_mapping(
@@ -45,6 +52,8 @@ class VoiceProfile:
             instructions=str(values.get("instructions") or ""),
             style=str(values.get("style") or ""),
             tags=[str(tag) for tag in tags],
+            baseline=_baseline_from_mapping(values.get("baseline")),
+            arc_modifiers=_arc_modifiers_from_mapping(values.get("arc_modifiers")),
         )
 
     def to_renderer_dict(self) -> dict[str, Any]:
@@ -59,6 +68,10 @@ class VoiceProfile:
             values["provider"] = self.provider
         if self.tags:
             values["tags"] = list(self.tags)
+        if self.baseline:
+            values["baseline"] = dict(self.baseline)
+        if self.arc_modifiers:
+            values["arc_modifiers"] = dict(self.arc_modifiers)
         return values
 
 
@@ -79,13 +92,37 @@ class CastMember:
         *,
         provider: str = DEFAULT_PROVIDER,
     ) -> "CastMember":
-        role = _normalize_role(values.get("role") or values.get("id"))
-        voice_values = values.get("voice_profile") or values.get("voice") or {}
+        role = _normalize_role(
+            values.get("role") or values.get("id") or values.get("character")
+        )
+        voice_values = values.get("voice_profile")
+        if isinstance(voice_values, Mapping):
+            voice_values = dict(voice_values)
+            for key in ("baseline", "arc_modifiers"):
+                if key in values and key not in voice_values:
+                    voice_values[key] = values[key]
+        else:
+            voice_values = {
+                key: values[key]
+                for key in (
+                    "provider",
+                    "voice",
+                    "model",
+                    "instructions",
+                    "style",
+                    "tags",
+                    "baseline",
+                    "arc_modifiers",
+                )
+                if key in values
+            }
         if not isinstance(voice_values, Mapping):
             voice_values = {"voice": voice_values}
         return cls(
             role=role,
-            display_name=str(values.get("display_name") or _title_role(role)),
+            display_name=str(
+                values.get("display_name") or values.get("character") or _title_role(role)
+            ),
             description=str(values.get("description") or ""),
             archetype=str(values.get("archetype") or _title_role(role)),
             voice_profile=VoiceProfile.from_mapping(voice_values, provider=provider),
@@ -287,6 +324,67 @@ def export_voices_for_litrpg_config(plan: CastPlan) -> dict[str, dict[str, Any]]
 cast_plan_to_litrpg_voices = export_voices_for_litrpg_config
 
 
+def build_role_tts_instructions(
+    role_or_character: str | CastMember,
+    manifest_entry: Mapping[str, Any] | VoiceProfile | None = None,
+    director_cue_data: Mapping[str, Any] | None = None,
+) -> str:
+    """Compose TTS role instructions from stable casting identity plus cue overlay.
+
+    The returned text preserves baseline casting fields and appends director intent
+    as a temporary performance layer. Invalid or missing arc modifier values are
+    clamped/defaulted instead of raising.
+    """
+    role = (
+        role_or_character.role
+        if isinstance(role_or_character, CastMember)
+        else str(role_or_character)
+    )
+    profile = (
+        role_or_character.voice_profile
+        if isinstance(role_or_character, CastMember) and manifest_entry is None
+        else manifest_entry
+    )
+    entry = _manifest_entry_as_mapping(profile)
+    baseline = _baseline_from_mapping(entry.get("baseline"))
+    modifiers = _arc_modifiers_from_mapping(entry.get("arc_modifiers"))
+    cue = director_cue_data if isinstance(director_cue_data, Mapping) else {}
+
+    parts: list[str] = []
+    base_instructions = str(entry.get("instructions") or "").strip()
+    if base_instructions:
+        parts.append(f"Baseline identity: {base_instructions}")
+
+    baseline_phrases = _baseline_instruction_phrases(baseline)
+    if baseline_phrases:
+        parts.append("Baseline performance: " + "; ".join(baseline_phrases) + ".")
+
+    modifier_phrases = [
+        f"{name} {value:.2f}"
+        for name, value in modifiers.items()
+        if value > ARC_MODIFIER_MIN
+    ]
+    if modifier_phrases:
+        parts.append(
+            "Subtle character arc modifiers: " + ", ".join(modifier_phrases) + "."
+        )
+
+    cue_phrases = _director_cue_instruction_phrases(cue)
+    if cue_phrases:
+        parts.append(
+            "Current director cue overlay for this line only: "
+            + "; ".join(cue_phrases)
+            + "."
+        )
+
+    if parts:
+        parts.append(
+            "Preserve the baseline voice identity; do not replace it with the cue."
+        )
+        return " ".join(parts)
+    return f"Perform {role.strip() or 'role'} with a consistent baseline voice identity."
+
+
 def _default_member_for_role(
     role: str,
     *,
@@ -324,6 +422,11 @@ def _merge_member(current: CastMember | None, override: CastMember) -> CastMembe
         instructions=override.voice_profile.instructions or current.voice_profile.instructions,
         style=override.voice_profile.style or current.voice_profile.style,
         tags=override.voice_profile.tags or list(current.voice_profile.tags),
+        baseline=override.voice_profile.baseline or dict(current.voice_profile.baseline),
+        arc_modifiers=_merge_arc_modifiers(
+            current.voice_profile.arc_modifiers,
+            override.voice_profile.arc_modifiers,
+        ),
     )
     return CastMember(
         role=override.role,
@@ -444,3 +547,111 @@ def _optional_str(value: Any) -> str | None:
     if value is None or value == "":
         return None
     return str(value)
+
+
+def _baseline_from_mapping(values: Any) -> dict[str, Any]:
+    if not isinstance(values, Mapping):
+        return {}
+    baseline: dict[str, Any] = {}
+    if "pace" in values:
+        baseline["pace"] = _optional_float(
+            values.get("pace"), fallback=values.get("pace")
+        )
+    if "pitch" in values:
+        baseline["pitch"] = _optional_float(
+            values.get("pitch"), fallback=values.get("pitch")
+        )
+    if values.get("delivery"):
+        baseline["delivery"] = str(values["delivery"])
+    return baseline
+
+
+def _arc_modifiers_from_mapping(values: Any) -> dict[str, float]:
+    modifiers = dict(DEFAULT_ARC_MODIFIERS)
+    if not isinstance(values, Mapping):
+        return modifiers
+    for name in DEFAULT_ARC_MODIFIERS:
+        modifiers[name] = _clamp_float(
+            values.get(name), default=DEFAULT_ARC_MODIFIERS[name]
+        )
+    return modifiers
+
+
+def _merge_arc_modifiers(
+    current: Mapping[str, float],
+    override: Mapping[str, float],
+) -> dict[str, float]:
+    current_modifiers = _arc_modifiers_from_mapping(current)
+    override_modifiers = _arc_modifiers_from_mapping(override)
+    if (
+        override_modifiers == DEFAULT_ARC_MODIFIERS
+        and current_modifiers != DEFAULT_ARC_MODIFIERS
+    ):
+        return current_modifiers
+    return override_modifiers
+
+
+def _manifest_entry_as_mapping(
+    entry: Mapping[str, Any] | VoiceProfile | None,
+) -> Mapping[str, Any]:
+    if isinstance(entry, VoiceProfile):
+        return {
+            "instructions": entry.instructions,
+            "baseline": entry.baseline,
+            "arc_modifiers": entry.arc_modifiers,
+        }
+    if isinstance(entry, Mapping):
+        if "voice_profile" in entry and isinstance(entry["voice_profile"], Mapping):
+            voice_entry = dict(entry["voice_profile"])
+            for key in ("baseline", "arc_modifiers"):
+                if key in entry and key not in voice_entry:
+                    voice_entry[key] = entry[key]
+            if "instructions" in entry and "instructions" not in voice_entry:
+                voice_entry["instructions"] = entry["instructions"]
+            return voice_entry
+        return entry
+    return {}
+
+
+def _baseline_instruction_phrases(baseline: Mapping[str, Any]) -> list[str]:
+    phrases: list[str] = []
+    if "pace" in baseline:
+        phrases.append(f"pace {baseline['pace']}")
+    if "pitch" in baseline:
+        phrases.append(f"pitch {baseline['pitch']}")
+    if baseline.get("delivery"):
+        phrases.append(f"delivery {baseline['delivery']}")
+    return phrases
+
+
+def _director_cue_instruction_phrases(cue: Mapping[str, Any]) -> list[str]:
+    phrases: list[str] = []
+    for key in ("emotion", "delivery", "timing", "audio_effect"):
+        value = cue.get(key)
+        if value:
+            phrases.append(f"{key.replace('_', ' ')} {value}")
+    intensity = cue.get("intensity")
+    if intensity is not None:
+        phrases.append(f"intensity {_clamp_float(intensity, default=0.5):.2f}")
+    return phrases
+
+
+def _optional_float(value: Any, *, fallback: Any) -> float | Any:
+    if value is None or value == "":
+        return fallback
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _clamp_float(value: Any, *, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    if number < ARC_MODIFIER_MIN:
+        return ARC_MODIFIER_MIN
+    if number > ARC_MODIFIER_MAX:
+        return ARC_MODIFIER_MAX
+    return number

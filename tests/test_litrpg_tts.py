@@ -1,4 +1,6 @@
-from podcastfy.litrpg.script_parser import parse_role_script
+import pytest
+
+from podcastfy.litrpg.script_parser import RoleScriptParseError, parse_role_script
 from podcastfy.tts.script_parser import parse_role_script as parse_generic_role_script
 from podcastfy.text_to_speech import TextToSpeech
 from podcastfy.tts.base import TTSProvider
@@ -105,6 +107,30 @@ def test_parse_role_script_filters_role_tags():
     assert len(lines) == 1
     assert lines[0].role == "NARRATOR"
     assert lines[0].text == "Keep"
+
+
+def test_parse_role_script_ignores_unsupported_attrs_but_keeps_style():
+    script = '<SYSTEM emotion="smug" style="hostile announcer">Level up.</SYSTEM>'
+
+    lines = parse_role_script(script)
+
+    assert lines == [
+        parse_generic_role_script('<SYSTEM style="hostile announcer">Level up.</SYSTEM>')[0]
+    ]
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        "<NARRATOR>Missing close",
+        "<NARRATOR>Wrong close</SYSTEM>",
+        "<NARRATOR>Nested <SYSTEM>Nope</SYSTEM></NARRATOR>",
+        "<SYSTEM style=hostile>No quotes</SYSTEM>",
+    ],
+)
+def test_parse_role_script_rejects_malformed_role_blocks(script):
+    with pytest.raises(RoleScriptParseError):
+        parse_role_script(script)
 
 
 def test_convert_script_to_speech_routes_voices_in_order(monkeypatch, tmp_path):

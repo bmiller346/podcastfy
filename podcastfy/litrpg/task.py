@@ -10,8 +10,10 @@ from typing import Any, Mapping
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
 from podcastfy.litrpg.llm import OpenAIResponsesGenerator
+from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
+from podcastfy.litrpg.state_store import load_series_state, save_series_state
 
 
 class TaskScriptLLM:
@@ -56,7 +58,9 @@ def run_litrpg_task(
     resolved_llm = llm or _llm_from_task(task, settings=settings)
 
     if str(task.get("mode") or "episode") == "chapter":
-        result = generate_litrpg_chapter(task, llm=resolved_llm)
+        chapter_task = _chapter_task_with_paths(task_file, task)
+        result = generate_litrpg_chapter(chapter_task, llm=resolved_llm)
+        _save_chapter_state_if_requested(task_file, chapter_task, result)
         _write_result_if_requested(task_file, task, result)
         return result
 
@@ -98,6 +102,15 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
             model=str(generation.get("model") or "gpt-5.5"),
             reasoning_effort=str(generation.get("reasoning_effort") or "medium"),
             verbosity=str(generation.get("verbosity") or "medium"),
+            max_retries=int(generation.get("max_retries") or 3),
+            retry_backoff_seconds=float(generation.get("retry_backoff_seconds") or 2.0),
+            timeout_seconds=(
+                None
+                if "timeout_seconds" in generation and generation.get("timeout_seconds") is None
+                else float(generation.get("timeout_seconds"))
+                if "timeout_seconds" in generation
+                else 120.0
+            ),
         )
     raise ValueError(
         "Task must include outline and script fields, pass an llm, or configure generation.provider=openai"
@@ -118,6 +131,54 @@ def _resolve_task_path(task_file: Path, value: Any) -> Path:
     if path.is_absolute():
         return path
     return task_file.parent / path
+
+
+def _chapter_task_with_paths(task_file: Path, task: Mapping[str, Any]) -> dict[str, Any]:
+    chapter_task = dict(task)
+    reuse_path = task.get("reuse_ready_parts_from") or task.get("lock_ready_parts_from")
+    if reuse_path:
+        reused_locks = locked_part_scripts_from_ready_parts(
+            _resolve_task_path(task_file, reuse_path)
+        )
+        explicit_locks = task.get("locked_part_scripts") or {}
+        if not isinstance(explicit_locks, Mapping):
+            raise ValueError("locked_part_scripts must be a JSON object")
+        chapter_task["locked_part_scripts"] = {
+            **reused_locks,
+            **{str(part_id): str(script) for part_id, script in explicit_locks.items()},
+        }
+    if task.get("checkpoint_dir"):
+        chapter_task["checkpoint_dir"] = str(_resolve_task_path(task_file, task["checkpoint_dir"]))
+    elif task.get("result_path"):
+        result_path = _resolve_task_path(task_file, task["result_path"])
+        chapter_task["checkpoint_dir"] = str(
+            result_path.parent / f"{result_path.stem}_checkpoints"
+        )
+    return chapter_task
+
+
+def _save_chapter_state_if_requested(
+    task_file: Path,
+    task: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    if task.get("persist_state") is False:
+        return
+    if not task.get("storage_dir"):
+        return
+
+    storage_dir = _resolve_task_path(task_file, task["storage_dir"])
+    series_id = str(result.get("series_id") or task.get("series_id") or "default-series")
+    series_dir = storage_dir / "series" / series_id
+    state = load_series_state(series_dir)
+    chapter = result.get("chapter") if isinstance(result.get("chapter"), Mapping) else {}
+    chapter_number = int(chapter.get("number") or task.get("chapter_number") or 0)
+    if chapter_number:
+        state.episode_number = max(state.episode_number, chapter_number)
+    memory_entry = f"Chapter {chapter_number}: {chapter.get('title') or task.get('chapter_title') or 'Untitled'}"
+    if memory_entry not in state.memory:
+        state.memory.append(memory_entry)
+    save_series_state(series_dir, state)
 
 
 def _write_result_if_requested(

@@ -5,10 +5,12 @@ from podcastfy.litrpg.casting import (
     CastPlan,
     VoiceProfile,
     build_default_cast_plan,
+    build_role_tts_instructions,
     cast_plan_from_mapping,
     export_voices_for_litrpg_config,
     generate_audition_script,
     load_cast_plan_json,
+    merge_cast_plan,
     validate_cast_plan,
 )
 from podcastfy.litrpg.prompts import ROLE_TAGS
@@ -145,3 +147,160 @@ def test_cast_plan_from_mapping_can_skip_default_merge():
     assert len(plan.cast_members) == 1
     assert plan.cast_members[0].role == "SYSTEM"
     assert plan.cast_members[0].voice_profile.provider == "openai"
+
+
+def test_casting_manifest_accepts_baseline_and_clamps_arc_modifiers():
+    plan = cast_plan_from_mapping(
+        {
+            "cast_members": [
+                {
+                    "character": "Hero",
+                    "voice": "cedar",
+                    "baseline": {
+                        "pace": "0.95",
+                        "pitch": -2,
+                        "delivery": "dry, exhausted, grounded",
+                    },
+                    "arc_modifiers": {
+                        "trauma": 1.5,
+                        "confidence": -0.25,
+                        "rage": "bad",
+                    },
+                }
+            ],
+        },
+        merge_defaults=False,
+    )
+
+    hero = plan.member_by_role()["HERO"]
+
+    assert hero.display_name == "Hero"
+    assert hero.voice_profile.voice == "cedar"
+    assert hero.voice_profile.baseline == {
+        "pace": 0.95,
+        "pitch": -2.0,
+        "delivery": "dry, exhausted, grounded",
+    }
+    assert hero.voice_profile.arc_modifiers == {
+        "trauma": 1.0,
+        "confidence": 0.0,
+        "rage": 0.0,
+    }
+
+
+def test_missing_arc_modifiers_default_without_crashing():
+    profile = VoiceProfile.from_mapping(
+        {
+            "voice": "marin",
+            "baseline": {"delivery": "warm narrator"},
+        }
+    )
+
+    assert profile.arc_modifiers == {
+        "trauma": 0.0,
+        "confidence": 0.0,
+        "rage": 0.0,
+    }
+
+
+def test_director_cue_overlay_preserves_baseline_instructions():
+    member = CastMember(
+        role="HERO",
+        display_name="Mara",
+        description="",
+        archetype="deadpan novice",
+        voice_profile=VoiceProfile(
+            voice="cedar",
+            instructions="Grounded, dry, brave when cornered.",
+            baseline={"pace": 0.95, "pitch": -2, "delivery": "dry, exhausted"},
+            arc_modifiers={"trauma": 0.4, "confidence": 0.2, "rage": 0.1},
+        ),
+    )
+
+    instructions = build_role_tts_instructions(
+        member,
+        director_cue_data={
+            "emotion": "panic",
+            "delivery": "breathless",
+            "timing": "hard stop",
+            "audio_effect": "dungeon reverb",
+            "intensity": 2,
+        },
+    )
+
+    assert "Baseline identity: Grounded, dry, brave when cornered." in instructions
+    assert "pace 0.95" in instructions
+    assert "pitch -2" in instructions
+    assert "delivery dry, exhausted" in instructions
+    assert "trauma 0.40" in instructions
+    assert "confidence 0.20" in instructions
+    assert "rage 0.10" in instructions
+    assert "emotion panic" in instructions
+    assert "delivery breathless" in instructions
+    assert "intensity 1.00" in instructions
+    assert "Preserve the baseline voice identity" in instructions
+
+
+def test_cast_plan_merge_preserves_existing_baseline_and_arc_when_override_omits_them():
+    defaults = CastPlan(
+        cast_members=[
+            CastMember(
+                role="HERO",
+                display_name="Mara",
+                description="",
+                archetype="deadpan novice",
+                voice_profile=VoiceProfile(
+                    voice="cedar",
+                    baseline={"pace": 0.95, "pitch": -2, "delivery": "dry"},
+                    arc_modifiers={"trauma": 0.4, "confidence": 0.2, "rage": 0.1},
+                ),
+            )
+        ]
+    )
+    override = CastPlan(
+        cast_members=[
+            CastMember(
+                role="HERO",
+                display_name="Mara",
+                description="",
+                archetype="deadpan novice",
+                voice_profile=VoiceProfile(voice="marin"),
+            )
+        ]
+    )
+
+    merged = merge_cast_plan(defaults, override)
+    hero = merged.member_by_role()["HERO"]
+
+    assert hero.voice_profile.voice == "marin"
+    assert hero.voice_profile.baseline == {"pace": 0.95, "pitch": -2, "delivery": "dry"}
+    assert hero.voice_profile.arc_modifiers == {
+        "trauma": 0.4,
+        "confidence": 0.2,
+        "rage": 0.1,
+    }
+
+
+def test_existing_cast_plan_shape_still_loads_without_manifest_fields():
+    plan = cast_plan_from_mapping(
+        {
+            "provider_defaults": {"provider": "openai"},
+            "cast_members": [
+                {
+                    "role": "SYSTEM",
+                    "voice_profile": {"voice": "coral"},
+                }
+            ],
+        },
+        merge_defaults=False,
+    )
+
+    system = plan.member_by_role()["SYSTEM"]
+
+    assert system.voice_profile.voice == "coral"
+    assert system.voice_profile.baseline == {}
+    assert system.voice_profile.arc_modifiers == {
+        "trauma": 0.0,
+        "confidence": 0.0,
+        "rage": 0.0,
+    }

@@ -6,65 +6,98 @@
   },
   "cast_members": [
     {
-      "role": "NARRATOR",
-      "display_name": "The Table Voice",
+      "character": "Narrator",
+      "voice": "marin",
+      "instructions": "Warm, cinematic narration with clean action beats.",
       "description": "Warm, cinematic guide with crisp action clarity.",
       "archetype": "cinematic narrator",
-      "voice_profile": {
-        "provider": "openai",
-        "voice": "marin",
-        "instructions": "Warm, cinematic narration with clean action beats.",
-        "tags": ["narration", "cinematic", "clarity"]
-      }
+      "baseline": {
+        "pace": 0.9,
+        "pitch": 0,
+        "delivery": "warm, cinematic, clear"
+      },
+      "arc_modifiers": {
+        "trauma": 0.0,
+        "confidence": 0.6,
+        "rage": 0.0
+      },
+      "tags": ["narration", "cinematic", "clarity"]
     },
     {
-      "role": "HERO",
+      "character": "Hero",
       "display_name": "Mara",
+      "voice": "cedar",
+      "instructions": "Grounded, dry, slightly overwhelmed, but brave when cornered.",
       "description": "Newly awakened adventurer, brave but still learning the rules.",
       "archetype": "deadpan novice",
-      "voice_profile": {
-        "provider": "openai",
-        "voice": "cedar",
-        "instructions": "Grounded, dry, slightly overwhelmed, but brave when cornered.",
-        "tags": ["lead", "grounded", "wry"]
-      }
+      "baseline": {
+        "pace": 0.95,
+        "pitch": -2,
+        "delivery": "dry, exhausted, grounded"
+      },
+      "arc_modifiers": {
+        "trauma": 0.4,
+        "confidence": 0.2,
+        "rage": 0.1
+      },
+      "tags": ["lead", "grounded", "wry"]
     },
     {
-      "role": "SYSTEM",
-      "display_name": "The System",
+      "character": "System",
+      "voice": "coral",
+      "instructions": "Hostile game-show announcer energy with crisp LitRPG notifications.",
       "description": "Precise game interface voice for notifications and mechanics.",
       "archetype": "hostile game interface",
-      "voice_profile": {
-        "provider": "openai",
-        "voice": "coral",
-        "instructions": "Hostile game-show announcer energy with crisp LitRPG notifications.",
-        "style": "SYSTEM announcement",
-        "tags": ["announcement", "mechanics", "quest"]
-      }
+      "style": "SYSTEM announcement",
+      "baseline": {
+        "pace": 1.05,
+        "pitch": 1,
+        "delivery": "precise, amused, merciless"
+      },
+      "arc_modifiers": {
+        "trauma": 0.0,
+        "confidence": 0.9,
+        "rage": 0.2
+      },
+      "tags": ["announcement", "mechanics", "quest"]
     },
     {
-      "role": "SIDEKICK",
+      "character": "Sidekick",
       "display_name": "Jax",
+      "voice": "shimmer",
+      "instructions": "Fast, bright, anxious under pressure without becoming shrill.",
       "description": "Quick, loyal companion who turns exposition into banter.",
       "archetype": "loyal comic counterpoint",
-      "voice_profile": {
-        "provider": "openai",
-        "voice": "shimmer",
-        "instructions": "Fast, bright, anxious under pressure without becoming shrill.",
-        "tags": ["banter", "party"]
-      }
+      "baseline": {
+        "pace": 1.08,
+        "pitch": 2,
+        "delivery": "bright, quick, loyal"
+      },
+      "arc_modifiers": {
+        "trauma": 0.2,
+        "confidence": 0.45,
+        "rage": 0.05
+      },
+      "tags": ["banter", "party"]
     },
     {
-      "role": "BOSS",
+      "character": "Boss",
       "display_name": "Quartermaster Voss",
+      "voice": "onyx",
+      "instructions": "Low, controlled menace with theatrical pauses.",
       "description": "Commanding antagonist with readable menace and tactical pressure.",
       "archetype": "setpiece antagonist",
-      "voice_profile": {
-        "provider": "openai",
-        "voice": "onyx",
-        "instructions": "Low, controlled menace with theatrical pauses.",
-        "tags": ["boss", "menace"]
-      }
+      "baseline": {
+        "pace": 0.82,
+        "pitch": -4,
+        "delivery": "low, controlled, theatrical"
+      },
+      "arc_modifiers": {
+        "trauma": 0.1,
+        "confidence": 0.85,
+        "rage": 0.35
+      },
+      "tags": ["boss", "menace"]
     }
   ]
 }

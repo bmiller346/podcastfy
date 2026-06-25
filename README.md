@@ -125,6 +125,8 @@ fetch_audio(request_data, ENDPOINT, BASE_URL)
 
 - [CLI](usage/cli.md)
 
+- [LitRPG Story Engine Roadmap](usage/litrpg_roadmap.md)
+
 ## Customization 🔧
 
 Podcastfy offers a range of customization options to tailor your AI-generated podcasts:

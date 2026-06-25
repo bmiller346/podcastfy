@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.task import run_litrpg_task
 
@@ -15,9 +17,86 @@ class FakeChapterLLM:
             return f"<{role}>{stage} script with cursed stapler.</{role}>"
         if stage.startswith("review:"):
             return f"review for {stage}"
+        if stage.startswith("director:"):
+            return f'{{"summary":"director tags for {stage}","cues":[]}}'
+        if stage.startswith("mechanics:"):
+            return f"mechanics audit for {stage}: revise missing XP"
+        if stage.startswith("tonal:"):
+            return f"tonal audit for {stage}: stakes_seriousness 7 absurdity_pressure 8"
+        if stage.startswith("showmanship:"):
+            return f"showmanship audit for {stage}: sponsor appeal 7"
+        if stage.startswith("revise:"):
+            roles = []
+            for line in prompt.splitlines():
+                if line.startswith("Allowed role tags:"):
+                    roles = [role.strip() for role in line.removeprefix("Allowed role tags:").split(",")]
+                    break
+            blocks = "".join(f"<{role}>{role} logs XP and loot.</{role}>" for role in roles)
+            return blocks
         if stage == "chapter_review":
             return "chapter review: render ready"
         raise AssertionError(f"unexpected stage {stage}")
+
+
+class AllRolesChapterLLM:
+    def __init__(self):
+        self.calls = []
+        self.script = "".join(
+            f"<{role}>{role} reports XP, loot, quest, skill, and inventory.</{role}>"
+            for role in [
+                "NARRATOR",
+                "HERO",
+                "SYSTEM",
+                "SIDEKICK",
+                "MINION",
+                "RIVAL",
+                "HEALER",
+                "TANK",
+                "ROGUE",
+                "MAGE",
+                "GUIDE",
+                "MERCHANT",
+                "MENTOR",
+                "BOSS",
+                "BEAST",
+                "VILLAIN",
+            ]
+        )
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        if stage.startswith("part:") or stage.startswith("revise:"):
+            return self.script
+        return f"{stage} ok"
+
+
+class FailsOnThirdPartLLM(AllRolesChapterLLM):
+    def generate(self, *, prompt, stage):
+        if stage == "part:mechanics-reveal":
+            raise RuntimeError("simulated part failure")
+        return super().generate(prompt=prompt, stage=stage)
+
+
+class BlockingAuditLLM(AllRolesChapterLLM):
+    def generate(self, *, prompt, stage):
+        if stage.startswith("tonal:"):
+            return (
+                "stakes_seriousness: 2\n"
+                "absurdity_pressure: 9\n"
+                "verdict: block\n"
+                "blocking_issues: jokes erase the hostage stakes"
+            )
+        if stage.startswith("showmanship:"):
+            return (
+                "crowd_engagement: 8\n"
+                "brutality: 7\n"
+                "creativity: 6\n"
+                "humiliation: 5\n"
+                "meme_potential: 4\n"
+                "sponsor_appeal: 3\n"
+                "verdict: pass"
+            )
+        return super().generate(prompt=prompt, stage=stage)
 
 
 def _chapter_task(**overrides):
@@ -44,21 +123,56 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     assert [call["stage"] for call in llm.calls] == [
         "part:cold-open",
         "review:cold-open",
+        "director:cold-open",
+        "mechanics:cold-open",
+        "tonal:cold-open",
+        "showmanship:cold-open",
+        "revise:cold-open",
         "part:party-pressure",
         "review:party-pressure",
+        "director:party-pressure",
+        "mechanics:party-pressure",
+        "tonal:party-pressure",
+        "showmanship:party-pressure",
+        "revise:party-pressure",
         "part:mechanics-reveal",
         "review:mechanics-reveal",
+        "director:mechanics-reveal",
+        "mechanics:mechanics-reveal",
+        "tonal:mechanics-reveal",
+        "showmanship:mechanics-reveal",
+        "revise:mechanics-reveal",
         "part:boss-setpiece",
         "review:boss-setpiece",
+        "director:boss-setpiece",
+        "mechanics:boss-setpiece",
+        "tonal:boss-setpiece",
+        "showmanship:boss-setpiece",
+        "revise:boss-setpiece",
         "part:fallout-cliffhanger",
         "review:fallout-cliffhanger",
+        "director:fallout-cliffhanger",
+        "mechanics:fallout-cliffhanger",
+        "tonal:fallout-cliffhanger",
+        "showmanship:fallout-cliffhanger",
+        "revise:fallout-cliffhanger",
         "chapter_review",
     ]
     assert "The cursed stapler must appear." in llm.calls[0]["prompt"]
     assert result["chapter"]["number"] == 2
     assert result["chapter"]["title"] == "The Stapler Hungers"
     assert result["parts"][0]["review"] == "review for review:cold-open"
-    assert "part:cold-open script" in result["combined_script"]
+    assert result["parts"][0]["director_tags"].startswith('{"summary"')
+    assert result["parts"][0]["mechanics_audit"].startswith("mechanics audit")
+    assert result["parts"][0]["gate"]["draft"]["ready"] is False
+    assert result["parts"][0]["gate"]["final"]["ready"] is True
+    assert result["qa"]["ready"] is True
+    assert result["qa"]["parts"][0]["scores"]["tonal"] == {
+        "stakes_seriousness": 7,
+        "absurdity_pressure": 8,
+    }
+    assert result["qa"]["parts"][0]["revision_targets"][0]["audit"] == "mechanics"
+    assert "NARRATOR logs XP and loot" in result["combined_script"]
     assert result["render"]["ready"] is True
     assert result["render"]["audio_rendered"] is False
 
@@ -134,3 +248,75 @@ def test_run_litrpg_task_default_mode_still_uses_episode_pipeline(tmp_path, monk
 
     assert result == {"mode": "episode", "series_id": "paper-cuts"}
     assert captured["premise"] == "A clerk discovers the office is a dungeon."
+
+
+def test_generate_litrpg_chapter_writes_part_checkpoints(tmp_path):
+    llm = AllRolesChapterLLM()
+    checkpoint_dir = tmp_path / "checkpoints"
+
+    result = generate_litrpg_chapter(
+        _chapter_task(checkpoint_dir=str(checkpoint_dir), reviews={"enabled": False}),
+        llm=llm,
+    )
+
+    checkpoint_files = sorted(checkpoint_dir.glob("*.json"))
+    script_files = sorted(checkpoint_dir.glob("*_approved.xml"))
+    assert len(checkpoint_files) == 5
+    assert len(script_files) == 5
+    first_checkpoint = json.loads(checkpoint_files[0].read_text(encoding="utf-8"))
+    assert first_checkpoint["series_id"] == "paper-cuts"
+    assert first_checkpoint["chapter_number"] == 2
+    assert first_checkpoint["part"]["part_id"] == "cold-open"
+    assert "<NARRATOR>" in script_files[0].read_text(encoding="utf-8")
+    assert result["render"]["ready"] is True
+
+
+def test_run_litrpg_task_defaults_checkpoints_and_persists_state(tmp_path):
+    task_path = tmp_path / "chapter_task.json"
+    task = _chapter_task(
+        result_path="chapter_result.json",
+        storage_dir="library",
+        reviews={"enabled": False},
+    )
+    task_path.write_text(json.dumps(task), encoding="utf-8")
+
+    result = run_litrpg_task(task_path, llm=AllRolesChapterLLM())
+
+    checkpoint_dir = tmp_path / "chapter_result_checkpoints"
+    state_path = tmp_path / "library" / "series" / "paper-cuts" / "series_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert result["mode"] == "chapter"
+    assert checkpoint_dir.exists()
+    assert len(list(checkpoint_dir.glob("*_approved.xml"))) == 5
+    assert state["episode_number"] == 2
+    assert "Chapter 2: The Stapler Hungers" in state["memory"]
+
+
+def test_generate_litrpg_chapter_preserves_prior_checkpoints_on_failure(tmp_path):
+    checkpoint_dir = tmp_path / "checkpoints"
+
+    with pytest.raises(RuntimeError, match="part:mechanics-reveal"):
+        generate_litrpg_chapter(
+            _chapter_task(
+                checkpoint_dir=str(checkpoint_dir),
+                reviews={"enabled": False},
+                generation={"max_retries": 1},
+            ),
+            llm=FailsOnThirdPartLLM(),
+        )
+
+    assert [path.name for path in sorted(checkpoint_dir.glob("*_approved.xml"))] == [
+        "01_cold-open_approved.xml",
+        "02_party-pressure_approved.xml",
+    ]
+
+
+def test_generate_litrpg_chapter_block_verdict_makes_qa_and_render_not_ready():
+    result = generate_litrpg_chapter(_chapter_task(), llm=BlockingAuditLLM())
+
+    assert result["parts"][0]["gate"]["final"]["ready"] is True
+    assert result["qa"]["ready"] is False
+    assert result["render"]["ready"] is False
+    assert result["qa"]["parts"][0]["verdicts"]["tonal"] == "block"
+    assert result["qa"]["parts"][0]["scores"]["showmanship"]["sponsor_appeal"] == 3
+    assert any("jokes erase" in issue for issue in result["qa"]["blocking_issues"])

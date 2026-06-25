@@ -38,5 +38,9 @@
   "reviews": {
     "enabled": true
   },
+  "reuse_ready_parts_from": "data/litrpg/paper-cuts/chapter-002.previous.json",
+  "locked_part_scripts": {
+    "cold-open": "<NARRATOR>Optional explicit lock. This wins over reuse_ready_parts_from for the same part.</NARRATOR>"
+  },
   "result_path": "data/litrpg/paper-cuts/chapter-002.json"
 }

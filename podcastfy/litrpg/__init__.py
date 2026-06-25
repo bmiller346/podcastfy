@@ -1,7 +1,11 @@
 """Storage primitives for local LitRPG audio serials."""
 
+from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible
+from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
+from podcastfy.litrpg.bible import merge_story_bible_updates, save_story_bible
 from podcastfy.litrpg.casting import CastMember, CastPlan, VoiceProfile
 from podcastfy.litrpg.casting import build_default_cast_plan, cast_plan_from_mapping
+from podcastfy.litrpg.casting import build_role_tts_instructions
 from podcastfy.litrpg.casting import export_voices_for_litrpg_config
 from podcastfy.litrpg.casting import generate_audition_script, load_cast_plan_json
 from podcastfy.litrpg.casting import validate_cast_plan
@@ -12,7 +16,10 @@ from podcastfy.litrpg.library import delete_episode, get_audio_path, get_episode
 from podcastfy.litrpg.library import list_episodes, list_regenerable_parts, list_series
 from podcastfy.litrpg.library import mark_episode_status
 from podcastfy.litrpg.llm import OpenAIResponsesGenerator
+from podcastfy.litrpg.mechanics import extract_mechanics_events, validate_mechanics
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
+from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
+from podcastfy.litrpg.qa import build_chapter_qa, parse_part_qa_artifacts
 from podcastfy.litrpg.models import CharacterState, EpisodeBundle, EpisodeConfig
 from podcastfy.litrpg.models import QuestState, ScriptLine, SeriesState
 from podcastfy.litrpg.renderer import RoleScriptRenderer
@@ -23,6 +30,7 @@ from podcastfy.litrpg.state_store import STATE_SCHEMA_VERSION, save_series_state
 __all__ = [
     "CastMember",
     "CastPlan",
+    "CharacterBibleEntry",
     "CharacterState",
     "EpisodeBundle",
     "EpisodeConfig",
@@ -33,12 +41,17 @@ __all__ = [
     "ScriptLine",
     "SeriesState",
     "STATE_SCHEMA_VERSION",
+    "StoryBible",
     "VoiceProfile",
     "build_default_cast_plan",
+    "build_chapter_qa",
+    "build_role_tts_instructions",
     "cast_plan_from_mapping",
     "delete_episode",
     "export_voices_for_litrpg_config",
+    "extract_mechanics_events",
     "find_bundle_by_cache_key",
+    "format_story_bible_summary",
     "generate_audition_script",
     "generate_litrpg_audio_episode",
     "generate_litrpg_chapter",
@@ -52,11 +65,17 @@ __all__ = [
     "load_litrpg_task",
     "load_litrpg_settings",
     "load_series_state",
+    "load_story_bible",
+    "locked_part_scripts_from_ready_parts",
     "mark_episode_status",
+    "merge_story_bible_updates",
     "next_episode_number",
+    "parse_part_qa_artifacts",
     "run_litrpg_task",
     "save_series_state",
+    "save_story_bible",
     "stable_cache_key",
+    "validate_mechanics",
     "validate_cast_plan",
 ]
 

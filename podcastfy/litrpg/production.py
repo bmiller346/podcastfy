@@ -182,6 +182,142 @@ Script:
 """
 
 
+def build_director_pass_prompt(*, part_script: str, required_roles: Sequence[str]) -> str:
+    roles = ", ".join(required_roles)
+    return f"""Mark performance intent for this LitRPG audio script part.
+
+Required roles: {roles}
+
+Do not rewrite the prose. Add production intent only.
+
+For each meaningful spoken block or beat, identify:
+- emotion: panic, dry irritation, triumph, disgust, grief, dread, awe, or another precise playable state.
+- delivery: whisper, bark, deadpan, breathless, smug, clipped, reverent, ragged, or another TTS-directable choice.
+- timing: beat, long pause, interrupt, overlap, speed-up, hard stop, or another timing instruction.
+- audio_effect: announcer slapback, radio filter, crowd swell, dungeon reverb, UI chime, low hit, or none.
+
+Return compact JSON with:
+- summary
+- cues: an ordered list of role, trigger_text, emotion, delivery, timing, audio_effect.
+- render_notes: any global notes for casting or TTS.
+
+Script:
+{part_script}
+"""
+
+
+def build_mechanics_audit_prompt(
+    *,
+    part_script: str,
+    chapter_premise: str,
+    prior_parts_summary: str = "",
+) -> str:
+    return f"""Audit LitRPG mechanics credibility for this chapter part.
+
+Chapter premise: {chapter_premise}
+Prior parts summary:
+{prior_parts_summary or "This is the first part."}
+
+Check:
+- XP totals, loot, inventory, cooldowns, class abilities, stats, quests, and status effects.
+- Whether consumed items are removed or consequences are acknowledged.
+- Whether the solution uses tools or abilities available in the script or prior summary.
+- Whether a character gains a power, item, or class feature without earning it.
+- Whether mechanics are audible enough for listeners to follow.
+
+Return:
+- verdict: pass, revise, or block.
+- blocking_issues: concise list.
+- fixes: concrete script-level fixes.
+
+Script:
+{part_script}
+"""
+
+
+def build_tonal_audit_prompt(*, part_script: str, target_tone: str = "") -> str:
+    return f"""Score the LitRPG chapter part on tonal dissonance.
+
+Target tone: {target_tone or "absurd dungeon spectacle with emotionally real stakes"}
+
+Give two independent 1-10 ratings:
+- stakes_seriousness: consequences feel emotionally real.
+- absurdity_pressure: dungeon/game layer is weird and active enough.
+
+Reject or revise if the part is only goofy, only grim, or lets jokes erase consequences.
+
+Return:
+- stakes_seriousness
+- absurdity_pressure
+- verdict: pass, revise, or block.
+- fixes: concrete changes that preserve the script's best material.
+
+Script:
+{part_script}
+"""
+
+
+def build_showmanship_audit_prompt(*, part_script: str) -> str:
+    return f"""Simulate the dungeon audience and sponsor desk reviewing this chapter part.
+
+Score 1-10:
+- crowd_engagement
+- brutality
+- creativity
+- humiliation
+- meme_potential
+- sponsor_appeal
+
+Then recommend one reward, announcement, punishment, or complication for the next part if useful.
+
+Return:
+- scores
+- verdict: pass, revise, or block.
+- awards_or_complications
+- fixes
+
+Script:
+{part_script}
+"""
+
+
+def build_part_revision_prompt(
+    *,
+    draft_script: str,
+    director_tags: str,
+    mechanics_audit: str,
+    tonal_audit: str,
+    showmanship_audit: str,
+    required_roles: Sequence[str],
+) -> str:
+    roles = ", ".join(required_roles)
+    return f"""Revise this LitRPG audio script part for render readiness.
+
+Allowed role tags: {roles}
+
+Use the review material below as constraints, not as decorative notes.
+Preserve strong jokes, character choices, and continuity. Fix blocking issues.
+Keep XML-style role blocks only. Do not include markdown, explanations, or JSON.
+Add style attributes sparingly when director intent matters, for example:
+<SYSTEM style="smug announcer, slapback">ACHIEVEMENT UNLOCKED.</SYSTEM>
+
+Director pass:
+{director_tags}
+
+Mechanics audit:
+{mechanics_audit}
+
+Tonal audit:
+{tonal_audit}
+
+Showmanship audit:
+{showmanship_audit}
+
+Draft script:
+{draft_script}
+"""
+
+
 def build_chapter_review_prompt(*, part_scripts: Sequence[str], cast_roles: Mapping[str, str]) -> str:
     cast = ", ".join(cast_roles)
     scripts = "\n\n".join(part_scripts)
