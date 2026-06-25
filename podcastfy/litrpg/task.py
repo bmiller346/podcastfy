@@ -15,6 +15,8 @@ from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
+from podcastfy.litrpg.showrunner import build_showrunner_payload, format_showrunner_context
+from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, save_series_state
 
 
@@ -200,6 +202,23 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         )
         if summary:
             chapter_task["series_package_summary"] = summary
+    if task.get("showrunner") is not False:
+        showrunner_settings = task.get("showrunner")
+        if showrunner_settings is not None and not isinstance(showrunner_settings, Mapping):
+            raise ValueError("showrunner must be a JSON object or false")
+        settings = dict(showrunner_settings or {})
+        chapter_number = int(task.get("chapter_number") or task.get("episode_number") or 1)
+        if "chapter_number" in settings:
+            chapter_number = int(settings["chapter_number"])
+        chapter_task["showrunner"] = build_showrunner_payload(
+            chapter_number=chapter_number,
+            wandering_event=settings.get("wandering_event"),
+            enable_wandering=bool(settings.get("enable_wandering")),
+        )
+        chapter_task.setdefault(
+            "showrunner_context",
+            format_showrunner_context(chapter_task["showrunner"]),
+        )
     if storage_dir is not None:
         explicit_mechanics = task.get("mechanics_context")
         if explicit_mechanics is not None and not isinstance(explicit_mechanics, Mapping):
@@ -287,7 +306,7 @@ def _save_chapter_state_if_requested(
     memory_entry = f"Chapter {chapter_number}: {chapter.get('title') or task.get('chapter_title') or 'Untitled'}"
     if memory_entry not in state.memory:
         state.memory.append(memory_entry)
-    _apply_chapter_mechanics_to_state(state, result)
+    state = apply_delta_to_state(state, extract_state_delta(result))
     save_series_state(series_dir, state)
 
 

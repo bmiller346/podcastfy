@@ -127,6 +127,7 @@ def build_chapter_part_prompt(
     prior_parts_summary: str = "",
     story_bible_summary: str = "",
     series_package_summary: str = "",
+    showrunner_context: str = "",
 ) -> str:
     roles = ", ".join(part.required_roles)
     cast = "\n".join(
@@ -158,6 +159,9 @@ Story bible continuity:
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Showrunner pacing and constraint context:
+{showrunner_context or "No separate showrunner tempo context is available yet."}
 
 Requirements:
 - Use XML-style role blocks only, for example <HERO>...</HERO>.

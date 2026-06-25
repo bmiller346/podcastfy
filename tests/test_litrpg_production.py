@@ -40,6 +40,7 @@ def test_part_prompt_requires_roles_and_review_before_render():
         chapter_plan=plan,
         part=part,
         series_package_summary="System announcer: hostile office PA.",
+        showrunner_context="Director's Console: PACING: SLOW.",
     )
     review = build_part_review_prompt(
         part_script="<HERO>We move.</HERO>",
@@ -53,6 +54,7 @@ def test_part_prompt_requires_roles_and_review_before_render():
     assert "Every required role must appear" in prompt
     assert "Return actionable fixes first" in review
     assert "System announcer: hostile office PA." in prompt
+    assert "PACING: SLOW" in prompt
     assert "System announcer: hostile office PA." in review
 
 

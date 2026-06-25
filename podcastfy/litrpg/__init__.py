@@ -31,6 +31,10 @@ from podcastfy.litrpg.models import CharacterState, EpisodeBundle, EpisodeConfig
 from podcastfy.litrpg.models import QuestState, ScriptLine, SeriesState
 from podcastfy.litrpg.renderer import RoleScriptRenderer
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
+from podcastfy.litrpg.showrunner import NARRATIVE_ARC, WANDERING_EVENTS
+from podcastfy.litrpg.showrunner import build_showrunner_payload
+from podcastfy.litrpg.showrunner import format_showrunner_context
+from podcastfy.litrpg.showrunner import roll_wandering_event
 from podcastfy.litrpg.sfx import build_mix_plan, generate_sfx_candidate
 from podcastfy.litrpg.sfx import load_asset_manifest, map_assets_for_cue
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet, parse_cue_sheet
@@ -45,6 +49,7 @@ from podcastfy.litrpg.sfx_manifest import scan_asset_directory
 from podcastfy.litrpg.sfx_manifest import validate_asset_manifest
 from podcastfy.litrpg.sfx_mix import normalize_mix_plan_defaults
 from podcastfy.litrpg.sfx_mix import select_asset_candidates, validate_mix_plan
+from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, next_episode_number
 from podcastfy.litrpg.state_store import STATE_SCHEMA_VERSION, save_series_state
 
@@ -63,24 +68,30 @@ __all__ = [
     "SeriesState",
     "STATE_SCHEMA_VERSION",
     "StoryBible",
+    "NARRATIVE_ARC",
+    "WANDERING_EVENTS",
     "VoiceProfile",
     "add_or_promote_asset",
+    "apply_delta_to_state",
     "build_default_cast_plan",
     "build_chapter_qa",
     "build_local_sfx_prompt",
     "build_mix_plan",
     "build_role_tts_instructions",
     "build_series_package_prompt",
+    "build_showrunner_payload",
     "cast_plan_from_mapping",
     "coerce_series_package",
     "create_generation_request",
     "delete_episode",
     "export_voices_for_litrpg_config",
     "extract_mechanics_events",
+    "extract_state_delta",
     "extract_series_package_json",
     "find_bundle_by_cache_key",
     "format_story_bible_summary",
     "format_series_package_summary",
+    "format_showrunner_context",
     "generate_audition_script",
     "generate_series_package",
     "generate_sfx_candidate",
@@ -110,6 +121,7 @@ __all__ = [
     "parse_cue_sheet",
     "promote_generated_asset_request",
     "run_litrpg_task",
+    "roll_wandering_event",
     "save_asset_manifest_file",
     "save_generated_series_package",
     "save_series_state",

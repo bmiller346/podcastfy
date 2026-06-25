@@ -239,6 +239,9 @@ def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(
     assert "Hero promised never to trust elevators." in captured["story_bible_summary"]
     assert "Office workers survive dungeon performance reviews." in captured["series_package_summary"]
     assert "hostile corporate game-show host" in captured["series_package_summary"]
+    assert captured["showrunner"]["phase"] == "The Drop"
+    assert captured["showrunner"]["tension"] == 8
+    assert "FRANTIC" in captured["showrunner_context"]
     assert captured["mechanics_context"]["inventory"] == ["mana flask"]
     assert captured["mechanics_context"]["skills"] == ["Paper Cut"]
     assert captured["mechanics_context"]["class"] == "Intern"

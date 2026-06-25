@@ -27,6 +27,7 @@ from podcastfy.litrpg.production import build_visual_state_extraction_prompt
 from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
 from podcastfy.litrpg.sfx import parse_cue_sheet
+from podcastfy.litrpg.showrunner import format_showrunner_context
 
 
 def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, Any]:
@@ -59,6 +60,10 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     target_tone = str(task.get("tone") or task.get("target_tone") or "")
     story_bible_summary = str(task.get("story_bible_summary") or "")
     series_package_summary = _series_package_summary_from_task(task)
+    showrunner_payload = _mapping_or_none(task.get("showrunner")) or {}
+    showrunner_context = str(task.get("showrunner_context") or "").strip()
+    if not showrunner_context and showrunner_payload:
+        showrunner_context = format_showrunner_context(showrunner_payload)
     mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
     checkpoint_dir = _checkpoint_dir(task)
@@ -72,6 +77,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             prior_parts_summary=_prior_parts_summary(generated_parts),
             story_bible_summary=story_bible_summary,
             series_package_summary=series_package_summary,
+            showrunner_context=showrunner_context,
         )
         locked_script = locked_part_scripts.get(part.part_id)
         script = (
@@ -281,6 +287,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "injected_beats": injected_beats,
             "story_bible_summary": story_bible_summary,
             "series_package_summary": series_package_summary,
+            "showrunner": dict(showrunner_payload),
+            "showrunner_context": showrunner_context,
             "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),
