@@ -234,6 +234,7 @@ def build_chapter_part_prompt(
     story_bible_summary: str = "",
     series_package_summary: str = "",
     showrunner_context: str = "",
+    hook_context: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -272,6 +273,9 @@ Series package context:
 Showrunner pacing and constraint context:
 {showrunner_context or "No separate showrunner tempo context is available yet."}
 
+Hook continuity and binge-read context:
+{hook_context or "No prior hook obligation is available yet."}
+
 Requirements:
 - Use XML-style role blocks only, for example <HERO>...</HERO>.
 - Do not collapse the cast into narrator monologue. Let characters speak.
@@ -279,6 +283,58 @@ Requirements:
 - Keep each spoken block short enough for TTS regeneration and later review.
 - Include audible {profile.mechanics_label} where relevant: {profile.mechanics_examples}.
 - Preserve continuity and leave a clear handoff into the next part.
+"""
+
+
+def build_hook_engine_prompt(
+    *,
+    final_script: str,
+    chapter_title: str,
+    hook_context: str = "",
+    chapter_contract: Mapping[str, Any] | None = None,
+    genre: str = "",
+) -> str:
+    profile = story_profile(genre)
+    contract = dict(chapter_contract or {})
+    return f"""Audit the binge-read hook craft for this finalized {profile.script_label}.
+
+This is not a prettiness pass. Focus only on the first two paragraphs/blocks and the last two paragraphs/blocks.
+
+Chapter: {chapter_title}
+Genre/style: {profile.genre}
+
+Hook context:
+{hook_context or "No prior hook context supplied."}
+
+Chapter contract:
+{contract or "No chapter contract supplied."}
+
+Evaluate:
+- Does the opening honor the prior chapter's final image, question, or emotional charge before moving on?
+- Does the ending leave a concrete last image, an open question, and an implied cost?
+- Does the ending hook type match the tempo/phase? High tension needs action danger; low tension can use tonal reframe, quiet dread, or emotional cost.
+- Does the final beat arise from this chapter's consequences rather than a random teaser?
+- Is the final sentence specific enough that a reader remembers an image, not just a plot fact?
+
+Return compact JSON:
+{{
+  "verdict": "pass|revise|block",
+  "hook_type": "action_cliffhanger|tonal_reframe|quiet_dread|emotional_cost|plan_turn|revelation_question|open_question",
+  "opening_acknowledges_prior_hook": true,
+  "ending_has_last_image": true,
+  "ending_has_open_question": true,
+  "ending_implies_cost": true,
+  "last_image": "",
+  "open_question": "",
+  "implied_cost": "",
+  "next_chapter_obligation": "",
+  "fixes": []
+}}
+
+Do not rewrite the chapter. Give surgical notes only.
+
+Final script:
+{final_script}
 """
 
 

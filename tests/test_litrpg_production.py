@@ -2,6 +2,7 @@ from podcastfy.litrpg.production import build_chapter_part_prompt
 from podcastfy.litrpg.production import build_chapter_plan, build_chapter_review_prompt
 from podcastfy.litrpg.production import build_description_audit_prompt
 from podcastfy.litrpg.production import build_director_pass_prompt
+from podcastfy.litrpg.production import build_hook_engine_prompt
 from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt, default_cast_roles
 from podcastfy.litrpg.production import build_part_revision_prompt
@@ -141,6 +142,13 @@ def test_review_loop_prompts_cover_director_audits_and_revision():
         final_script=script,
         story_bible_summary="Hero: gear: stapler shield (jammed).",
     )
+    hook = build_hook_engine_prompt(
+        final_script=script,
+        chapter_title="The Stapler Hungers",
+        hook_context="Prior chapter ended on the elevator opening by itself.",
+        chapter_contract={"phase": "The Apex", "tension": 9},
+        genre="LitRPG",
+    )
 
     assert "emotion" in director
     assert "XP totals" in mechanics
@@ -148,6 +156,9 @@ def test_review_loop_prompts_cover_director_audits_and_revision():
     assert "stakes_seriousness" in tonal
     assert "sponsor_appeal" in showmanship
     assert "visual_anchors_dynamic" in visual_update
+    assert "last_image" in hook
+    assert "first two paragraphs" in hook
+    assert "elevator opening by itself" in hook
     assert "Allowed role tags: HERO, SYSTEM" in revision
     assert "Description and character audit" in revision
     assert "Do not include markdown" in revision

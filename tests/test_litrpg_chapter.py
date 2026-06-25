@@ -39,6 +39,13 @@ class FakeChapterLLM:
             return "chapter review: render ready"
         if stage == "visual_state_update":
             return '{"characters":{"Hero":{"current_injuries":["paper cut"]}}}'
+        if stage == "hook":
+            return (
+                '{"verdict":"pass","hook_type":"action_cliffhanger",'
+                '"last_image":"the stapler smiles","open_question":"who fed it?",'
+                '"implied_cost":"the clerk has to touch it again",'
+                '"next_chapter_obligation":"Open on the stapler grin."}'
+            )
         raise AssertionError(f"unexpected stage {stage}")
 
 
@@ -189,6 +196,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "revise:fallout-cliffhanger",
         "chapter_review",
         "visual_state_update",
+        "hook",
     ]
     assert "The cursed stapler must appear." in llm.calls[0]["prompt"]
     assert result["chapter"]["number"] == 2
@@ -206,6 +214,9 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     }
     assert result["qa"]["parts"][0]["verdicts"]["description"] == "pass"
     assert result["visual_state_update"].startswith('{"characters"')
+    assert result["hook_review"].startswith('{"verdict"')
+    assert result["render"]["metadata"]["hook_review"].startswith('{"verdict"')
+    assert "Hook Engine:" in llm.calls[0]["prompt"]
     assert result["qa"]["parts"][0]["revision_targets"][0]["audit"] == "mechanics"
     assert "NARRATOR logs XP and loot" in result["combined_script"]
     assert result["render"]["ready"] is True

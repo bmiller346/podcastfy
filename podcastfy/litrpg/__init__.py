@@ -12,6 +12,7 @@ from podcastfy.litrpg.casting import validate_cast_plan
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.episode_store import EpisodeStore, find_bundle_by_cache_key
 from podcastfy.litrpg.episode_store import stable_cache_key
+from podcastfy.litrpg.hooks import build_hook_context, hook_type_for_contract
 from podcastfy.litrpg.library import delete_episode, get_audio_path, get_episode
 from podcastfy.litrpg.library import list_episodes, list_regenerable_parts, list_series
 from podcastfy.litrpg.library import mark_episode_status
@@ -87,6 +88,7 @@ __all__ = [
     "apply_delta_to_state",
     "build_default_cast_plan",
     "build_chapter_qa",
+    "build_hook_context",
     "build_local_sfx_prompt",
     "build_mix_plan",
     "build_role_tts_instructions",
@@ -116,6 +118,7 @@ __all__ = [
     "get_audio_path",
     "get_episode",
     "get_provider_api_key",
+    "hook_type_for_contract",
     "list_episodes",
     "list_regenerable_parts",
     "list_series",

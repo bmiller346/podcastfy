@@ -12,12 +12,14 @@ from podcastfy.litrpg.casting import build_role_tts_instructions
 from podcastfy.litrpg.casting import cast_plan_from_mapping
 from podcastfy.litrpg.mechanics import validate_mechanics
 from podcastfy.litrpg.qa import build_chapter_qa
+from podcastfy.litrpg.hooks import build_hook_context
 from podcastfy.litrpg.production import ChapterPart
 from podcastfy.litrpg.production import build_chapter_part_prompt
 from podcastfy.litrpg.production import build_chapter_plan
 from podcastfy.litrpg.production import build_chapter_review_prompt
 from podcastfy.litrpg.production import build_description_audit_prompt
 from podcastfy.litrpg.production import build_director_pass_prompt
+from podcastfy.litrpg.production import build_hook_engine_prompt
 from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt
 from podcastfy.litrpg.production import build_part_revision_prompt
@@ -67,6 +69,11 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     if not showrunner_context and showrunner_payload:
         showrunner_context = format_showrunner_context(showrunner_payload)
     chapter_contract = _mapping_or_none(task.get("chapter_contract")) or {}
+    hook_context = str(task.get("hook_context") or task.get("previous_hook_context") or "").strip()
+    hook_context = build_hook_context(
+        contract=chapter_contract or showrunner_payload,
+        previous_hook_context=hook_context,
+    )
     mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
     checkpoint_dir = _checkpoint_dir(task)
@@ -81,6 +88,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             story_bible_summary=story_bible_summary,
             series_package_summary=series_package_summary,
             showrunner_context=showrunner_context,
+            hook_context=hook_context,
             genre=genre,
         )
         locked_script = locked_part_scripts.get(part.part_id)
@@ -269,6 +277,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     combined_script = _combine_part_scripts(generated_parts)
     visual_state_update_prompt = ""
     visual_state_update = ""
+    hook_prompt = ""
+    hook_review = ""
     if reviews_enabled:
         visual_state_update_prompt = build_visual_state_extraction_prompt(
             final_script=combined_script,
@@ -279,6 +289,19 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             llm,
             prompt=visual_state_update_prompt,
             stage="visual_state_update",
+            retry_options=retry_options,
+        )
+        hook_prompt = build_hook_engine_prompt(
+            final_script=combined_script,
+            chapter_title=title,
+            hook_context=hook_context,
+            chapter_contract=chapter_contract or showrunner_payload,
+            genre=genre,
+        )
+        hook_review = _generate_with_retry(
+            llm,
+            prompt=hook_prompt,
+            stage="hook",
             retry_options=retry_options,
         )
     cue_sheet = parse_cue_sheet(combined_script)
@@ -306,6 +329,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "showrunner": dict(showrunner_payload),
             "showrunner_context": showrunner_context,
             "chapter_contract": dict(chapter_contract),
+            "hook_context": hook_context,
             "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),
@@ -317,6 +341,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "chapter_review": chapter_review,
         "visual_state_update_prompt": visual_state_update_prompt,
         "visual_state_update": visual_state_update,
+        "hook_prompt": hook_prompt,
+        "hook_review": hook_review,
         "qa": qa,
         "combined_script": combined_script,
         "render": {
@@ -334,6 +360,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 "chapter_number": chapter_number,
                 "chapter_title": title,
                 "genre": genre,
+                "hook_review": hook_review,
             },
         },
     }
