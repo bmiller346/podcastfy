@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LitRPG Local Studio</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>LitRPG Local Studio</h1>
+          <p>Settings, task runs, and saved episode audio.</p>
+        </div>
+        <button id="refresh" type="button">Refresh</button>
+      </header>
+
+      <section class="panel">
+        <h2>Provider Settings</h2>
+        <form id="settings-form" class="grid-form">
+          <label>
+            OpenAI API key
+            <input name="openai_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+          </label>
+          <label>
+            Gemini API key
+            <input name="gemini_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+          </label>
+          <label>
+            ElevenLabs API key
+            <input name="elevenlabs_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+          </label>
+          <label>
+            Edge API key
+            <input name="edge_api_key" type="password" autocomplete="off" placeholder="Leave blank to keep unset">
+          </label>
+          <label>
+            Default generation provider
+            <input name="default_generation_provider" type="text" placeholder="openai">
+          </label>
+          <label>
+            Default TTS provider
+            <input name="default_tts_provider" type="text" placeholder="edge">
+          </label>
+          <label>
+            Default model
+            <input name="default_model" type="text" placeholder="gpt-5.5">
+          </label>
+          <label>
+            Default TTS model
+            <input name="default_tts_model" type="text" placeholder="tts model">
+          </label>
+          <div class="actions">
+            <button type="submit">Save Settings</button>
+          </div>
+        </form>
+        <div id="settings-status" class="status-list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Tasks</h2>
+        <div class="task-row">
+          <select id="task-select"></select>
+          <button id="run-task" type="button">Run Task</button>
+        </div>
+        <pre id="task-output" class="output" aria-live="polite"></pre>
+      </section>
+
+      <section class="panel">
+        <h2>Episode Library</h2>
+        <div id="library" class="library"></div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

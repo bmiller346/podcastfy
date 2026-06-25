@@ -1,7 +1,7 @@
 """Factory for creating TTS providers."""
 
 from importlib import import_module
-from typing import Dict, Type, Optional
+from typing import Dict, List, Type, Optional
 
 from .base import TTSProvider
 
@@ -35,13 +35,26 @@ class TTSProviderFactory:
         Raises:
             ValueError: If provider_name is not supported
         """
+        if not provider_name:
+            raise ValueError(
+                f"TTS provider must be specified. Choose from: {', '.join(cls.supported_providers())}"
+            )
+
         provider_key = provider_name.lower()
         provider_class = cls._providers.get(provider_key) or cls._load_provider(provider_key)
         if not provider_class:
             raise ValueError(f"Unsupported provider: {provider_name}. "
-                           f"Choose from: {', '.join(cls._provider_paths.keys())}")
+                           f"Choose from: {', '.join(cls.supported_providers())}")
 
-        return provider_class(api_key, model) if api_key else provider_class(model=model)
+        try:
+            return cls._create_provider_instance(provider_class, api_key, model)
+        except (ModuleNotFoundError, ValueError):
+            raise
+        except TypeError as exc:
+            raise RuntimeError(
+                f"Failed to initialize TTS provider '{provider_key}'. Check its API key, "
+                "model, and optional dependency configuration."
+            ) from exc
 
     @classmethod
     def _load_provider(cls, provider_name: str) -> Optional[Type[TTSProvider]]:
@@ -54,10 +67,18 @@ class TTSProviderFactory:
             module = import_module(module_name)
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
-                f"Provider '{provider_name}' requires optional dependency: {exc.name}"
+                f"TTS provider '{provider_name}' requires optional dependency '{exc.name}'. "
+                "Install the provider extra/package or choose one of: "
+                f"{', '.join(cls.supported_providers())}"
             ) from exc
 
-        provider_class = getattr(module, class_name)
+        try:
+            provider_class = getattr(module, class_name)
+        except AttributeError as exc:
+            raise RuntimeError(
+                f"TTS provider '{provider_name}' could not load class '{class_name}' "
+                f"from '{module_name}'."
+            ) from exc
         cls._providers[provider_name] = provider_class
         return provider_class
 
@@ -65,3 +86,22 @@ class TTSProviderFactory:
     def register_provider(cls, name: str, provider_class: Type[TTSProvider]) -> None:
         """Register a new provider class."""
         cls._providers[name.lower()] = provider_class
+
+    @classmethod
+    def supported_providers(cls) -> List[str]:
+        """Return discoverable built-in and registered provider names."""
+        return sorted(set(cls._provider_paths) | set(cls._providers))
+
+    @staticmethod
+    def _create_provider_instance(
+        provider_class: Type[TTSProvider],
+        api_key: Optional[str],
+        model: Optional[str],
+    ) -> TTSProvider:
+        if api_key is not None and model is not None:
+            return provider_class(api_key, model)
+        if api_key is not None:
+            return provider_class(api_key)
+        if model is not None:
+            return provider_class(model=model)
+        return provider_class()

@@ -1,0 +1,42 @@
+{
+  "mode": "chapter",
+  "series_id": "paper-cuts",
+  "premise": "A junior office clerk discovers the company's basement is a dungeon that promotes employees through combat reviews.",
+  "chapter_number": 2,
+  "chapter_title": "The Stapler Hungers",
+  "target_minutes": 25,
+  "injected_beats": [
+    "The cursed stapler must appear before the first SYSTEM alert.",
+    "The copier demands tribute and prints a forbidden map.",
+    "The hero earns an absurdly specific office-themed skill."
+  ],
+  "part_overrides": {
+    "cold-open": {
+      "target_minutes": 6,
+      "extra_injected_beats": [
+        "Open on a failed stealth roll near the time clock."
+      ]
+    },
+    "boss-setpiece": {
+      "title": "Performance Review Golem",
+      "required_roles": [
+        "NARRATOR",
+        "HERO",
+        "SYSTEM",
+        "BOSS",
+        "SIDEKICK",
+        "MAGE"
+      ]
+    }
+  },
+  "generation": {
+    "provider": "openai",
+    "model": "gpt-5.5",
+    "reasoning_effort": "medium",
+    "verbosity": "medium"
+  },
+  "reviews": {
+    "enabled": true
+  },
+  "result_path": "data/litrpg/paper-cuts/chapter-002.json"
+}

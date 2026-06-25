@@ -1,0 +1,70 @@
+{
+  "provider_defaults": {
+    "provider": "openai",
+    "model": "gpt-4o-mini-tts",
+    "format": "mp3"
+  },
+  "cast_members": [
+    {
+      "role": "NARRATOR",
+      "display_name": "The Table Voice",
+      "description": "Warm, cinematic guide with crisp action clarity.",
+      "archetype": "cinematic narrator",
+      "voice_profile": {
+        "provider": "openai",
+        "voice": "marin",
+        "instructions": "Warm, cinematic narration with clean action beats.",
+        "tags": ["narration", "cinematic", "clarity"]
+      }
+    },
+    {
+      "role": "HERO",
+      "display_name": "Mara",
+      "description": "Newly awakened adventurer, brave but still learning the rules.",
+      "archetype": "deadpan novice",
+      "voice_profile": {
+        "provider": "openai",
+        "voice": "cedar",
+        "instructions": "Grounded, dry, slightly overwhelmed, but brave when cornered.",
+        "tags": ["lead", "grounded", "wry"]
+      }
+    },
+    {
+      "role": "SYSTEM",
+      "display_name": "The System",
+      "description": "Precise game interface voice for notifications and mechanics.",
+      "archetype": "hostile game interface",
+      "voice_profile": {
+        "provider": "openai",
+        "voice": "coral",
+        "instructions": "Hostile game-show announcer energy with crisp LitRPG notifications.",
+        "style": "SYSTEM announcement",
+        "tags": ["announcement", "mechanics", "quest"]
+      }
+    },
+    {
+      "role": "SIDEKICK",
+      "display_name": "Jax",
+      "description": "Quick, loyal companion who turns exposition into banter.",
+      "archetype": "loyal comic counterpoint",
+      "voice_profile": {
+        "provider": "openai",
+        "voice": "shimmer",
+        "instructions": "Fast, bright, anxious under pressure without becoming shrill.",
+        "tags": ["banter", "party"]
+      }
+    },
+    {
+      "role": "BOSS",
+      "display_name": "Quartermaster Voss",
+      "description": "Commanding antagonist with readable menace and tactical pressure.",
+      "archetype": "setpiece antagonist",
+      "voice_profile": {
+        "provider": "openai",
+        "voice": "onyx",
+        "instructions": "Low, controlled menace with theatrical pauses.",
+        "tags": ["boss", "menace"]
+      }
+    }
+  ]
+}

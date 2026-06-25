@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
 from podcastfy.litrpg.llm import OpenAIResponsesGenerator
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
@@ -53,6 +54,12 @@ def run_litrpg_task(
         else None
     )
     resolved_llm = llm or _llm_from_task(task, settings=settings)
+
+    if str(task.get("mode") or "episode") == "chapter":
+        result = generate_litrpg_chapter(task, llm=resolved_llm)
+        _write_result_if_requested(task_file, task, result)
+        return result
+
     config = _config_from_task(task)
 
     result = generate_litrpg_audio_episode(
