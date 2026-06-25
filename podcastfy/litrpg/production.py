@@ -125,6 +125,7 @@ def build_chapter_part_prompt(
     chapter_plan: ChapterPlan,
     part: ChapterPart,
     prior_parts_summary: str = "",
+    story_bible_summary: str = "",
 ) -> str:
     roles = ", ".join(part.required_roles)
     cast = "\n".join(
@@ -150,6 +151,9 @@ Injected beats that must appear:
 
 Prior parts summary:
 {prior_parts_summary or "This is the first part."}
+
+Story bible continuity:
+{story_bible_summary or "No separate story bible is available yet."}
 
 Requirements:
 - Use XML-style role blocks only, for example <HERO>...</HERO>.
@@ -211,12 +215,16 @@ def build_mechanics_audit_prompt(
     part_script: str,
     chapter_premise: str,
     prior_parts_summary: str = "",
+    story_bible_summary: str = "",
 ) -> str:
     return f"""Audit LitRPG mechanics credibility for this chapter part.
 
 Chapter premise: {chapter_premise}
 Prior parts summary:
 {prior_parts_summary or "This is the first part."}
+
+Story bible continuity:
+{story_bible_summary or "No separate story bible is available yet."}
 
 Check:
 - XP totals, loot, inventory, cooldowns, class abilities, stats, quests, and status effects.

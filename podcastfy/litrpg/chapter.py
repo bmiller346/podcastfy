@@ -8,6 +8,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.casting import build_role_tts_instructions
+from podcastfy.litrpg.casting import cast_plan_from_mapping
+from podcastfy.litrpg.mechanics import validate_mechanics
 from podcastfy.litrpg.qa import build_chapter_qa
 from podcastfy.litrpg.production import ChapterPart
 from podcastfy.litrpg.production import build_chapter_part_prompt
@@ -19,6 +22,9 @@ from podcastfy.litrpg.production import build_part_review_prompt
 from podcastfy.litrpg.production import build_part_revision_prompt
 from podcastfy.litrpg.production import build_showmanship_audit_prompt
 from podcastfy.litrpg.production import build_tonal_audit_prompt
+from podcastfy.litrpg.sfx import build_mix_plan
+from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
+from podcastfy.litrpg.sfx import parse_cue_sheet
 
 
 def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, Any]:
@@ -49,6 +55,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     revision_enabled = _revision_enabled(task)
     locked_part_scripts = _mapping_or_none(task.get("locked_part_scripts")) or {}
     target_tone = str(task.get("tone") or task.get("target_tone") or "")
+    story_bible_summary = str(task.get("story_bible_summary") or "")
+    mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
     checkpoint_dir = _checkpoint_dir(task)
     generated_parts: list[dict[str, Any]] = []
@@ -59,6 +67,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             chapter_plan=plan,
             part=part,
             prior_parts_summary=_prior_parts_summary(generated_parts),
+            story_bible_summary=story_bible_summary,
         )
         locked_script = locked_part_scripts.get(part.part_id)
         script = (
@@ -87,6 +96,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         deterministic_gate = _deterministic_part_gate(
             part_script=script,
             required_roles=part.required_roles,
+            mechanics_context=mechanics_context,
         )
         if reviews_enabled:
             review_prompt = build_part_review_prompt(
@@ -113,6 +123,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 part_script=script,
                 chapter_premise=premise,
                 prior_parts_summary=_prior_parts_summary(generated_parts),
+                story_bible_summary=story_bible_summary,
             )
             mechanics_audit = _generate_with_retry(
                 llm,
@@ -156,6 +167,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         final_gate = _deterministic_part_gate(
             part_script=revised_script,
             required_roles=part.required_roles,
+            mechanics_context=mechanics_context,
         )
         part_scripts.append(revised_script)
         part_record = {
@@ -211,8 +223,16 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         )
 
     combined_script = _combine_part_scripts(generated_parts)
+    cue_sheet = parse_cue_sheet(combined_script)
+    asset_mappings = map_assets_for_cue_sheet(cue_sheet)
+    mix_plan = build_mix_plan(cue_sheet, asset_mappings=asset_mappings)
     qa = build_chapter_qa(generated_parts)
     render_ready = bool(qa["ready"])
+    role_instructions = _build_render_role_instructions(
+        task=task,
+        qa=qa,
+        cast_roles=plan.cast_roles,
+    )
     return {
         "mode": "chapter",
         "series_id": str(task.get("series_id") or "default-series"),
@@ -222,6 +242,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "premise": premise,
             "target_minutes": target_minutes,
             "injected_beats": injected_beats,
+            "story_bible_summary": story_bible_summary,
+            "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),
             "reviews_enabled": reviews_enabled,
@@ -235,8 +257,13 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "render": {
             "ready": render_ready,
             "audio_rendered": False,
-            "script": combined_script,
+            "script": cue_sheet.clean_script,
+            "script_with_cues": combined_script,
+            "cue_sheet": cue_sheet.to_dict(),
+            "asset_mappings": [mapping.to_dict() for mapping in asset_mappings],
+            "mix_plan": mix_plan,
             "role_tags": sorted(plan.cast_roles),
+            "role_instructions": role_instructions,
             "metadata": {
                 "series_id": str(task.get("series_id") or "default-series"),
                 "chapter_number": chapter_number,
@@ -384,27 +411,95 @@ def _deterministic_part_gate(
     *,
     part_script: str,
     required_roles: Sequence[str],
+    mechanics_context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     upper_script = part_script.upper()
     missing_roles = [
         role for role in required_roles if f"<{role}" not in upper_script
     ]
-    mechanics_terms = [
-        term
-        for term in ("XP", "LEVEL", "CLASS", "LOOT", "QUEST", "SKILL", "STAT", "COOLDOWN", "INVENTORY")
-        if term in upper_script
-    ]
+    mechanics_result = validate_mechanics(part_script, mechanics_context)
+    mechanics_terms = mechanics_result.get("normalized_terms", {})
     issues = []
     if missing_roles:
         issues.append(f"Missing required role tags: {', '.join(missing_roles)}")
-    if not mechanics_terms:
-        issues.append("No audible LitRPG mechanics detected")
+    issues.extend(str(issue) for issue in mechanics_result.get("issues", []))
     return {
         "ready": not issues,
         "issues": issues,
         "missing_roles": missing_roles,
         "mechanics_terms": mechanics_terms,
+        "mechanics": mechanics_result,
     }
+
+
+def _build_render_role_instructions(
+    *,
+    task: Mapping[str, Any],
+    qa: Mapping[str, Any],
+    cast_roles: Mapping[str, str],
+) -> dict[str, str]:
+    manifest_entries = _casting_manifest_entries(task)
+    director_cues = _director_cues_by_role(qa)
+    instructions: dict[str, str] = {}
+    for role in sorted(cast_roles):
+        entry = dict(manifest_entries.get(role) or {})
+        if "instructions" not in entry and cast_roles.get(role):
+            entry["instructions"] = cast_roles[role]
+        cue = director_cues.get(role)
+        if not entry and not cue:
+            continue
+        instructions[role] = build_role_tts_instructions(role, entry, cue)
+    return instructions
+
+
+def _casting_manifest_entries(task: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    value = (
+        task.get("casting_manifest")
+        or task.get("audio_casting_manifest")
+        or task.get("cast_manifest")
+        or task.get("cast_plan")
+    )
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError("Casting manifest must be a JSON object")
+    if any(key in value for key in ("cast_members", "members", "provider_defaults")):
+        plan = cast_plan_from_mapping(value, merge_defaults=False)
+        return {
+            member.role: member.voice_profile.to_renderer_dict()
+            for member in plan.cast_members
+        }
+    entries: dict[str, Mapping[str, Any]] = {}
+    for role, entry in value.items():
+        normalized_role = str(role).upper()
+        if isinstance(entry, Mapping):
+            entries[normalized_role] = entry
+        else:
+            entries[normalized_role] = {"voice": str(entry)}
+    return entries
+
+
+def _director_cues_by_role(qa: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    cues: dict[str, Mapping[str, Any]] = {}
+    for part in qa.get("parts", []):
+        if not isinstance(part, Mapping):
+            continue
+        audits = part.get("audits")
+        if not isinstance(audits, Mapping):
+            continue
+        director = audits.get("director")
+        if not isinstance(director, Mapping):
+            continue
+        raw_cues = director.get("cues")
+        if not isinstance(raw_cues, Sequence) or isinstance(raw_cues, (str, bytes)):
+            continue
+        for cue in raw_cues:
+            if not isinstance(cue, Mapping):
+                continue
+            role = str(cue.get("role") or "").upper()
+            if role and role not in cues:
+                cues[role] = cue
+    return cues
 
 
 def _prior_parts_summary(parts: Sequence[Mapping[str, Any]]) -> str:

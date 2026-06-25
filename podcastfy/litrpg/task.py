@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
 from podcastfy.litrpg.llm import OpenAIResponsesGenerator
@@ -135,6 +136,12 @@ def _resolve_task_path(task_file: Path, value: Any) -> Path:
 
 def _chapter_task_with_paths(task_file: Path, task: Mapping[str, Any]) -> dict[str, Any]:
     chapter_task = dict(task)
+    storage_dir = (
+        _resolve_task_path(task_file, task["storage_dir"])
+        if task.get("storage_dir")
+        else None
+    )
+    series_id = str(task.get("series_id") or "default-series")
     reuse_path = task.get("reuse_ready_parts_from") or task.get("lock_ready_parts_from")
     if reuse_path:
         reused_locks = locked_part_scripts_from_ready_parts(
@@ -154,6 +161,19 @@ def _chapter_task_with_paths(task_file: Path, task: Mapping[str, Any]) -> dict[s
         chapter_task["checkpoint_dir"] = str(
             result_path.parent / f"{result_path.stem}_checkpoints"
         )
+    if storage_dir is not None:
+        if not chapter_task.get("story_bible_summary"):
+            bible = load_story_bible(storage_dir, series_id)
+            chapter_task["story_bible_summary"] = format_story_bible_summary(bible)
+        explicit_mechanics = task.get("mechanics_context")
+        if explicit_mechanics is not None and not isinstance(explicit_mechanics, Mapping):
+            raise ValueError("mechanics_context must be a JSON object")
+        state = load_series_state(storage_dir / "series" / series_id)
+        state_mechanics = _mechanics_context_from_state(state)
+        chapter_task["mechanics_context"] = {
+            **state_mechanics,
+            **dict(explicit_mechanics or {}),
+        }
     return chapter_task
 
 
@@ -179,6 +199,17 @@ def _save_chapter_state_if_requested(
     if memory_entry not in state.memory:
         state.memory.append(memory_entry)
     save_series_state(series_dir, state)
+
+
+def _mechanics_context_from_state(state: Any) -> dict[str, Any]:
+    character = state.character
+    return {
+        "inventory": list(character.inventory),
+        "skills": list(character.skills),
+        "class": character.character_class,
+        "level": character.level,
+        "stats": dict(character.stats),
+    }
 
 
 def _write_result_if_requested(

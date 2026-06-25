@@ -24,6 +24,8 @@ from podcastfy.litrpg.models import CharacterState, EpisodeBundle, EpisodeConfig
 from podcastfy.litrpg.models import QuestState, ScriptLine, SeriesState
 from podcastfy.litrpg.renderer import RoleScriptRenderer
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
+from podcastfy.litrpg.sfx import build_mix_plan, map_assets_for_cue
+from podcastfy.litrpg.sfx import map_assets_for_cue_sheet, parse_cue_sheet
 from podcastfy.litrpg.state_store import load_series_state, next_episode_number
 from podcastfy.litrpg.state_store import STATE_SCHEMA_VERSION, save_series_state
 
@@ -45,6 +47,7 @@ __all__ = [
     "VoiceProfile",
     "build_default_cast_plan",
     "build_chapter_qa",
+    "build_mix_plan",
     "build_role_tts_instructions",
     "cast_plan_from_mapping",
     "delete_episode",
@@ -68,9 +71,12 @@ __all__ = [
     "load_story_bible",
     "locked_part_scripts_from_ready_parts",
     "mark_episode_status",
+    "map_assets_for_cue",
+    "map_assets_for_cue_sheet",
     "merge_story_bible_updates",
     "next_episode_number",
     "parse_part_qa_artifacts",
+    "parse_cue_sheet",
     "run_litrpg_task",
     "save_series_state",
     "save_story_bible",

@@ -73,7 +73,7 @@ Next acceptance criteria:
 
 ## 2. Continuity Bible
 
-Status: foundation implemented; chapter prompt and QA integration pending.
+Status: foundation implemented and wired into chapter prompts.
 
 Purpose: track who characters are becoming, separate from stats and game state.
 
@@ -100,7 +100,8 @@ Current implementation:
 - `StoryBible` and `CharacterBibleEntry` keep continuity separate from stats and game state.
 - Load/save helpers return safe defaults when no bible exists.
 - Merge helpers append extracted updates without wiping existing facts.
-- Compact summary formatting is available for future prompt injection.
+- Compact summary formatting is injected into chapter part and mechanics-audit prompts.
+- Chapter tasks with `storage_dir` automatically load per-series bible context.
 
 Acceptance criteria:
 
@@ -110,22 +111,23 @@ Acceptance criteria:
 
 ## 3. Mechanics Validator
 
-Status: deterministic validator implemented; chapter gate integration still pending.
+Status: deterministic validator implemented and wired into chapter gates.
 
 Purpose: protect LitRPG credibility with deterministic checks.
 
 Current implementation:
 
 - `_deterministic_part_gate(...)` checks missing required role tags.
-- `_deterministic_part_gate(...)` checks whether audible mechanics terms appear.
+- `_deterministic_part_gate(...)` uses `validate_mechanics(...)` for audible mechanics and contradiction checks.
 - `build_mechanics_audit_prompt(...)` asks an LLM to audit XP, loot, cooldowns, stats, inventory, quests, and earned abilities.
 - `podcastfy/litrpg/mechanics.py` extracts structured mechanics events from role-tagged scripts.
 - `validate_mechanics(...)` accepts prior XP, inventory, skills, class, cooldowns, and known tools.
+- Chapter tasks with `storage_dir` seed mechanics context from `series_state.json`.
 - Deterministic checks catch missing audible mechanics, consumed or removed items without inventory, XP total decreases without XP spend, unavailable skill/class abilities, and cooldown bypasses.
 
 Next acceptance criteria:
 
-- Fail render when deterministic mechanics checks find contradictions.
+- Carry validated mechanics deltas back into persistent series state.
 - Keep LLM mechanics audit as an explanatory layer, not the sole source of truth.
 
 ## 4. Absurdity and Stakes Score
@@ -213,9 +215,46 @@ Implemented behavior:
 Next acceptance criteria:
 
 - Keep casting changes subtle across chapters unless the story bible justifies a larger shift.
-- Wire role instruction overlays directly into the final audio renderer path.
+- Pass chapter render role instructions into the eventual chapter audio renderer.
 
-## 7. Chapter QA Gate
+## 7. Cinematic Audio and SFX
+
+Status: foundation implemented for cue sheets and metadata-only mix planning.
+
+Purpose: let scripts carry semantic cinematic audio intent without requiring final
+assets or a real mixer during story generation.
+
+Supported script tags:
+
+- `[BGM_START: tag]`
+- `[BGM_STOP]`
+- `[SFX: tag]`
+- `[AMBIENCE_START: tag]`
+- `[AMBIENCE_STOP]`
+
+Implemented behavior:
+
+- `podcastfy/litrpg/sfx.py` parses ordered audio cues from bracket tags.
+- Parsed cue sheets include cleaned script text with bracket audio tags removed.
+- Cue modifiers such as `pan=left`, `volume=-6db`, and `duck=true` are stored as metadata.
+- Semantic tags map to deterministic local asset candidates under an asset root without requiring files to exist.
+- Mix plans describe dialogue, music, ambience, and SFX layers with ducking, panning, EQ intent, and timing anchors.
+
+Current entry points:
+
+- `parse_cue_sheet(...)`
+- `map_assets_for_cue(...)`
+- `map_assets_for_cue_sheet(...)`
+- `build_mix_plan(...)`
+- `tests/test_litrpg_sfx.py`
+
+Next acceptance criteria:
+
+- Cue sheets, asset mappings, and mix plans are attached to chapter render output.
+- Convert clean script offsets into renderer timestamps after TTS segmentation.
+- Add an actual mixer that resolves selected assets and renders a final stem.
+
+## 8. Chapter QA Gate
 
 Status: top-level QA summary implemented.
 
@@ -244,7 +283,7 @@ Next acceptance criteria:
 - Add audio-readiness checks for role tags, unsupported style attributes, overlong lines, and missing casting information.
 - Render only when all required gates pass or an explicit force flag is present.
 
-## 8. Regenerate by Part, Not Whole Chapter
+## 9. Regenerate by Part, Not Whole Chapter
 
 Status: helper-backed task reuse implemented; UI/status surfacing still pending.
 

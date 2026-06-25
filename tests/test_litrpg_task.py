@@ -3,6 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible, save_story_bible
+from podcastfy.litrpg.models import CharacterState, SeriesState
+from podcastfy.litrpg.state_store import save_series_state
 from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task
 
 
@@ -102,3 +105,64 @@ def test_run_litrpg_task_rejects_unknown_generation_provider(tmp_path):
 
     with pytest.raises(ValueError, match="generation.provider=openai"):
         run_litrpg_task(task_path, tts=FakeTTS())
+
+
+def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(tmp_path, monkeypatch):
+    storage_dir = tmp_path / "library"
+    series_dir = storage_dir / "series" / "paper-cuts"
+    save_story_bible(
+        storage_dir,
+        StoryBible(
+            series_id="paper-cuts",
+            characters={
+                "Hero": CharacterBibleEntry(
+                    name="Hero",
+                    never_contradict_facts=["Hero promised never to trust elevators."],
+                    voice_rules=["Dry under pressure."],
+                )
+            },
+        ),
+    )
+    save_series_state(
+        series_dir,
+        SeriesState(
+            series_id="paper-cuts",
+            title="Paper Cuts",
+            episode_number=2,
+            character=CharacterState(
+                name="Hero",
+                level=3,
+                character_class="Intern",
+                skills=["Paper Cut"],
+                inventory=["mana flask"],
+            ),
+        ),
+    )
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "premise": "A clerk discovers the office is a dungeon.",
+                "storage_dir": "library",
+                "reviews": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_generate(task, *, llm):
+        captured.update(task)
+        return {"mode": "chapter", "series_id": task["series_id"]}
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    result = run_litrpg_task(task_path, llm=object())
+
+    assert result == {"mode": "chapter", "series_id": "paper-cuts"}
+    assert "Hero promised never to trust elevators." in captured["story_bible_summary"]
+    assert captured["mechanics_context"]["inventory"] == ["mana flask"]
+    assert captured["mechanics_context"]["skills"] == ["Paper Cut"]
+    assert captured["mechanics_context"]["class"] == "Intern"

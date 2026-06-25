@@ -99,6 +99,17 @@ class BlockingAuditLLM(AllRolesChapterLLM):
         return super().generate(prompt=prompt, stage=stage)
 
 
+class DirectorCueLLM(AllRolesChapterLLM):
+    def generate(self, *, prompt, stage):
+        if stage.startswith("director:"):
+            return (
+                '{"summary":"performance map","cues":['
+                '{"role":"SYSTEM","emotion":"smug","delivery":"bark",'
+                '"timing":"beat","audio_effect":"announcer slapback"}]}'
+            )
+        return super().generate(prompt=prompt, stage=stage)
+
+
 def _chapter_task(**overrides):
     task = {
         "mode": "chapter",
@@ -320,3 +331,111 @@ def test_generate_litrpg_chapter_block_verdict_makes_qa_and_render_not_ready():
     assert result["qa"]["parts"][0]["verdicts"]["tonal"] == "block"
     assert result["qa"]["parts"][0]["scores"]["showmanship"]["sponsor_appeal"] == 3
     assert any("jokes erase" in issue for issue in result["qa"]["blocking_issues"])
+
+
+def test_generate_litrpg_chapter_injects_story_bible_summary_into_prompts():
+    llm = FakeChapterLLM()
+
+    generate_litrpg_chapter(
+        _chapter_task(story_bible_summary="Hero never jokes about the elevator vow."),
+        llm=llm,
+    )
+
+    assert "Story bible continuity:" in llm.calls[0]["prompt"]
+    assert "Hero never jokes about the elevator vow." in llm.calls[0]["prompt"]
+    mechanics_call = next(call for call in llm.calls if call["stage"] == "mechanics:cold-open")
+    assert "Hero never jokes about the elevator vow." in mechanics_call["prompt"]
+
+
+def test_generate_litrpg_chapter_uses_mechanics_context_in_final_gate():
+    script = (
+        "<NARRATOR>XP total: 5.</NARRATOR>"
+        "<HERO>I activate Meteor Punch.</HERO>"
+        "<SYSTEM>Status: denied.</SYSTEM>"
+        "<SIDEKICK>Quest updated.</SIDEKICK>"
+        "<MINION>Loot envy rises.</MINION>"
+    )
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            reviews={"enabled": False},
+            part_overrides={
+                "cold-open": {
+                    "required_roles": ["NARRATOR", "HERO", "SYSTEM", "SIDEKICK", "MINION"]
+                },
+                "party-pressure": {"required_roles": ["NARRATOR"]},
+                "mechanics-reveal": {"required_roles": ["NARRATOR"]},
+                "boss-setpiece": {"required_roles": ["NARRATOR"]},
+                "fallout-cliffhanger": {"required_roles": ["NARRATOR"]},
+            },
+            locked_part_scripts={
+                "cold-open": script,
+                "party-pressure": "<NARRATOR>+1 XP. Loot gained: memo.</NARRATOR>",
+                "mechanics-reveal": "<NARRATOR>+1 XP. Quest updated: memo.</NARRATOR>",
+                "boss-setpiece": "<NARRATOR>+1 XP. Status: cornered.</NARRATOR>",
+                "fallout-cliffhanger": "<NARRATOR>+1 XP. Inventory: memo.</NARRATOR>",
+            },
+            mechanics_context={"skills": ["Paper Cut"], "class": "Intern"},
+        ),
+        llm=AllRolesChapterLLM(),
+    )
+
+    assert result["parts"][0]["gate"]["final"]["ready"] is False
+    assert any("Meteor Punch" in issue for issue in result["parts"][0]["gate"]["final"]["issues"])
+    assert result["qa"]["ready"] is False
+    assert result["render"]["ready"] is False
+
+
+def test_generate_litrpg_chapter_builds_render_role_instructions_from_casting_and_director():
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            casting_manifest={
+                "SYSTEM": {
+                    "instructions": "Hostile game interface.",
+                    "baseline": {"pace": 1.05, "pitch": -1, "delivery": "crisp"},
+                    "arc_modifiers": {"trauma": 0.2, "confidence": 0.8, "rage": 0.1},
+                }
+            }
+        ),
+        llm=DirectorCueLLM(),
+    )
+
+    system_instruction = result["render"]["role_instructions"]["SYSTEM"]
+    assert "Baseline identity: Hostile game interface." in system_instruction
+    assert "pace 1.05" in system_instruction
+    assert "delivery bark" in system_instruction
+    assert "audio effect announcer slapback" in system_instruction
+
+
+def test_generate_litrpg_chapter_extracts_sfx_cues_for_render_mix_plan():
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            reviews={"enabled": False},
+            part_overrides={
+                "cold-open": {"required_roles": ["NARRATOR"]},
+                "party-pressure": {"required_roles": ["NARRATOR"]},
+                "mechanics-reveal": {"required_roles": ["NARRATOR"]},
+                "boss-setpiece": {"required_roles": ["NARRATOR"]},
+                "fallout-cliffhanger": {"required_roles": ["NARRATOR"]},
+            },
+            locked_part_scripts={
+                "cold-open": (
+                    "[BGM_START: battle volume=-9db]"
+                    "<NARRATOR>+1 XP. Loot gained: badge.</NARRATOR>"
+                    "[SFX: sword clash pan=left]"
+                ),
+                "party-pressure": "<NARRATOR>+1 XP. Quest updated: badge.</NARRATOR>",
+                "mechanics-reveal": "<NARRATOR>+1 XP. Status: briefed.</NARRATOR>",
+                "boss-setpiece": "<NARRATOR>+1 XP. Skill unlocked: Staple Guard.</NARRATOR>",
+                "fallout-cliffhanger": "<NARRATOR>+1 XP. Inventory: badge.</NARRATOR>",
+            },
+        ),
+        llm=AllRolesChapterLLM(),
+    )
+
+    assert "[BGM_START" in result["combined_script"]
+    assert "[BGM_START" not in result["render"]["script"]
+    assert result["render"]["cue_sheet"]["metadata"]["cue_count"] == 2
+    assert result["render"]["mix_plan"]["metadata"]["cue_count"] == 2
+    assert any(layer["type"] == "music" for layer in result["render"]["mix_plan"]["layers"])
+    assert any(layer["type"] == "sfx" for layer in result["render"]["mix_plan"]["layers"])
