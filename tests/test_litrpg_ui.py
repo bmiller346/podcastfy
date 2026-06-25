@@ -112,6 +112,8 @@ def test_series_package_save_and_load_uses_local_storage_fallback(ui_server, ui_
         "home_base": {"name": "The Marsh Boat"},
         "floor_rules": {"rules": ["No refunds."]},
         "faction_map": {"factions": [{"name": "Dockside Compact"}]},
+        "bestiary": [{"name": "Code Worm", "entity_type": "mob"}],
+        "encounters": [{"name": "Harbor Auditor", "encounter_type": "boss"}],
     }
 
     save_status, save_data = request_json(
@@ -140,6 +142,8 @@ def test_series_package_save_and_load_uses_local_storage_fallback(ui_server, ui_
     assert "System: tone: hostile marina bureaucrat" in save_data["summary"]
     assert "Edward: character package pending detail" in save_data["summary"]
     assert "Kelli: character package pending detail" in save_data["summary"]
+    assert "Bestiary Code Worm:" in save_data["summary"]
+    assert "Encounter Harbor Auditor:" in save_data["summary"]
     assert load_status == 200
     assert load_data["package"]["familiar"]["name"] == "Pedro"
     assert load_data["path"] == "data/litrpg/series/catamaran-crawlers/series_package.json"

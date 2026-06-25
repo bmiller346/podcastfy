@@ -101,6 +101,48 @@ class FactionPackage:
 
 
 @dataclass(slots=True)
+class WorldEntityPackage:
+    """Reusable package for mobs, monsters, suspects, hazards, or anomalies."""
+
+    name: str = ""
+    entity_type: str = ""
+    category: str = ""
+    first_seen: str = ""
+    recurrence: str = ""
+    voice: str = ""
+    visual_signature: list[str] = field(default_factory=list)
+    behavior_rules: list[str] = field(default_factory=list)
+    abilities: list[str] = field(default_factory=list)
+    weaknesses: list[str] = field(default_factory=list)
+    resistances: list[str] = field(default_factory=list)
+    loot_table: list[str] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class EncounterPackage:
+    """Reusable package for a specific encounter, boss, case, or setpiece."""
+
+    name: str = ""
+    encounter_type: str = ""
+    status: str = ""
+    location: str = ""
+    first_seen: str = ""
+    stakes: str = ""
+    resolution: str = ""
+    participants: list[str] = field(default_factory=list)
+    phase_rules: list[str] = field(default_factory=list)
+    weaknesses: list[str] = field(default_factory=list)
+    rewards: list[str] = field(default_factory=list)
+    return_conditions: list[str] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class SeriesPackage:
     """Serializable premise expansion used before chapter generation."""
 
@@ -116,6 +158,8 @@ class SeriesPackage:
     home_base: HomeBasePackage = field(default_factory=HomeBasePackage)
     floor_rules: FloorRulesPackage = field(default_factory=FloorRulesPackage)
     faction_map: dict[str, FactionPackage] = field(default_factory=dict)
+    bestiary: dict[str, WorldEntityPackage] = field(default_factory=dict)
+    encounters: dict[str, EncounterPackage] = field(default_factory=dict)
 
 
 PackageType = TypeVar(
@@ -126,6 +170,8 @@ PackageType = TypeVar(
     HomeBasePackage,
     FloorRulesPackage,
     FactionPackage,
+    WorldEntityPackage,
+    EncounterPackage,
 )
 
 
@@ -228,6 +274,20 @@ def series_package_from_dict(
             FloorRulesPackage, _dict(data.get("floor_rules"))
         ),
         faction_map=_package_map(data.get("faction_map"), FactionPackage),
+        bestiary=_package_map(
+            data.get("bestiary")
+            or data.get("world_entities")
+            or data.get("entities")
+            or data.get("monsters")
+            or data.get("mobs"),
+            WorldEntityPackage,
+        ),
+        encounters=_package_map(
+            data.get("encounters")
+            or data.get("encounter_registry")
+            or data.get("bosses"),
+            EncounterPackage,
+        ),
     )
 
 
@@ -262,6 +322,10 @@ def merge_series_package_updates(
         _merge_dataclass(package.floor_rules, update_package.floor_rules)
     if update_keys is None or "faction_map" in update_keys:
         _merge_package_map(package.faction_map, update_package.faction_map)
+    if update_keys is None or update_keys & {"bestiary", "world_entities", "entities", "monsters", "mobs"}:
+        _merge_package_map(package.bestiary, update_package.bestiary)
+    if update_keys is None or update_keys & {"encounters", "encounter_registry", "bosses"}:
+        _merge_package_map(package.encounters, update_package.encounters)
     return package
 
 
@@ -269,6 +333,8 @@ def format_series_package_summary(
     package: SeriesPackage | dict[str, Any],
     max_characters: int = 6,
     max_factions: int = 4,
+    max_bestiary: int = 5,
+    max_encounters: int = 4,
 ) -> str:
     """Return compact package context suitable for prompt injection."""
 
@@ -345,6 +411,32 @@ def format_series_package_summary(
             f"... plus {len(typed_package.faction_map) - max_factions} more faction package(s)."
         )
 
+    for entity in list(typed_package.bestiary.values())[:max_bestiary]:
+        bits = _profile_bits(
+            entity,
+            ["entity_type", "category", "first_seen", "recurrence", "voice"],
+            ["visual_signature", "behavior_rules", "abilities", "weaknesses", "resistances", "loot_table", "rules"],
+        )
+        if bits:
+            lines.append(f"Bestiary {entity.name or 'Unknown'}: {' | '.join(bits)}")
+    if len(typed_package.bestiary) > max_bestiary:
+        lines.append(
+            f"... plus {len(typed_package.bestiary) - max_bestiary} more bestiary entries."
+        )
+
+    for encounter in list(typed_package.encounters.values())[:max_encounters]:
+        bits = _profile_bits(
+            encounter,
+            ["encounter_type", "status", "location", "first_seen", "stakes", "resolution"],
+            ["participants", "phase_rules", "weaknesses", "rewards", "return_conditions", "rules"],
+        )
+        if bits:
+            lines.append(f"Encounter {encounter.name or 'Unknown'}: {' | '.join(bits)}")
+    if len(typed_package.encounters) > max_encounters:
+        lines.append(
+            f"... plus {len(typed_package.encounters) - max_encounters} more encounter package(s)."
+        )
+
     return "\n".join(lines)
 
 
@@ -410,6 +502,7 @@ def _profile_bits(profile: Any, scalar_fields: list[str], list_fields: list[str]
 def _dataclass_from_dict(
     package_type: type[PackageType], data: dict[str, Any]
 ) -> PackageType:
+    data = _normalize_package_aliases(package_type, data)
     allowed = {field_info.name for field_info in fields(package_type)}
     kwargs: dict[str, Any] = {}
     for field_info in fields(package_type):
@@ -423,6 +516,39 @@ def _dataclass_from_dict(
         elif field_info.name in allowed:
             kwargs[field_info.name] = str(value) if value is not None else ""
     return package_type(**kwargs)
+
+
+def _normalize_package_aliases(
+    package_type: type[PackageType], data: dict[str, Any]
+) -> dict[str, Any]:
+    normalized = dict(data)
+    if package_type is WorldEntityPackage:
+        if "entity_type" not in normalized:
+            normalized["entity_type"] = (
+                normalized.get("type") or normalized.get("kind") or ""
+            )
+        if "visual_signature" not in normalized and "visuals" in normalized:
+            normalized["visual_signature"] = normalized["visuals"]
+        if "behavior_rules" not in normalized and "behaviors" in normalized:
+            normalized["behavior_rules"] = normalized["behaviors"]
+        if "weaknesses" not in normalized and "weakness" in normalized:
+            normalized["weaknesses"] = normalized["weakness"]
+        if "loot_table" not in normalized and "loot" in normalized:
+            normalized["loot_table"] = normalized["loot"]
+    if package_type is EncounterPackage:
+        if "encounter_type" not in normalized:
+            normalized["encounter_type"] = (
+                normalized.get("type") or normalized.get("kind") or ""
+            )
+        if "location" not in normalized and "arena" in normalized:
+            normalized["location"] = normalized["arena"]
+        if "phase_rules" not in normalized and "phases" in normalized:
+            normalized["phase_rules"] = normalized["phases"]
+        if "weaknesses" not in normalized and "weakness" in normalized:
+            normalized["weaknesses"] = normalized["weakness"]
+        if "return_conditions" not in normalized and "can_return" in normalized:
+            normalized["return_conditions"] = normalized["can_return"]
+    return normalized
 
 
 def _is_list_field(name: str, package_type: type[Any]) -> bool:

@@ -4,6 +4,7 @@ from podcastfy.litrpg.packages import CharacterPackage, FactionPackage
 from podcastfy.litrpg.packages import FamiliarPackage, FloorRulesPackage
 from podcastfy.litrpg.packages import HomeBasePackage, SeriesPackage
 from podcastfy.litrpg.packages import SystemAnnouncerPackage
+from podcastfy.litrpg.packages import WorldEntityPackage, EncounterPackage
 from podcastfy.litrpg.packages import SERIES_PACKAGE_FILENAME
 from podcastfy.litrpg.packages import SERIES_PACKAGE_SCHEMA_VERSION
 from podcastfy.litrpg.packages import default_series_package
@@ -71,6 +72,24 @@ def test_series_package_round_trip_persistence(tmp_path):
                 relationship="wary rivals",
             )
         },
+        bestiary={
+            "Saltwater Code-Worm": WorldEntityPackage(
+                name="Saltwater Code-Worm",
+                entity_type="mob",
+                recurrence="common floor-one parasite",
+                weaknesses=["copper grounding wire"],
+                behavior_rules=["attacks damaged rigging first"],
+            )
+        },
+        encounters={
+            "Deputy Architect Branz": EncounterPackage(
+                name="Deputy Architect Branz",
+                encounter_type="floor boss",
+                status="planned",
+                location="marina inspection chamber",
+                weaknesses=["northeast load-bearing pillar"],
+            )
+        },
     )
 
     save_series_package(tmp_path, package)
@@ -86,6 +105,10 @@ def test_series_package_round_trip_persistence(tmp_path):
         "Structural Assessor"
     )
     assert raw_package["familiar"]["vocabulary"] == ["THAT'S NOT CODE"]
+    assert raw_package["bestiary"]["Saltwater Code-Worm"]["weaknesses"] == [
+        "copper grounding wire"
+    ]
+    assert raw_package["encounters"]["Deputy Architect Branz"]["status"] == "planned"
 
 
 def test_series_package_from_dict_accepts_loose_shapes_and_aliases():
@@ -108,6 +131,19 @@ def test_series_package_from_dict_accepts_loose_shapes_and_aliases():
                     "resources": ("guards", "permits"),
                 }
             },
+            "monsters": {
+                "Dock Barnacle": {
+                    "type": "mob",
+                    "weaknesses": "scraper",
+                }
+            },
+            "bosses": [
+                {
+                    "name": "Harbor Auditor",
+                    "type": "social encounter",
+                    "return_conditions": "appears after unpaid docking fees",
+                }
+            ],
         }
     )
 
@@ -119,6 +155,9 @@ def test_series_package_from_dict_accepts_loose_shapes_and_aliases():
     assert package.familiar.vocabulary == ["THAT'S NOT CODE"]
     assert package.faction_map["safe-zone-council"].name == "safe-zone-council"
     assert package.faction_map["safe-zone-council"].resources == ["guards", "permits"]
+    assert package.bestiary["Dock Barnacle"].entity_type == "mob"
+    assert package.bestiary["Dock Barnacle"].weaknesses == ["scraper"]
+    assert package.encounters["Harbor Auditor"].encounter_type == "social encounter"
     assert as_dict["series_id"] == "catamaran-crawlers"
     assert as_dict["characters"]["Edward"]["name"] == "Edward"
 
@@ -182,6 +221,20 @@ def test_merge_series_package_updates_keeps_existing_and_deduplicates():
                     "relationship": "predatory landlords",
                 }
             },
+            "bestiary": {
+                "code-worm": {
+                    "name": "Code Worm",
+                    "entity_type": "hazard",
+                    "weaknesses": ["grounding wire"],
+                }
+            },
+            "encounters": {
+                "branz": {
+                    "name": "Deputy Branz",
+                    "encounter_type": "boss",
+                    "status": "escaped",
+                }
+            },
         },
     )
 
@@ -204,6 +257,8 @@ def test_merge_series_package_updates_keeps_existing_and_deduplicates():
         "safe-zone permits",
     ]
     assert package.faction_map["Docklords"].relationship == "predatory landlords"
+    assert package.bestiary["code-worm"].weaknesses == ["grounding wire"]
+    assert package.encounters["branz"].status == "escaped"
 
 
 def test_update_series_package_loads_merges_and_saves(tmp_path):
@@ -276,6 +331,22 @@ def test_format_series_package_summary_is_compact_prompt_context():
                 relationship="hostile",
             )
         },
+        bestiary={
+            "Code Worm": WorldEntityPackage(
+                name="Code Worm",
+                entity_type="mob",
+                recurrence="common floor-one nuisance",
+                weaknesses=["freshwater shock"],
+            )
+        },
+        encounters={
+            "Branz": EncounterPackage(
+                name="Branz",
+                encounter_type="floor boss",
+                status="escaped",
+                location="inspection chamber",
+            )
+        },
     )
 
     summary = format_series_package_summary(package)
@@ -289,3 +360,6 @@ def test_format_series_package_summary_is_compact_prompt_context():
     assert "Home Base catamaran:" in summary
     assert "Floor Rules: floor: Floor 1" in summary
     assert "Faction Docklords: agenda: Control dock space." in summary
+    assert "Bestiary Code Worm: entity type: mob" in summary
+    assert "weaknesses: freshwater shock" in summary
+    assert "Encounter Branz: encounter type: floor boss" in summary

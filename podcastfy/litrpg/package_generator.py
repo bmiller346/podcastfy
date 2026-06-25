@@ -125,6 +125,42 @@ Required top-level shape:
       "audio_identity": ""
     }}
   ],
+  "bestiary": [
+    {{
+      "name": "",
+      "entity_type": "mob|monster|suspect|hazard|anomaly|creature|rival",
+      "category": "",
+      "first_seen": "",
+      "recurrence": "",
+      "visual_signature": [],
+      "behavior_rules": [],
+      "abilities": [],
+      "weaknesses": [],
+      "resistances": [],
+      "loot_table": [],
+      "voice": "",
+      "rules": [],
+      "notes": []
+    }}
+  ],
+  "encounters": [
+    {{
+      "name": "",
+      "encounter_type": "boss|setpiece|case|scene-threat|social encounter|mystery beat",
+      "status": "planned|active|defeated|escaped|recurring",
+      "location": "",
+      "first_seen": "",
+      "participants": [],
+      "phase_rules": [],
+      "weaknesses": [],
+      "stakes": "",
+      "resolution": "",
+      "rewards": [],
+      "return_conditions": [],
+      "rules": [],
+      "notes": []
+    }}
+  ],
   "sample_announcements": [],
   "audio_performance_notes": []
 }}
@@ -132,6 +168,8 @@ Required top-level shape:
 Generation requirements:
 - Create at least {target_character_count} character or role packages.
 - Include the major premise leads plus useful recurring roles, rivals, factions, vendors, bosses, and game-show/audience voices.
+- Include durable bestiary/world-entity entries for recurring mobs, monsters, suspects, hazards, anomalies, or creature types that should not be reinvented later.
+- Include encounter entries for specific bosses, fights, cases, mystery scenes, setpieces, or social threats that may be referenced later.
 - If the chosen genre has no System, announcer, stats, or game-show layer, keep those fields empty or reinterpret them as narrator/showrunner/audio-production guidance.
 - Keep any announcer or system voice distinct from direct imitation of existing performers or franchises.
 - If baseline text is provided, preserve its useful structure and performance intent, but adapt it to this original series.
@@ -246,6 +284,18 @@ def coerce_series_package(
             },
         ),
         "faction_map": _coerce_factions(values.get("faction_map")),
+        "bestiary": _coerce_bestiary(
+            values.get("bestiary")
+            or values.get("world_entities")
+            or values.get("entities")
+            or values.get("monsters")
+            or values.get("mobs")
+        ),
+        "encounters": _coerce_encounters(
+            values.get("encounters")
+            or values.get("encounter_registry")
+            or values.get("bosses")
+        ),
         "sample_announcements": _string_list(values.get("sample_announcements")),
         "audio_performance_notes": _string_list(values.get("audio_performance_notes")),
     }
@@ -287,6 +337,9 @@ def validate_series_package(package: Mapping[str, Any]) -> dict[str, Any]:
     for key in ("system_announcer", "familiar", "home_base", "floor_rules"):
         if not isinstance(package.get(key), Mapping):
             errors.append(f"{key} must be an object")
+    for key in ("faction_map", "bestiary", "encounters"):
+        if not isinstance(package.get(key), list):
+            errors.append(f"{key} must be a list")
 
     if not package.get("premise"):
         warnings.append("premise is empty")
@@ -461,6 +514,8 @@ def _storage_package_payload(package: Mapping[str, Any]) -> dict[str, Any]:
             "notes": _string_list(floor_data.get("notes")),
         },
         "faction_map": package.get("faction_map") or [],
+        "bestiary": package.get("bestiary") or [],
+        "encounters": package.get("encounters") or [],
     }
 
 
@@ -509,6 +564,34 @@ def format_series_package_summary(package: Mapping[str, Any], *, max_characters:
 
     if len(characters) > max_characters:
         lines.append(f"... plus {len(characters) - max_characters} more package role(s).")
+    bestiary = package.get("bestiary") if isinstance(package.get("bestiary"), list) else []
+    for entity in bestiary[:5]:
+        if not isinstance(entity, Mapping):
+            continue
+        pieces = [
+            str(entity.get("entity_type") or "entity"),
+            str(entity.get("name") or "Unnamed"),
+        ]
+        weaknesses = _compact_items(_string_list(entity.get("weaknesses")), 2)
+        if weaknesses:
+            pieces.append("weaknesses: " + "; ".join(weaknesses))
+        behavior = _compact_items(_string_list(entity.get("behavior_rules")), 2)
+        if behavior:
+            pieces.append("behavior: " + "; ".join(behavior))
+        lines.append("Bestiary - " + " | ".join(piece for piece in pieces if piece))
+    encounters = package.get("encounters") if isinstance(package.get("encounters"), list) else []
+    for encounter in encounters[:4]:
+        if not isinstance(encounter, Mapping):
+            continue
+        pieces = [
+            str(encounter.get("encounter_type") or "encounter"),
+            str(encounter.get("name") or "Unnamed"),
+        ]
+        if encounter.get("status"):
+            pieces.append(f"status: {encounter['status']}")
+        if encounter.get("location"):
+            pieces.append(f"location: {encounter['location']}")
+        lines.append("Encounter - " + " | ".join(piece for piece in pieces if piece))
     return "\n".join(lines)
 
 
@@ -699,6 +782,88 @@ def _coerce_factions(value: Any) -> list[dict[str, str]]:
             }
         )
     return factions
+
+
+def _coerce_bestiary(value: Any) -> list[dict[str, Any]]:
+    source = _coerce_package_list(value, default_text_key="category")
+    entries: list[dict[str, Any]] = []
+    for item in source:
+        entries.append(
+            {
+                "name": str(item.get("name") or "Unnamed entity"),
+                "entity_type": str(
+                    item.get("entity_type")
+                    or item.get("type")
+                    or item.get("kind")
+                    or ""
+                ),
+                "category": str(item.get("category") or ""),
+                "first_seen": str(item.get("first_seen") or ""),
+                "recurrence": str(item.get("recurrence") or ""),
+                "visual_signature": _string_list(
+                    item.get("visual_signature") or item.get("visuals")
+                ),
+                "behavior_rules": _string_list(
+                    item.get("behavior_rules") or item.get("behaviors")
+                ),
+                "abilities": _string_list(item.get("abilities")),
+                "weaknesses": _string_list(item.get("weaknesses") or item.get("weakness")),
+                "resistances": _string_list(item.get("resistances")),
+                "loot_table": _string_list(item.get("loot_table") or item.get("loot")),
+                "voice": str(item.get("voice") or item.get("audio_identity") or ""),
+                "rules": _string_list(item.get("rules")),
+                "notes": _string_list(item.get("notes")),
+            }
+        )
+    return entries
+
+
+def _coerce_encounters(value: Any) -> list[dict[str, Any]]:
+    source = _coerce_package_list(value, default_text_key="stakes")
+    entries: list[dict[str, Any]] = []
+    for item in source:
+        entries.append(
+            {
+                "name": str(item.get("name") or "Unnamed encounter"),
+                "encounter_type": str(
+                    item.get("encounter_type")
+                    or item.get("type")
+                    or item.get("kind")
+                    or ""
+                ),
+                "status": str(item.get("status") or ""),
+                "location": str(item.get("location") or item.get("arena") or ""),
+                "first_seen": str(item.get("first_seen") or ""),
+                "participants": _string_list(item.get("participants")),
+                "phase_rules": _string_list(item.get("phase_rules") or item.get("phases")),
+                "weaknesses": _string_list(item.get("weaknesses") or item.get("weakness")),
+                "stakes": str(item.get("stakes") or ""),
+                "resolution": str(item.get("resolution") or ""),
+                "rewards": _string_list(item.get("rewards")),
+                "return_conditions": _string_list(
+                    item.get("return_conditions") or item.get("can_return")
+                ),
+                "rules": _string_list(item.get("rules")),
+                "notes": _string_list(item.get("notes")),
+            }
+        )
+    return entries
+
+
+def _coerce_package_list(value: Any, *, default_text_key: str) -> list[dict[str, Any]]:
+    if isinstance(value, Mapping):
+        source = []
+        for name, entry in value.items():
+            if isinstance(entry, Mapping):
+                item = dict(entry)
+                item.setdefault("name", name)
+                source.append(item)
+            else:
+                source.append({"name": name, default_text_key: str(entry)})
+        return source
+    if isinstance(value, list):
+        return [dict(item) for item in value if isinstance(item, Mapping)]
+    return []
 
 
 def _string_list(value: Any) -> list[str]:

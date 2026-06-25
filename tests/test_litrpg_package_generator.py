@@ -43,6 +43,9 @@ def test_build_series_package_prompt_includes_baseline_and_required_shape():
     assert "fine print with a grudge" in prompt
     assert '"system_announcer"' in prompt
     assert '"characters"' in prompt
+    assert '"bestiary"' in prompt
+    assert '"encounters"' in prompt
+    assert "recurring mobs, monsters, suspects, hazards" in prompt
     assert "at least 15" in prompt
     assert "Return only one JSON object" in prompt
 
@@ -92,6 +95,20 @@ def test_coerce_series_package_fills_safe_defaults_and_minimum_cast():
                 }
             ],
             "faction_map": {"boardwalk-kings": "Control safe-zone trade."},
+            "monsters": {
+                "saltwater-code-worm": {
+                    "type": "mob",
+                    "weakness": "copper grounding wire",
+                    "behaviors": ["attacks damaged rigging first"],
+                }
+            },
+            "bosses": {
+                "deputy-architect-branz": {
+                    "type": "floor boss",
+                    "status": "planned",
+                    "arena": "marina inspection chamber",
+                }
+            },
         },
         premise="Edward wants the System to leave him alone.",
         baseline_text="Baseline system package.",
@@ -106,6 +123,11 @@ def test_coerce_series_package_fills_safe_defaults_and_minimum_cast():
     assert package["characters"][0]["role"] == "HERO"
     assert package["characters"][0]["voice"]["delivery"] == "low, tired, practical"
     assert package["faction_map"][0]["name"] == "boardwalk-kings"
+    assert package["bestiary"][0]["name"] == "saltwater-code-worm"
+    assert package["bestiary"][0]["entity_type"] == "mob"
+    assert package["bestiary"][0]["weaknesses"] == ["copper grounding wire"]
+    assert package["encounters"][0]["name"] == "deputy-architect-branz"
+    assert package["encounters"][0]["location"] == "marina inspection chamber"
     assert package["validation_metadata"]["valid"] is True
 
 
@@ -170,6 +192,22 @@ def test_format_series_package_summary_is_compact_prompt_context():
                     "voice": {"delivery": "tired, low, practical"},
                 }
             ],
+            "bestiary": [
+                {
+                    "name": "Saltwater Code-Worm",
+                    "entity_type": "mob",
+                    "weaknesses": ["copper grounding wire"],
+                    "behavior_rules": ["attacks damaged rigging first"],
+                }
+            ],
+            "encounters": [
+                {
+                    "name": "Deputy Architect Branz",
+                    "encounter_type": "floor boss",
+                    "status": "planned",
+                    "location": "marina inspection chamber",
+                }
+            ],
         }
     )
 
@@ -179,6 +217,9 @@ def test_format_series_package_summary_is_compact_prompt_context():
     assert "System voice: hostile; pedantic; showman" in summary
     assert "Home base: The Marsh Catamaran" in summary
     assert "HERO | Edward | reluctant structural problem solver" in summary
+    assert "Bestiary - mob | Saltwater Code-Worm" in summary
+    assert "weaknesses: copper grounding wire" in summary
+    assert "Encounter - floor boss | Deputy Architect Branz" in summary
 
 
 def test_validate_series_package_reports_too_few_characters():

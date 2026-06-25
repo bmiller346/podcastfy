@@ -241,6 +241,8 @@ def save_series_package_request(payload: dict[str, Any]) -> dict[str, Any]:
             "home_base": {},
             "floor_rules": {},
             "faction_map": {},
+            "bestiary": [],
+            "encounters": [],
         }
     saved = save_series_package(series_id, package)
     return _series_package_payload(series_id, saved, ok=True)
@@ -789,7 +791,33 @@ def summarize_series_package(package: Any | None) -> str:
         faction_count = len(faction_map.get("factions", [])) if isinstance(faction_map.get("factions"), list) else len(faction_map)
         if faction_count:
             pieces.append(f"Factions: {faction_count}")
+    bestiary = (
+        package_payload.get("bestiary")
+        or package_payload.get("world_entities")
+        or package_payload.get("entities")
+        or package_payload.get("monsters")
+        or package_payload.get("mobs")
+    )
+    bestiary_count = _package_collection_count(bestiary)
+    if bestiary_count:
+        pieces.append(f"Bestiary: {bestiary_count}")
+    encounters = (
+        package_payload.get("encounters")
+        or package_payload.get("encounter_registry")
+        or package_payload.get("bosses")
+    )
+    encounter_count = _package_collection_count(encounters)
+    if encounter_count:
+        pieces.append(f"Encounters: {encounter_count}")
     return "\n".join(pieces)
+
+
+def _package_collection_count(value: Any) -> int:
+    if isinstance(value, list):
+        return len([item for item in value if isinstance(item, dict)])
+    if isinstance(value, dict):
+        return len(value)
+    return 0
 
 
 def _series_package_path(series_id: str) -> Path:

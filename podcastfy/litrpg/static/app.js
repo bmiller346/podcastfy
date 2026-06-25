@@ -235,6 +235,8 @@ function buildPackageDraft() {
     home_base: {},
     floor_rules: {},
     faction_map: {},
+    bestiary: [],
+    encounters: [],
   };
 }
 
@@ -544,6 +546,8 @@ function renderDiagnosticsSummary(report) {
     diagnosticsItem("Series package", packageState),
     diagnosticsItem("Genre", report.series_package.genre || report.task.genre || "unspecified"),
     diagnosticsItem("Role packages", String(report.series_package.role_count || 0)),
+    diagnosticsItem("Bestiary", String(report.series_package.bestiary_count || 0)),
+    diagnosticsItem("Encounters", String(report.series_package.encounter_count || 0)),
     diagnosticsItem("Configured keys", String(configured)),
     diagnosticsItem("Mode", report.task.mode || "episode"),
     diagnosticsItem("Audio", audio),
@@ -650,6 +654,20 @@ function summarizeSeriesPackage(data) {
     class: role.character_class || role.class_candidate || role.class_or_mechanic || "",
     voice: roleScalarValue(role.voice || role.voice_profile),
   }));
+  const bestiary = packageArray(packageValue.bestiary || packageValue.world_entities || packageValue.entities || packageValue.monsters || packageValue.mobs)
+    .map((entry) => ({
+      name: entry.name || "",
+      type: entry.entity_type || entry.type || entry.kind || "",
+      recurrence: entry.recurrence || "",
+      weaknesses: Array.isArray(entry.weaknesses) ? entry.weaknesses : [],
+    }));
+  const encounters = packageArray(packageValue.encounters || packageValue.encounter_registry || packageValue.bosses)
+    .map((entry) => ({
+      name: entry.name || "",
+      type: entry.encounter_type || entry.type || entry.kind || "",
+      status: entry.status || "",
+      location: entry.location || entry.arena || "",
+    }));
   return {
     series_id: data ? data.series_id : "",
     available: Boolean(data && data.available),
@@ -658,6 +676,10 @@ function summarizeSeriesPackage(data) {
     genre: metadata.genre || metadata.style || "",
     role_count: roles.length,
     roles,
+    bestiary_count: bestiary.length,
+    bestiary,
+    encounter_count: encounters.length,
+    encounters,
     has_system_announcer: Boolean(packageValue.system_announcer && Object.keys(packageValue.system_announcer).length),
     has_familiar: Boolean(packageValue.familiar && Object.keys(packageValue.familiar).length),
     package_keys: Object.keys(packageValue),
@@ -667,6 +689,20 @@ function summarizeSeriesPackage(data) {
     },
     summary: data ? data.summary || "" : "",
   };
+}
+
+function packageArray(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => item && typeof item === "object");
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).map(([key, item]) => {
+      const entry = item && typeof item === "object" ? { ...item } : {};
+      if (!entry.name) entry.name = key;
+      return entry;
+    });
+  }
+  return [];
 }
 
 function summarizeJob(job) {
@@ -715,6 +751,9 @@ function diagnosticRecommendations({ task, premiseAnalysis, settings, seriesPack
   }
   if (seriesPackage.available && !seriesPackage.role_count) {
     recommendations.push("Series package has no editable role packages yet; add cast roles or generate a first draft.");
+  }
+  if (seriesPackage.available && !seriesPackage.bestiary_count && !seriesPackage.encounter_count) {
+    recommendations.push("Series package has no bestiary or encounter entries yet; add reusable threats, suspects, hazards, or setpieces before long-form tests.");
   }
   if (!seriesPackage.modules.generator) {
     recommendations.push("Series package generator is unavailable; save a draft package or wait for the generator lane.");
