@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from podcastfy.litrpg import generate_litrpg_audio_episode
@@ -13,8 +14,9 @@ class FakeLLM:
             return "Outline: SYSTEM grants loot; BOSS interrupts."
         return (
             "<NARRATOR>The filing cabinet opened.</NARRATOR>"
-            "<SYSTEM>NEW QUEST: Survive onboarding.</SYSTEM>"
-            "<HERO>I knew the handbook was cursed.</HERO>"
+            "<SYSTEM>Quest: Survive onboarding. Loot gained: mana flask. +25 XP. "
+            "XP total: 25. Skill unlocked: Spark.</SYSTEM>"
+            "<HERO>I activate Spark and consume mana flask.</HERO>"
         )
 
 
@@ -58,7 +60,12 @@ def test_pipeline_generates_bundle_audio_and_state(tmp_path):
     assert audio_path.exists()
     assert audio_path.read_bytes() == b"fake-audio"
     assert (bundle_path / "audio_metadata.json").exists()
-    assert (tmp_path / "series" / "paper-cuts" / "series_state.json").exists()
+    state_path = tmp_path / "series" / "paper-cuts" / "series_state.json"
+    assert state_path.exists()
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["character"]["stats"]["xp"] == 25
+    assert state["character"]["skills"] == ["Spark"]
+    assert state["character"]["inventory"] == []
 
 
 def test_pipeline_replays_existing_bundle_without_llm_or_tts(tmp_path):

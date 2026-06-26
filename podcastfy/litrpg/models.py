@@ -32,7 +32,13 @@ class SeriesState:
     schema_version: int = 1
     quests: list[QuestState] = field(default_factory=list)
     current_location: str = ""
+    current_floor: int | None = None
     memory: list[str] = field(default_factory=list)
+    mechanics: dict[str, Any] = field(default_factory=dict)
+    announcer_notes_log: list[str] = field(default_factory=list)
+    pedro_phrases: list[str] = field(default_factory=list)
+    crowd_reactions: list[dict[str, Any]] = field(default_factory=list)
+    sponsor_reactions: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

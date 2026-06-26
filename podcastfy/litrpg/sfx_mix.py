@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
 from podcastfy.litrpg.sfx import AssetCandidate
@@ -156,6 +156,109 @@ def validate_mix_plan(
     }
 
 
+def mix_audio_locally(
+    *,
+    dialogue_path: str | Path,
+    output_path: str | Path,
+    mix_plan: Mapping[str, Any],
+    asset_mappings: Sequence[AssetCandidate | Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Render a minimal local mixdown when dialogue and assets exist.
+
+    The current timing model only has script character offsets, so placements
+    are approximate. The function is still intentionally real: it loads audio,
+    overlays existing assets, writes a mixed file, and reports skipped layers.
+    """
+    dialogue = Path(dialogue_path)
+    output = Path(output_path)
+    if not dialogue.exists():
+        return {
+            "mixed": False,
+            "output_path": str(output),
+            "issues": [f"dialogue audio not found: {dialogue}"],
+            "skipped_layers": [],
+            "applied_layers": [],
+        }
+
+    try:
+        from pydub import AudioSegment
+    except Exception as exc:
+        return {
+            "mixed": False,
+            "output_path": str(output),
+            "issues": [f"local mixer unavailable: {exc}"],
+            "skipped_layers": [],
+            "applied_layers": [],
+        }
+
+    plan = normalize_mix_plan_defaults(mix_plan)
+    validation = validate_mix_plan(plan, asset_mappings=asset_mappings or [])
+    issues = list(validation.get("issues") or [])
+    warnings = list(validation.get("warnings") or [])
+    applied_layers: list[str] = []
+    skipped_layers: list[str] = []
+
+    try:
+        base = AudioSegment.from_file(dialogue)
+    except Exception as exc:
+        return {
+            "mixed": False,
+            "output_path": str(output),
+            "issues": [f"could not read dialogue audio: {exc}"],
+            "warnings": warnings,
+            "skipped_layers": skipped_layers,
+            "applied_layers": applied_layers,
+        }
+
+    mixed = base
+    for layer in plan.get("layers", []):
+        if not isinstance(layer, Mapping):
+            continue
+        layer_type = str(layer.get("type") or "").lower()
+        if layer_type == "dialogue":
+            continue
+        layer_id = str(layer.get("layer_id") or layer_type)
+        asset_path = _first_existing_asset(layer)
+        if asset_path is None:
+            skipped_layers.append(layer_id)
+            continue
+        try:
+            segment = AudioSegment.from_file(asset_path)
+        except Exception as exc:
+            issues.append(f"{layer_id}: could not read asset {asset_path}: {exc}")
+            skipped_layers.append(layer_id)
+            continue
+
+        segment += _volume_to_db(layer.get("volume")) or 0.0
+        start_ms = _layer_start_ms(layer, duration_ms=len(base))
+        if layer_type in BED_LAYER_TYPES:
+            segment = _loop_to_duration(segment, max(1, len(base) - start_ms))
+        mixed = mixed.overlay(segment, position=start_ms)
+        applied_layers.append(layer_id)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        mixed.export(output, format=_export_format(output))
+    except Exception as exc:
+        return {
+            "mixed": False,
+            "output_path": str(output),
+            "issues": [*issues, f"could not export mixed audio: {exc}"],
+            "warnings": warnings,
+            "skipped_layers": skipped_layers,
+            "applied_layers": applied_layers,
+        }
+    return {
+        "mixed": True,
+        "output_path": str(output),
+        "issues": _dedupe_preserve_order(issues),
+        "warnings": _dedupe_preserve_order(warnings),
+        "skipped_layers": skipped_layers,
+        "applied_layers": applied_layers,
+        "duration_ms": len(mixed),
+    }
+
+
 def _candidate_entries(
     asset_mappings: AssetCandidate | Mapping[str, Any] | Sequence[AssetCandidate | Mapping[str, Any]],
     *,
@@ -192,6 +295,45 @@ def _candidate_entries(
                 }
             )
     return entries
+
+
+def _first_existing_asset(layer: Mapping[str, Any]) -> Path | None:
+    selected = str(layer.get("selected_asset") or "").strip()
+    candidates = [selected] if selected else _layer_candidate_paths(layer)
+    for candidate in candidates:
+        path = Path(candidate)
+        if path.exists():
+            return path
+    return None
+
+
+def _layer_start_ms(layer: Mapping[str, Any], *, duration_ms: int) -> int:
+    timing = layer.get("timing")
+    anchor: Mapping[str, Any] | None = None
+    if isinstance(timing, Mapping):
+        raw_anchor = timing.get("anchor") or timing.get("start_anchor")
+        if isinstance(raw_anchor, Mapping):
+            anchor = raw_anchor
+    clean_offset = _to_float(anchor.get("clean_offset") if anchor else None)
+    if clean_offset is None or clean_offset <= 0:
+        return 0
+    # Until renderer timestamps exist, treat roughly 15 chars as one spoken second.
+    approx_ms = int((clean_offset / 15.0) * 1000)
+    return max(0, min(duration_ms, approx_ms))
+
+
+def _loop_to_duration(segment: Any, duration_ms: int) -> Any:
+    if len(segment) <= 0:
+        return segment
+    loops = (duration_ms // len(segment)) + 1
+    return (segment * loops)[:duration_ms]
+
+
+def _export_format(output_path: Path) -> str:
+    suffix = output_path.suffix.lower().lstrip(".")
+    if suffix in {"mp3", "wav", "ogg", "flac"}:
+        return suffix
+    return "mp3"
 
 
 def _selection_sort_key(entry: Mapping[str, Any]) -> tuple[int, int, int, str]:

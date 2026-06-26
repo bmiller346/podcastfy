@@ -7,6 +7,7 @@ const taskPreview = document.querySelector("#task-preview");
 const activeSeriesInput = document.querySelector("#active-series-id");
 const seriesSelect = document.querySelector("#series-select");
 const seriesStatus = document.querySelector("#series-status");
+const seriesArtifacts = document.querySelector("#series-artifacts");
 const useTaskSeriesButton = document.querySelector("#use-task-series");
 const loadActiveSeriesButton = document.querySelector("#load-active-series");
 const newSeriesPackageButton = document.querySelector("#new-series-package");
@@ -249,6 +250,7 @@ function renderEpisode(episode) {
   const qa = episode.qa || {};
   const qaText = qa.status && qa.status !== "unknown" ? qa.status : "not reviewed";
   const parts = episode.regenerable_parts || [];
+  const partStatus = renderEpisodePartStatus(episode, parts);
   const audio = episode.audio
     ? `<audio controls preload="none" src="${escapeHtml(episode.audio.url)}"></audio>
        <div class="audio-meta">
@@ -268,8 +270,65 @@ function renderEpisode(episode) {
     ${prompt}
     <div class="episode-path">${escapeHtml(episode.path || "")}</div>
     ${audio}
-    <div class="muted">${parts.length} saved script part${parts.length === 1 ? "" : "s"}</div>
+    ${partStatus}
   </section>`;
+}
+
+function renderEpisodePartStatus(episode, parts) {
+  if (!parts.length) {
+    return `<div class="muted">No saved script parts yet.</div>`;
+  }
+  const items = parts.map((part) => {
+    const state = partUiState(episode, part);
+    return `<div class="part-status-card part-${escapeClass(state.key)}">
+      <div class="part-status-top">
+        <strong>${escapeHtml(partLabel(part))}</strong>
+        <span class="part-state">${escapeHtml(state.label)}</span>
+      </div>
+      <div class="part-path">${escapeHtml(part.relative_path || part.path || "")}</div>
+      <div class="part-detail">${escapeHtml(state.detail)}</div>
+    </div>`;
+  }).join("");
+  return `<div class="part-status-list" aria-label="Chapter part status">${items}</div>`;
+}
+
+function partUiState(episode, part) {
+  const metadata = episode.metadata && typeof episode.metadata === "object" ? episode.metadata : {};
+  const qa = episode.qa || {};
+  const partId = cleanPartId(part);
+  const statusText = [
+    part.status,
+    part.state,
+    part.verdict,
+    metadata.part_statuses && metadata.part_statuses[partId],
+    metadata.part_verdicts && metadata.part_verdicts[partId],
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  const locked = Boolean(part.locked || part.reused || part.reuse_source)
+    || Boolean(metadata.locked_part_scripts && metadata.locked_part_scripts[partId])
+    || Boolean(metadata.reused_part_scripts && metadata.reused_part_scripts[partId]);
+  if (locked || /\b(locked|reused|cached)\b/.test(statusText)) {
+    return { key: "locked", label: "locked/reused", detail: "This saved part is being kept from a prior pass." };
+  }
+  if (/\b(fail|failed|block|blocked|error)\b/.test(statusText) || episode.status === "failed_render") {
+    return { key: "failed", label: "failed", detail: "Regenerate this part before another audio/render pass." };
+  }
+  if (part.ready === true || /\b(pass|passed|ready|approved|complete)\b/.test(statusText) || qa.ready) {
+    return { key: "passed", label: "passed", detail: "Available to keep or lock for reuse." };
+  }
+  return { key: "regen", label: "regenerate", detail: "Saved checkpoint is available for targeted regeneration." };
+}
+
+function cleanPartId(part) {
+  return cleanValue(part.part_id || part.id || part.name || part.relative_path || part.path)
+    .replace(/\.[^.]+$/, "")
+    .replace(/^.*[\\/]/, "");
+}
+
+function partLabel(part) {
+  const id = cleanPartId(part);
+  return id
+    ? id.replace(/^part[-_]?/i, "Part ").replace(/[-_]+/g, " ")
+    : "Saved part";
 }
 
 function escapeHtml(value) {
@@ -741,9 +800,46 @@ function renderSeriesPackage(data) {
   ].join("");
   packageSummary.textContent = data.summary || "No saved package summary yet.";
   packageOutput.textContent = JSON.stringify(data.package || {}, null, 2);
+  renderSeriesArtifacts(data);
   renderRoleEditor(data.package || buildPackageDraft());
   renderPackageRadar(summarizeSeriesPackage(data));
   updateDiagnostics();
+}
+
+function renderSeriesArtifacts(data) {
+  if (!seriesArtifacts) return;
+  const packageValue = data && data.package && typeof data.package === "object" ? data.package : {};
+  const artifacts = intakeArtifactsFromPackage(packageValue);
+  const tabs = [
+    ["series-plan", "Series Plan", renderSeriesPlanArtifact(artifacts.seriesPlan)],
+    ["chapter-outline", "Chapter Outline", renderChapterOutlineArtifact(artifacts.chapterOutline)],
+    ["story-bible", "Story Bible", renderStoryBibleArtifact(artifacts.storyBible)],
+    ["world-register", "World Register", renderWorldRegisterArtifact(artifacts.worldRegister)],
+    ["voice-cards", "Voice Cards", renderVoiceCardsArtifact(artifacts.voiceCards)],
+    ["foreshadow-ledger", "Foreshadow Ledger", renderForeshadowLedgerArtifact(artifacts.foreshadowLedger)],
+  ];
+  seriesArtifacts.innerHTML = `<div class="artifact-tabs">
+    ${tabs.map(([id, label], index) => `<button type="button" class="artifact-tab${index === 0 ? " active" : ""}" data-artifact-tab="${escapeHtml(id)}">${escapeHtml(label)}</button>`).join("")}
+  </div>
+  <div class="artifact-panels">
+    ${tabs.map(([id, label, content], index) => `<section id="artifact-${id}" class="artifact-panel${index === 0 ? " active" : ""}" data-artifact-panel="${escapeHtml(id)}">
+      <div class="artifact-panel-heading">
+        <h3>${escapeHtml(label)}</h3>
+        <span>${content.available ? escapeHtml(content.countLabel) : "not loaded"}</span>
+      </div>
+      ${content.html}
+    </section>`).join("")}
+  </div>`;
+}
+
+function selectArtifactTab(tabId) {
+  if (!seriesArtifacts) return;
+  for (const tab of seriesArtifacts.querySelectorAll("[data-artifact-tab]")) {
+    tab.classList.toggle("active", tab.dataset.artifactTab === tabId);
+  }
+  for (const panel of seriesArtifacts.querySelectorAll("[data-artifact-panel]")) {
+    panel.classList.toggle("active", panel.dataset.artifactPanel === tabId);
+  }
 }
 
 function renderRoleEditor(packageValue) {
@@ -1240,6 +1336,178 @@ function renderRadarColumn(title, items, formatter) {
   </section>`;
 }
 
+function intakeArtifactsFromPackage(packageValue) {
+  const source = packageValue && typeof packageValue === "object" ? packageValue : {};
+  return {
+    seriesPlan: firstObject(source.series_plan, source.seriesPlan, source.series_shape, source.seriesShape),
+    chapterOutline: firstArrayOrObject(source.chapter_outline, source.chapterOutline, source.chapters, source.book_outline),
+    storyBible: firstObject(source.story_bible, source.storyBible, source.bible),
+    worldRegister: firstObject(source.world_register, source.worldRegister, source.continuity_register),
+    voiceCards: firstObject(source.voice_cards, source.voiceCards, source.voice_card_deck),
+    foreshadowLedger: firstObject(source.foreshadow_ledger, source.foreshadowLedger, source.foreshadowing),
+  };
+}
+
+function renderSeriesPlanArtifact(plan) {
+  if (!hasArtifact(plan)) return missingArtifact("Expected `series_plan` in the loaded series payload.");
+  const title = plan.title || plan.series_title || plan.name || "Untitled series";
+  const promise = plan.series_promise || plan.promise || plan.logline || plan.premise || "";
+  const facts = [
+    ["Series", title],
+    ["Books", plan.target_books || plan.books_count || plan.book_count],
+    ["Chapters/book", plan.chapters_per_book],
+    ["Endgame", plan.endgame_direction || plan.endgame],
+  ];
+  const books = packageArray(plan.books || plan.book_plans || plan.arcs);
+  return artifactResult(true, `${books.length || 1} plan item${books.length === 1 ? "" : "s"}`, `
+    ${artifactFacts(facts)}
+    ${promise ? `<p class="artifact-copy">${escapeHtml(promise)}</p>` : ""}
+    ${artifactCards(books, (book, index) => [
+      book.title || book.name || `Book ${book.book || book.book_number || index + 1}`,
+      book.arc || book.summary || book.promise || book.direction || "",
+      compactValues(book, ["theme", "villain", "major_turn", "payoff"]),
+    ])}`);
+}
+
+function renderChapterOutlineArtifact(outline) {
+  const chapters = artifactList(outline, ["chapters", "outline", "chapter_outline"]);
+  if (!chapters.length) return missingArtifact("Expected `chapter_outline` or chapter entries in the loaded series payload.");
+  return artifactResult(true, `${chapters.length} chapter${chapters.length === 1 ? "" : "s"}`, `
+    <div class="chapter-outline-list">
+      ${chapters.slice(0, 24).map((chapter, index) => `<article class="chapter-outline-card">
+        <strong>${escapeHtml(chapter.title || chapter.name || `Chapter ${chapter.chapter || chapter.chapter_number || index + 1}`)}</strong>
+        <p>${escapeHtml(chapter.summary || chapter.beat || chapter.promise || chapter.goal || "")}</p>
+        <span>${escapeHtml(compactValues(chapter, ["book", "chapter", "pov", "status", "cliffhanger"]))}</span>
+      </article>`).join("")}
+    </div>`);
+}
+
+function renderStoryBibleArtifact(bible) {
+  if (!hasArtifact(bible)) return missingArtifact("Expected `story_bible` in the loaded series payload.");
+  const characters = packageArray(bible.characters || bible.cast || bible.character_facts);
+  return artifactResult(true, `${characters.length} character${characters.length === 1 ? "" : "s"}`, `
+    ${artifactCards(characters, (character) => [
+      character.character || character.name || character.role || "Unnamed character",
+      character.wound || character.arc || character.desire || character.current_coping_mode || "",
+      compactValues(character, ["class", "faction", "relationship_pressure", "secret", "status"]),
+    ]) || `<p class="artifact-copy">${escapeHtml(stringifyCompact(bible))}</p>`}`);
+}
+
+function renderWorldRegisterArtifact(register) {
+  if (!hasArtifact(register)) return missingArtifact("Expected `world_register` in the loaded series payload.");
+  const locations = packageArray(register.locations || register.places);
+  const entities = packageArray(register.entity_ecology || register.entities || register.mobs);
+  const rules = artifactList(register.rules || register.floor_rules || register.system_rules);
+  const items = [...locations, ...entities, ...rules].slice(0, 18);
+  return artifactResult(true, `${items.length} world item${items.length === 1 ? "" : "s"}`, `
+    ${artifactCards(items, (item, index) => [
+      item.name || item.entity || item.rule || item.title || `World item ${index + 1}`,
+      item.detail || item.description || item.effect || item.notes || "",
+      compactValues(item, ["floor", "location", "type", "status", "scarcity"]),
+    ])}`);
+}
+
+function renderVoiceCardsArtifact(deck) {
+  if (!hasArtifact(deck)) return missingArtifact("Expected `voice_cards` in the loaded series payload.");
+  const cards = packageArray(deck.cards || deck.voice_cards || deck);
+  return artifactResult(true, `${cards.length} voice card${cards.length === 1 ? "" : "s"}`, `
+    ${artifactCards(cards, (card) => [
+      card.character || card.name || card.role || "Unnamed voice",
+      card.voice || card.delivery || card.baseline || card.performance || "",
+      compactValues(card, ["tone", "pace", "accent", "avoid", "sample_line"]),
+    ])}`);
+}
+
+function renderForeshadowLedgerArtifact(ledger) {
+  if (!hasArtifact(ledger)) return missingArtifact("Expected `foreshadow_ledger` in the loaded series payload.");
+  const entries = [
+    ...artifactList(ledger.planted),
+    ...artifactList(ledger.ready_to_pay),
+    ...artifactList(ledger.paid),
+  ];
+  return artifactResult(true, `${entries.length} thread${entries.length === 1 ? "" : "s"}`, `
+    ${artifactCards(entries, (entry) => [
+      entry.mystery || entry.name || entry.thread || "Unnamed thread",
+      entry.detail || entry.plant || entry.payoff || "",
+      compactValues(entry, ["status", "planted_book", "planted_chapter", "payoff_book", "intended_payoff_start", "intended_payoff_end"]),
+    ])}`);
+}
+
+function artifactResult(available, countLabel, html) {
+  return { available, countLabel, html };
+}
+
+function missingArtifact(message) {
+  return artifactResult(false, "not loaded", `<div class="artifact-empty">${escapeHtml(message)}</div>`);
+}
+
+function hasArtifact(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value && typeof value === "object" && Object.keys(value).length);
+}
+
+function artifactList(value, nestedKeys = []) {
+  if (Array.isArray(value)) return value.filter((item) => item && typeof item === "object");
+  if (value && typeof value === "object") {
+    for (const key of nestedKeys) {
+      const nested = artifactList(value[key]);
+      if (nested.length) return nested;
+    }
+    return packageArray(value);
+  }
+  return [];
+}
+
+function artifactFacts(facts) {
+  const rows = facts.filter(([, value]) => cleanValue(value));
+  if (!rows.length) return "";
+  return `<dl class="artifact-facts">${rows.map(([label, value]) => `
+    <div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`;
+}
+
+function artifactCards(items, formatter) {
+  if (!items.length) return "";
+  return `<div class="artifact-card-grid">${items.slice(0, 18).map((item, index) => {
+    const [title, body, meta] = formatter(item, index);
+    return `<article class="artifact-card">
+      <strong>${escapeHtml(title)}</strong>
+      ${body ? `<p>${escapeHtml(body)}</p>` : ""}
+      ${meta ? `<span>${escapeHtml(meta)}</span>` : ""}
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function compactValues(item, keys) {
+  return keys
+    .map((key) => {
+      const value = item && item[key];
+      if (Array.isArray(value)) return value.length ? `${labelize(key)}: ${value.slice(0, 3).join(", ")}` : "";
+      if (value && typeof value === "object") return `${labelize(key)}: ${stringifyCompact(value)}`;
+      return cleanValue(value) ? `${labelize(key)}: ${value}` : "";
+    })
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function stringifyCompact(value) {
+  return JSON.stringify(value || {})
+    .replace(/[{}\[\]"]/g, "")
+    .replace(/,/g, ", ")
+    .slice(0, 220);
+}
+
+function firstObject(...values) {
+  return values.find((value) => value && typeof value === "object" && !Array.isArray(value)) || {};
+}
+
+function firstArrayOrObject(...values) {
+  return values.find((value) => value && typeof value === "object") || {};
+}
+
+function labelize(value) {
+  return String(value).replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function analyzePremise(premise, genre = "") {
   const lower = premise.toLowerCase();
   const genreText = genre.toLowerCase();
@@ -1733,6 +2001,14 @@ if (nextActions) {
     runQuickAction(target.dataset.action).catch((error) => {
       taskOutput.textContent = error.message;
     });
+  });
+}
+
+if (seriesArtifacts) {
+  seriesArtifacts.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!target || !target.dataset || !target.dataset.artifactTab) return;
+    selectArtifactTab(target.dataset.artifactTab);
   });
 }
 

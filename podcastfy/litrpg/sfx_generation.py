@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 import re
+import wave
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -193,6 +195,55 @@ def promote_generated_asset_request(
     }
 
 
+def render_local_sfx_request(
+    request: GenerateSfxRequest | Mapping[str, Any],
+    *,
+    output_path: str | Path | None = None,
+    sample_rate: int = 44100,
+) -> dict[str, Any]:
+    """Render a small deterministic WAV artifact for a local SFX request.
+
+    This is intentionally simple: it gives the offline pipeline a real file to
+    pass through selection and mixing, while richer model-backed generation can
+    replace the renderer behind the same request shape later.
+    """
+    request_data = request.to_dict() if isinstance(request, GenerateSfxRequest) else dict(request)
+    cue_type = _normalize_cue_type(str(request_data.get("cue_type") or "sfx"))
+    duration = _coerce_duration(float(request_data.get("duration_seconds") or 2.0))
+    path = Path(output_path or request_data.get("cache_path") or sfx_cache_path(request_data.get("tag", "")))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if cue_type.endswith("_stop"):
+        return {
+            "rendered": False,
+            "output_path": str(path).replace("\\", "/"),
+            "status": "control_cue_no_audio",
+        }
+
+    frequency = _frequency_for_request(request_data)
+    amplitude = 0.22 if cue_type == "sfx" else 0.08
+    frame_count = max(1, int(sample_rate * float(duration)))
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(
+            b"".join(
+                _pcm16_sample(
+                    _enveloped_sine(index, frame_count, frequency, sample_rate, amplitude)
+                )
+                for index in range(frame_count)
+            )
+        )
+    return {
+        "rendered": True,
+        "output_path": str(path).replace("\\", "/"),
+        "status": "generated_unreviewed",
+        "sample_rate": sample_rate,
+        "duration_seconds": duration,
+        "trusted": False,
+    }
+
+
 def _normalize_cue_type(cue_type: str) -> str:
     return str(cue_type or "sfx").strip().lower().replace("-", "_")
 
@@ -252,3 +303,32 @@ def _manifest_stem(generated_path: Path, asset_root: Path) -> str:
     except (OSError, ValueError):
         return path_text
     return str(relative).replace("\\", "/")
+
+
+def _frequency_for_request(request_data: Mapping[str, Any]) -> float:
+    seed = _slug(str(request_data.get("tag") or request_data.get("prompt") or "sfx"))
+    total = sum(ord(char) for char in seed)
+    return 220.0 + float(total % 660)
+
+
+def _enveloped_sine(
+    index: int,
+    frame_count: int,
+    frequency: float,
+    sample_rate: int,
+    amplitude: float,
+) -> float:
+    attack = max(1, int(frame_count * 0.05))
+    release_start = max(attack, int(frame_count * 0.80))
+    if index < attack:
+        envelope = index / attack
+    elif index > release_start:
+        envelope = max(0.0, (frame_count - index) / max(1, frame_count - release_start))
+    else:
+        envelope = 1.0
+    return math.sin((2.0 * math.pi * frequency * index) / sample_rate) * amplitude * envelope
+
+
+def _pcm16_sample(value: float) -> bytes:
+    clipped = max(-1.0, min(1.0, value))
+    return int(clipped * 32767).to_bytes(2, byteorder="little", signed=True)

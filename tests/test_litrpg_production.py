@@ -153,6 +153,9 @@ def test_review_loop_prompts_cover_director_audits_and_revision():
     )
 
     assert "emotion" in director
+    assert "cue_id" in director
+    assert "render_hint" in director
+    assert "SFX, ducking, filters" in director
     assert "XP totals" in mechanics
     assert "physical limitation" in description
     assert "stakes_seriousness" in tonal

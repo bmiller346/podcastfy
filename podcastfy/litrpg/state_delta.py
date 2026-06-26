@@ -7,6 +7,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from podcastfy.litrpg.mechanics import validate_mechanics
+
 
 _ROLE_BLOCK_RE = re.compile(
     r"<(?P<role>[A-Za-z][A-Za-z0-9_-]*)(?:\s+[^>]*)?>(?P<text>.*?)</(?P=role)>",
@@ -30,7 +32,10 @@ _STAT_RE = re.compile(
 )
 
 
-def extract_state_delta(chapter_result: Mapping[str, Any]) -> dict[str, Any]:
+def extract_state_delta(
+    chapter_result: Mapping[str, Any],
+    mechanics_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Extract a serializable state delta from a LitRPG chapter result."""
 
     delta: dict[str, Any] = {
@@ -39,8 +44,11 @@ def extract_state_delta(chapter_result: Mapping[str, Any]) -> dict[str, Any]:
         "mechanics": {},
         "familiar_phrases": [],
         "announcer_notes": [],
+        "crowd_reactions": [],
+        "sponsor_reactions": [],
     }
     scripts = _chapter_scripts(chapter_result)
+    seen_mechanics = _seen_mechanics_from_terms(_gate_normalized_terms(chapter_result))
 
     for terms in _gate_normalized_terms(chapter_result):
         _append_many(delta["inventory_gained"], _terms_for_keys(terms, ("loot_gain", "inventory_add")))
@@ -50,8 +58,20 @@ def extract_state_delta(chapter_result: Mapping[str, Any]) -> dict[str, Any]:
         )
         _extract_mechanics_terms(delta["mechanics"], terms)
 
-    for event in _gate_events(chapter_result):
+    gate_events = _gate_events(chapter_result)
+    for event in gate_events:
+        seen_mechanics.add(_event_signature(event))
         _extract_event(delta, event)
+
+    if mechanics_context is not None:
+        for event in _validated_script_events(scripts, mechanics_context):
+            signature = _event_signature(event)
+            if signature in seen_mechanics:
+                continue
+            seen_mechanics.add(signature)
+            _extract_event(delta, event)
+
+    _extract_showmanship_reactions(delta, chapter_result)
 
     for script in scripts:
         _append_many(delta["familiar_phrases"], _familiar_phrases(script))
@@ -83,6 +103,8 @@ def apply_delta_to_state(state: Any, delta: Mapping[str, Any]) -> Any:
     _merge_list_field(updated, "announcer_notes_log", _string_list(delta.get("announcer_notes")))
     familiar_key = _existing_familiar_phrase_key(updated) or "pedro_phrases"
     _merge_list_field(updated, familiar_key, _string_list(delta.get("familiar_phrases")))
+    _merge_record_list_field(updated, "crowd_reactions", _mapping_list(delta.get("crowd_reactions")))
+    _merge_record_list_field(updated, "sponsor_reactions", _mapping_list(delta.get("sponsor_reactions")))
 
     if mechanics:
         _apply_mechanics(updated, mechanics)
@@ -100,9 +122,11 @@ def _extract_event(delta: dict[str, Any], event: Mapping[str, Any]) -> None:
     if kind in {"loot_gain", "inventory_add"} and display:
         _append_unique_in_place(delta["inventory_gained"], display)
     elif kind in {"item_consumed", "inventory_remove", "inventory_lost"} and (term or display):
-        _append_unique_in_place(delta["inventory_lost"], term or display)
+        _record_inventory_loss(delta, term or display)
     elif kind == "xp_gain" and amount is not None:
         mechanics["xp_gained"] = int(mechanics.get("xp_gained") or 0) + amount
+    elif kind == "xp_spend" and amount is not None:
+        mechanics["xp_gained"] = int(mechanics.get("xp_gained") or 0) - amount
     elif kind == "xp_total" and amount is not None:
         mechanics["xp"] = amount
     elif kind == "skill_learned" and display:
@@ -113,6 +137,10 @@ def _extract_event(delta: dict[str, Any], event: Mapping[str, Any]) -> None:
         mechanics["class"] = display
     elif kind == "stat_mention" and display:
         _merge_stat_term(mechanics, display)
+    elif kind == "cooldown_start" and (term or display):
+        _merge_cooldown_term(mechanics, term or display, "active")
+    elif kind == "cooldown_ready" and (term or display):
+        _merge_cooldown_term(mechanics, term or display, "ready")
 
 
 def _extract_mechanics_terms(mechanics: dict[str, Any], terms: Mapping[str, Any]) -> None:
@@ -132,6 +160,110 @@ def _extract_mechanics_terms(mechanics: dict[str, Any], terms: Mapping[str, Any]
         _append_unique_in_mapping_list(mechanics, "skills_lost", skill)
     for stat in _terms_for_keys(terms, ("stats", "stat_mention")):
         _merge_stat_term(mechanics, stat)
+
+
+def _seen_mechanics_from_terms(terms_list: Sequence[Mapping[str, Any]]) -> set[tuple[str, int | None, str]]:
+    seen: set[tuple[str, int | None, str]] = set()
+    for terms in terms_list:
+        for kind, keys in {
+            "loot_gain": ("loot_gain", "inventory_add"),
+            "item_consumed": ("item_consumed", "inventory_remove", "inventory_lost"),
+            "xp_gain": ("xp_gained", "xp_gain"),
+            "skill_learned": ("skills_gained", "skill_learned"),
+            "skill_lost": ("skills_lost", "skill_lost", "skill_removed"),
+            "class_mention": ("class", "class_mention"),
+            "stat_mention": ("stats", "stat_mention"),
+        }.items():
+            for value in _terms_for_keys(terms, keys):
+                seen.add(_term_signature(kind, value))
+    return seen
+
+
+def _event_signature(event: Mapping[str, Any]) -> tuple[str, int | None, str]:
+    kind = str(event.get("kind") or "")
+    amount = _optional_int(event.get("amount"))
+    if amount is not None and kind.startswith("xp"):
+        return kind, amount, ""
+    value = str(event.get("term") or event.get("display") or "")
+    return _term_signature(kind, value)
+
+
+def _term_signature(kind: str, value: str) -> tuple[str, int | None, str]:
+    normalized_kind = {
+        "inventory_add": "loot_gain",
+        "inventory_remove": "item_consumed",
+        "inventory_lost": "item_consumed",
+        "xp_gained": "xp_gain",
+        "skills_gained": "skill_learned",
+        "skills_lost": "skill_lost",
+        "skill_removed": "skill_lost",
+    }.get(kind, kind)
+    amount = _optional_int(re.search(r"-?\d+", value).group(0) if re.search(r"-?\d+", value) else None)
+    if amount is not None and normalized_kind.startswith("xp"):
+        return normalized_kind, amount, ""
+    return normalized_kind, None, _normalize(value)
+
+
+def _record_inventory_loss(delta: dict[str, Any], item: str) -> None:
+    gained = delta["inventory_gained"]
+    remaining = _remove_normalized(gained, item)
+    if len(remaining) != len(gained):
+        delta["inventory_gained"] = remaining
+        return
+    _append_unique_in_place(delta["inventory_lost"], item)
+
+
+def _validated_script_events(
+    scripts: Sequence[str],
+    mechanics_context: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    events: list[Mapping[str, Any]] = []
+    for script in scripts:
+        result = validate_mechanics(script, mechanics_context)
+        if not result.get("ready"):
+            continue
+        events.extend(event for event in result.get("events", []) if isinstance(event, Mapping))
+    return events
+
+
+def _extract_showmanship_reactions(
+    delta: dict[str, Any], chapter_result: Mapping[str, Any]
+) -> None:
+    for part in _qa_parts(chapter_result):
+        part_id = str(part.get("part_id") or "").strip()
+        scores = _mapping_or_empty(_mapping_or_empty(part.get("scores")).get("showmanship"))
+        audits = _mapping_or_empty(_mapping_or_empty(part.get("audits")).get("showmanship"))
+        verdict = str(audits.get("verdict") or "").strip()
+        notes = _string_list(audits.get("fixes")) + _string_list(audits.get("blocking_issues"))
+        crowd_score = _optional_int(scores.get("crowd_engagement"))
+        sponsor_score = _optional_int(scores.get("sponsor_appeal"))
+        if crowd_score is not None:
+            _append_record(delta["crowd_reactions"], _reaction_record(part_id, crowd_score, verdict, notes))
+        if sponsor_score is not None:
+            _append_record(delta["sponsor_reactions"], _reaction_record(part_id, sponsor_score, verdict, notes))
+
+
+def _qa_parts(chapter_result: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    qa = chapter_result.get("qa")
+    if not isinstance(qa, Mapping):
+        return []
+    parts = qa.get("parts")
+    if not isinstance(parts, list):
+        return []
+    return [part for part in parts if isinstance(part, Mapping)]
+
+
+def _reaction_record(
+    part_id: str, score: int, verdict: str, notes: Sequence[str]
+) -> dict[str, Any]:
+    record: dict[str, Any] = {"score": score}
+    if part_id:
+        record["part_id"] = part_id
+    if verdict:
+        record["verdict"] = verdict
+    if notes:
+        record["notes"] = list(notes)
+    return record
 
 
 def _apply_mechanics(state: Any, mechanics: Mapping[str, Any]) -> None:
@@ -287,6 +419,12 @@ def _merge_stat_term(mechanics: dict[str, Any], term: str) -> None:
     stats[match.group("key").lower()] = value if value is not None else term
 
 
+def _merge_cooldown_term(mechanics: dict[str, Any], term: str, state: str) -> None:
+    cooldowns = mechanics.setdefault("cooldowns", {})
+    if isinstance(cooldowns, dict):
+        cooldowns[str(term)] = state
+
+
 def _read_inventory(state: Any) -> list[str]:
     character = _character_container(state)
     return _read_list(character, "inventory")
@@ -314,6 +452,15 @@ def _merge_list_field(state: Any, key: str, values: list[str]) -> None:
     _write_value(state, key, merged)
 
 
+def _merge_record_list_field(state: Any, key: str, values: list[dict[str, Any]]) -> None:
+    if not values:
+        return
+    merged = _read_record_list(state, key)
+    for value in values:
+        _append_record(merged, value)
+    _write_value(state, key, merged)
+
+
 def _existing_familiar_phrase_key(state: Any) -> str | None:
     for key in ("familiar_phrases", "pedro_phrases"):
         if _has_key_or_attr(state, key):
@@ -331,6 +478,11 @@ def _read_list(container: Any, key: str) -> list[str]:
 def _read_mapping(container: Any, key: str) -> dict[str, Any]:
     value = _read_value(container, key)
     return copy.deepcopy(value) if isinstance(value, Mapping) else {}
+
+
+def _read_record_list(container: Any, key: str) -> list[dict[str, Any]]:
+    value = _read_value(container, key)
+    return _mapping_list(value)
 
 
 def _read_value(container: Any, key: str) -> Any:
@@ -386,6 +538,12 @@ def _string_list(value: Any) -> list[str]:
     return [text] if text else []
 
 
+def _mapping_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [copy.deepcopy(dict(item)) for item in value if isinstance(item, Mapping)]
+
+
 def _append_many(values: list[str], incoming: Sequence[str]) -> None:
     for value in incoming:
         _append_unique_in_place(values, value)
@@ -407,6 +565,12 @@ def _append_unique_in_place(values: list[str], value: str) -> None:
     normalized = _normalize(value)
     if normalized and normalized not in {_normalize(item) for item in values}:
         values.append(value)
+
+
+def _append_record(values: list[dict[str, Any]], value: Mapping[str, Any]) -> None:
+    record = copy.deepcopy(dict(value))
+    if record and record not in values:
+        values.append(record)
 
 
 def _remove_normalized(values: list[str], value: str) -> list[str]:

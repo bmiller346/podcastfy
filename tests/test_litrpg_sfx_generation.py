@@ -6,6 +6,7 @@ from podcastfy.litrpg.sfx_generation import (
     build_local_sfx_prompt,
     create_generation_request,
     promote_generated_asset_request,
+    render_local_sfx_request,
     sfx_cache_path,
 )
 
@@ -104,3 +105,19 @@ def test_promote_generated_asset_request_returns_untrusted_manifest_entry(tmp_pa
     assert entry["source"] == "local_ai_generated"
     assert entry["trusted"] is False
     assert entry["status"] == "generated_unreviewed"
+
+
+def test_render_local_sfx_request_writes_valid_wav(tmp_path):
+    request = create_generation_request(
+        "menu tick",
+        duration_seconds=0.1,
+        output_dir=tmp_path,
+    )
+
+    result = render_local_sfx_request(request)
+
+    generated = Path(result["output_path"])
+    assert result["rendered"] is True
+    assert generated.exists()
+    assert generated.read_bytes().startswith(b"RIFF")
+    assert result["status"] == "generated_unreviewed"

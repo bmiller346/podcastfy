@@ -613,6 +613,152 @@ label {
   gap: 8px;
 }
 
+.series-artifacts {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.artifact-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.artifact-tab {
+  font-family: inherit;
+  min-height: 32px;
+  border: 1px solid #d4dae1;
+  border-radius: 6px;
+  background: #f7f9fb;
+  color: #495560;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.artifact-tab.active,
+.artifact-tab:hover {
+  border-color: #7c9ab5;
+  background: #eef5fb;
+  color: #26323d;
+}
+
+.artifact-panels {
+  display: grid;
+  gap: 12px;
+}
+
+.artifact-panel {
+  display: none;
+  gap: 10px;
+  border: 1px solid #e1e5ea;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.artifact-panel.active {
+  display: grid;
+}
+
+.artifact-panel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #e7eaee;
+  padding-bottom: 8px;
+}
+
+.artifact-panel-heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.artifact-panel-heading span,
+.artifact-card span,
+.chapter-outline-card span {
+  color: #66717d;
+  font-size: 12px;
+}
+
+.artifact-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.artifact-facts div {
+  border: 1px solid #e1e5ea;
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px;
+}
+
+.artifact-facts dt {
+  color: #66717d;
+  font-size: 12px;
+}
+
+.artifact-facts dd {
+  margin: 2px 0 0;
+  color: #26323d;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.artifact-copy {
+  margin: 0;
+  color: #495560;
+  font-size: 13px;
+}
+
+.artifact-card-grid,
+.chapter-outline-list,
+.part-status-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.artifact-card,
+.chapter-outline-card,
+.part-status-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #dbe1e7;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  min-width: 0;
+}
+
+.artifact-card strong,
+.chapter-outline-card strong,
+.part-status-card strong {
+  color: #26323d;
+  overflow-wrap: anywhere;
+}
+
+.artifact-card p,
+.chapter-outline-card p {
+  margin: 0;
+  color: #495560;
+  font-size: 13px;
+}
+
+.artifact-empty {
+  border: 1px dashed #cbd3dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #66717d;
+  padding: 12px;
+  font-size: 13px;
+}
+
 .status-item {
   border: 1px solid #e1e5ea;
   border-radius: 6px;
@@ -879,6 +1025,55 @@ label {
   overflow-wrap: anywhere;
 }
 
+.part-status-list {
+  margin-top: 2px;
+}
+
+.part-status-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.part-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.part-path,
+.part-detail {
+  color: #66717d;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.part-passed .part-state {
+  background: #eef8f0;
+  color: #286237;
+}
+
+.part-failed .part-state {
+  background: #fff0ed;
+  color: #8a3024;
+}
+
+.part-locked .part-state {
+  background: #eef5fb;
+  color: #315e86;
+}
+
+.part-regen .part-state {
+  background: #fff7df;
+  color: #6b5200;
+}
+
 .audio-meta {
   flex-wrap: wrap;
 }
@@ -915,6 +1110,10 @@ audio {
   .story-workshop-layout,
   .command-layout,
   .role-grid,
+  .artifact-facts,
+  .artifact-card-grid,
+  .chapter-outline-list,
+  .part-status-list,
   .status-list,
   .package-radar,
   .diagnostics-grid {

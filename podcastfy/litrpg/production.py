@@ -392,15 +392,19 @@ Series package context:
 Do not rewrite the prose. Add production intent only.
 
 For each meaningful spoken block or beat, identify:
+- cue_id: stable short id like cue-001, cue-002, in script order.
 - emotion: panic, dry irritation, triumph, disgust, grief, dread, awe, or another precise playable state.
 - delivery: whisper, bark, deadpan, breathless, smug, clipped, reverent, ragged, or another TTS-directable choice.
 - timing: beat, long pause, interrupt, overlap, speed-up, hard stop, or another timing instruction.
 - audio_effect: announcer slapback, radio filter, crowd swell, dungeon reverb, UI chime, low hit, or none.
+- intensity: 1-10.
+- scope: line, beat, scene, or transition.
+- render_hint: concise instruction a renderer or mixer can consume.
 
 Return compact JSON with:
 - summary
-- cues: an ordered list of role, trigger_text, emotion, delivery, timing, audio_effect.
-- render_notes: any global notes for casting or TTS.
+- cues: an ordered list of cue_id, role, trigger_text, emotion, delivery, timing, audio_effect, intensity, scope, render_hint.
+- render_notes: any global notes for casting, TTS, SFX, ducking, filters, or mix timing.
 
 Script:
 {part_script}

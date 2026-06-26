@@ -35,7 +35,13 @@ def _default_series_state(series_dir: str | Path) -> SeriesState:
         schema_version=STATE_SCHEMA_VERSION,
         quests=[],
         current_location="",
+        current_floor=None,
         memory=[],
+        mechanics={},
+        announcer_notes_log=[],
+        pedro_phrases=[],
+        crowd_reactions=[],
+        sponsor_reactions=[],
     )
 
 
@@ -64,7 +70,13 @@ def _series_state_from_dict(data: dict[str, Any]) -> SeriesState:
             for quest in quests_data
         ],
         current_location=str(data.get("current_location", "")),
+        current_floor=_optional_int(data.get("current_floor")),
         memory=list(data.get("memory") or []),
+        mechanics=dict(data.get("mechanics") or {}),
+        announcer_notes_log=list(data.get("announcer_notes_log") or []),
+        pedro_phrases=list(data.get("pedro_phrases") or []),
+        crowd_reactions=_mapping_list(data.get("crowd_reactions")),
+        sponsor_reactions=_mapping_list(data.get("sponsor_reactions")),
     )
 
 
@@ -94,3 +106,18 @@ def next_episode_number(state: SeriesState) -> int:
     """Return the next episode number for a state object."""
 
     return state.episode_number + 1
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mapping_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]

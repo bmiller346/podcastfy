@@ -1,5 +1,7 @@
 from podcastfy.litrpg.sfx import build_mix_plan, map_assets_for_cue, parse_cue_sheet
+from podcastfy.litrpg.sfx_generation import create_generation_request, render_local_sfx_request
 from podcastfy.litrpg.sfx_mix import (
+    mix_audio_locally,
     normalize_mix_plan_defaults,
     select_asset_candidates,
     validate_mix_plan,
@@ -220,3 +222,42 @@ def test_validate_mix_plan_warns_for_missing_ducking_on_beds():
 
     assert validation["ready"] is True
     assert validation["warnings"] == ["ambience:cue-001: missing ducking on ambience bed"]
+
+
+def test_mix_audio_locally_overlays_existing_sfx_asset(tmp_path):
+    dialogue = tmp_path / "dialogue.wav"
+    sfx = tmp_path / "tick.wav"
+    render_local_sfx_request(
+        create_generation_request("dialogue bed", duration_seconds=0.2),
+        output_path=dialogue,
+    )
+    render_local_sfx_request(
+        create_generation_request("menu tick", duration_seconds=0.05),
+        output_path=sfx,
+    )
+    output = tmp_path / "mixed.wav"
+    plan = {
+        "layers": [
+            {"layer_id": "dialogue", "type": "dialogue"},
+            {
+                "layer_id": "sfx:cue-001",
+                "type": "sfx",
+                "asset_candidates": [str(sfx)],
+                "volume": "-12db",
+                "timing": {"anchor": {"clean_offset": 0}},
+            },
+        ],
+        "automations": [],
+        "issues": [],
+    }
+
+    result = mix_audio_locally(
+        dialogue_path=dialogue,
+        output_path=output,
+        mix_plan=plan,
+    )
+
+    assert result["mixed"] is True
+    assert output.exists()
+    assert result["applied_layers"] == ["sfx:cue-001"]
+    assert result["skipped_layers"] == []

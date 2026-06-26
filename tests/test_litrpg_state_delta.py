@@ -139,3 +139,94 @@ def test_apply_delta_to_state_uses_existing_familiar_phrase_key():
 
     assert "pedro_phrases" not in updated
     assert updated["familiar_phrases"] == ["Old chirp.", "New chirp."]
+
+
+def test_extract_state_delta_captures_showmanship_reaction_scores():
+    chapter_result = {
+        "qa": {
+            "parts": [
+                {
+                    "part_id": "boss-setpiece",
+                    "scores": {
+                        "showmanship": {
+                            "crowd_engagement": 8,
+                            "sponsor_appeal": 3,
+                        }
+                    },
+                    "audits": {
+                        "showmanship": {
+                            "verdict": "revise",
+                            "fixes": ["Make sponsor value clearer."],
+                        }
+                    },
+                }
+            ]
+        }
+    }
+
+    delta = extract_state_delta(chapter_result)
+
+    assert delta["crowd_reactions"] == [
+        {
+            "part_id": "boss-setpiece",
+            "score": 8,
+            "verdict": "revise",
+            "notes": ["Make sponsor value clearer."],
+        }
+    ]
+    assert delta["sponsor_reactions"] == [
+        {
+            "part_id": "boss-setpiece",
+            "score": 3,
+            "verdict": "revise",
+            "notes": ["Make sponsor value clearer."],
+        }
+    ]
+
+
+def test_apply_delta_to_state_merges_crowd_and_sponsor_reaction_history():
+    state = {
+        "character": {"inventory": []},
+        "crowd_reactions": [{"part_id": "cold-open", "score": 6}],
+        "sponsor_reactions": [],
+    }
+    delta = {
+        "crowd_reactions": [
+            {"part_id": "cold-open", "score": 6},
+            {"part_id": "boss-setpiece", "score": 9},
+        ],
+        "sponsor_reactions": [{"part_id": "boss-setpiece", "score": 4}],
+    }
+
+    updated = apply_delta_to_state(state, delta)
+
+    assert updated["crowd_reactions"] == [
+        {"part_id": "cold-open", "score": 6},
+        {"part_id": "boss-setpiece", "score": 9},
+    ]
+    assert updated["sponsor_reactions"] == [{"part_id": "boss-setpiece", "score": 4}]
+
+
+def test_extract_state_delta_uses_validated_script_events_with_context():
+    result = {
+        "script": (
+            "<SYSTEM>Loot gained: mana flask. +25 XP. XP total: 125. "
+            "Skill unlocked: Spark.</SYSTEM>"
+            "<HERO>I activate Spark and consume mana flask.</HERO>"
+        )
+    }
+
+    delta = extract_state_delta(
+        result,
+        mechanics_context={
+            "xp": 100,
+            "inventory": [],
+            "skills": [],
+            "class": "Apprentice Auditor",
+        },
+    )
+
+    assert "inventory_gained" not in delta
+    assert "inventory_lost" not in delta
+    assert delta["mechanics"]["xp_gained"] == 25
+    assert delta["mechanics"]["skills_gained"] == ["Spark"]

@@ -10,6 +10,7 @@ from podcastfy.litrpg.config import LitRPGConfig, load_litrpg_config
 from podcastfy.litrpg.engine import LitRPGEngine
 from podcastfy.litrpg.episode_store import EpisodeStore
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
+from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, next_episode_number
 from podcastfy.litrpg.state_store import save_series_state
 
@@ -112,10 +113,27 @@ def generate_litrpg_audio_episode(
     )
 
     if not result.get("replayed"):
+        state = apply_delta_to_state(
+            state,
+            extract_state_delta(result, mechanics_context=_mechanics_context_from_state(state)),
+        )
         state.episode_number = max(state.episode_number, resolved_episode_number)
         save_series_state(series_dir, state)
 
     return result
+
+
+def _mechanics_context_from_state(state: Any) -> dict[str, Any]:
+    character = state.character
+    return {
+        "inventory": list(character.inventory),
+        "skills": list(character.skills),
+        "class": character.character_class,
+        "level": character.level,
+        "xp": dict(character.stats).get("xp"),
+        "stats": dict(character.stats),
+        "cooldowns": dict(state.mechanics.get("cooldowns") or {}),
+    }
 
 
 def _resolve_episode_number(

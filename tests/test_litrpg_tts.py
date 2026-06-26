@@ -1,6 +1,11 @@
 import pytest
 
-from podcastfy.litrpg.script_parser import RoleScriptParseError, parse_role_script
+from podcastfy.litrpg.renderer import RoleScriptRenderer
+from podcastfy.litrpg.script_parser import (
+    RoleScriptParseError,
+    parse_role_script,
+    validate_audio_readiness,
+)
 from podcastfy.tts.script_parser import parse_role_script as parse_generic_role_script
 from podcastfy.text_to_speech import TextToSpeech
 from podcastfy.tts.base import TTSProvider
@@ -225,3 +230,52 @@ def test_existing_split_qa_still_pairs_person_tags():
     )
 
     assert pairs == [("Hello there", "General Kenobi")]
+
+
+def test_audio_readiness_gate_blocks_expensive_tts_failures():
+    long_line = "x" * 40
+    report = validate_audio_readiness(
+        f'Loose note.\n<HERO emotion="grim">{long_line}</HERO><NPC>Hi</NPC>',
+        allowed_roles=["HERO", "SYSTEM"],
+        required_roles=["HERO", "SYSTEM"],
+        voice_map={"HERO": "voice-h"},
+        max_line_chars=20,
+    )
+
+    codes = {issue.code for issue in report.issues}
+
+    assert report.ready is False
+    assert {
+        "text_outside_role_tags",
+        "unsupported_attribute",
+        "unsupported_role",
+        "missing_required_role",
+        "overlong_line",
+        "missing_voice",
+    }.issubset(codes)
+
+
+def test_role_renderer_runs_readiness_before_tts_money(tmp_path):
+    class RecordingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def convert_script_to_speech(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+    tts = RecordingTTS()
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    renderer = RoleScriptRenderer(tts=tts)
+
+    with pytest.raises(ValueError, match="audio readiness failed"):
+        renderer.render_episode(
+            {
+                "script": '<HERO emotion="grim">Nope.</HERO>',
+                "storage_metadata": {"bundle_path": str(bundle_path)},
+                "config": {"voices": {"HERO": {"voice": "voice-h"}}},
+                "role_tags": ["HERO"],
+            }
+        )
+
+    assert tts.calls == []
