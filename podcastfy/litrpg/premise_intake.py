@@ -140,6 +140,56 @@ Premise dump:
 """
 
 
+def build_premise_intake_repair_prompt(
+    *,
+    premise: str,
+    series_id: str,
+    chapters_per_book: int,
+    validation_error: str,
+    previous_payload: Mapping[str, Any],
+) -> str:
+    """Build a focused repair prompt for a sparse premise-intake payload."""
+
+    previous = json.dumps(previous_payload, ensure_ascii=True, indent=2)[:12000]
+    return f"""Your previous premise intake JSON failed validation.
+
+Failure:
+{validation_error}
+
+Return ONLY the full corrected JSON object, using the same top-level schema:
+- series_shape
+- series_arc
+- book_outlines
+- story_bible
+- voice_cards
+- continuity_ledger
+- emotional_arcs
+- world_register
+- foreshadow_ledger
+
+Repair rules:
+- Preserve any useful valid sections from the previous payload, but replace generic/TBD material.
+- Do not summarize the premise. Extract concrete production artifacts.
+- The story_bible must include named characters from the source.
+- The voice_cards must include distinct character voice constraints.
+- The world_register must include concrete locations, floor rules, faction agendas,
+  entities/mobs, economy/currencies/trade goods, scarcity/costs, and vehicle/base mechanics.
+- The book_outlines for book 1 should include as many chapter entries as the source gives;
+  target {chapters_per_book} if the source has a 30-chapter outline.
+- Preserve source names and anchors such as Edward, Kelli, Pedro, Sophie II, Sophie the cockatoo,
+  Gallowgate, Grand Dredger, Drowned Scaffolding, Glass Dunes, Mycelial Canopy, Barnacle Scrip,
+  OSHA Wraiths, Barnacle Mimics, and Rebar Gargoyles when present.
+
+Series id: {series_id}
+
+Previous payload:
+{previous}
+
+Source premise:
+{premise}
+"""
+
+
 def run_premise_intake(
     *,
     storage_dir: str | Path,
@@ -174,7 +224,19 @@ def run_premise_intake(
     )
     raw = llm.generate(prompt=prompt, stage="premise_intake")
     payload = extract_premise_intake_json(str(raw))
-    validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+    try:
+        validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+    except ValueError as exc:
+        repair_prompt = build_premise_intake_repair_prompt(
+            premise=premise,
+            series_id=series_id,
+            chapters_per_book=chapters_per_book,
+            validation_error=str(exc),
+            previous_payload=payload,
+        )
+        repaired_raw = llm.generate(prompt=repair_prompt, stage="premise_intake_repair")
+        payload = extract_premise_intake_json(str(repaired_raw))
+        validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     return save_premise_intake_payload(
         storage_dir=storage_dir,
         series_id=series_id,

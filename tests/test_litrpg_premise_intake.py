@@ -4,6 +4,7 @@ from podcastfy.litrpg.bible import load_story_bible
 from podcastfy.litrpg.continuity import load_continuity_ledger, load_world_register
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger
 from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
+from podcastfy.litrpg.premise_intake import build_premise_intake_repair_prompt
 from podcastfy.litrpg.premise_intake import extract_premise_intake_json
 from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
@@ -21,6 +22,17 @@ class FakePremiseLLM:
     def generate(self, *, prompt, stage):
         self.calls.append({"prompt": prompt, "stage": stage})
         return "```json\n" + json.dumps(self.payload) + "\n```"
+
+
+class SequencePremiseLLM:
+    def __init__(self, payloads):
+        self.payloads = list(payloads)
+        self.calls = []
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        payload = self.payloads.pop(0)
+        return "```json\n" + json.dumps(payload) + "\n```"
 
 
 def test_extract_premise_intake_json_accepts_fenced_output():
@@ -55,6 +67,21 @@ def test_build_premise_intake_prompt_requires_story_architecture_artifacts():
     assert "currencies, trade goods, costs, scarcity" in prompt
     assert '"chapters_per_book": 30' in prompt
     assert "Edward, Kelli, Pedro" in prompt
+
+
+def test_build_premise_intake_repair_prompt_targets_failed_sections():
+    prompt = build_premise_intake_repair_prompt(
+        premise="Edward, Kelli, Pedro, Sophie II, and Gallowgate.",
+        series_id="knotty-buoy",
+        chapters_per_book=30,
+        validation_error="world_register was empty",
+        previous_payload={"world_register": {"locations": []}},
+    )
+
+    assert "world_register was empty" in prompt
+    assert "full corrected JSON object" in prompt
+    assert "Sophie II" in prompt
+    assert "vehicle/base mechanics" in prompt
 
 
 def test_save_premise_intake_payload_repairs_partial_payload(tmp_path):
@@ -219,6 +246,40 @@ def test_premise_intake_rejects_sparse_long_context_payload():
     assert "story_bible" in message
 
 
+def test_run_premise_intake_repairs_sparse_payload_before_saving(tmp_path):
+    sparse_payload = {
+        "series_shape": {
+            "series_title": "The Knotty Buoy",
+            "series_promise": "Generic LitRPG challenges.",
+        },
+        "story_bible": {"characters": {}},
+        "world_register": {"locations": [], "rules": [], "entity_ecology": []},
+    }
+    llm = SequencePremiseLLM([sparse_payload, _payload()])
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="knotty-buoy",
+        premise=(
+            "Edward and Kelli sail Sophie II with Pedro while Gallowgate and the "
+            "Grand Dredger turn the dungeon into a maritime debt trap. "
+            * 40
+        ),
+        llm=llm,
+        target_books=1,
+        chapters_per_book=3,
+        series_title="The Knotty Buoy",
+    )
+
+    assert [call["stage"] for call in llm.calls] == [
+        "premise_intake",
+        "premise_intake_repair",
+    ]
+    assert "too sparse or generic" in llm.calls[1]["prompt"]
+    assert any(path.endswith("world_register.json") for path in result.written_files)
+    assert load_world_register(tmp_path, "knotty-buoy").locations[0].name == "The Knotty Buoy"
+
+
 def test_litrpg_task_supports_premise_intake_mode(tmp_path):
     result = run_litrpg_task_data(
         {
@@ -334,7 +395,12 @@ def _payload():
                     "name": "Edward Marsh",
                     "voice_rules": ["Gruff South Jersey pragmatism under cosmic pressure."],
                     "equipped_gear": ["rusted crowbar"],
-                }
+                },
+                "Kelli Marsh": {
+                    "name": "Kelli Marsh",
+                    "voice_rules": ["Casino-risk clarity with old-married bite."],
+                    "relationship_pressure": ["Sophie the cockatoo remains a guilt anchor."],
+                },
             },
         },
         "voice_cards": {
@@ -384,6 +450,18 @@ def _payload():
                     "detail": "eat fiberglass hulls",
                     "floor": 1,
                     "location": "coral shelf",
+                }
+            ],
+            "rules": [
+                {
+                    "name": "Mobile Guild Hall Truce",
+                    "detail": "The Sophie II is mistakenly protected as a guild hall interior.",
+                }
+            ],
+            "economy_anchors": [
+                {
+                    "name": "Barnacle Scrip",
+                    "detail": "Used for repairs, dungeon epoxy, and maritime fees.",
                 }
             ],
         },
