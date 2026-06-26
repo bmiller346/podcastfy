@@ -146,9 +146,9 @@ def _run_premise_intake_task(
     llm: Any,
 ):
     premise = str(
-        task.get("premise")
-        or task.get("source_text")
+        task.get("source_text")
         or task.get("premise_dump")
+        or task.get("premise")
         or ""
     ).strip()
     if not premise and task.get("premise_path"):

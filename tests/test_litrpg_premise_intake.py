@@ -238,6 +238,28 @@ def test_litrpg_task_supports_premise_intake_mode(tmp_path):
     assert (tmp_path / "library" / "series" / "knotty-buoy" / "series_plan.json").exists()
 
 
+def test_premise_intake_prefers_source_text_over_short_premise(tmp_path):
+    llm = FakePremiseLLM(_payload())
+
+    run_litrpg_task_data(
+        {
+            "mode": "premise_intake",
+            "series_id": "knotty-buoy",
+            "storage_dir": "library",
+            "premise": "Short browser summary.",
+            "source_text": "Full markdown source with Edward, Kelli, Pedro, Sophie II, and Gallowgate.",
+            "target_books": 1,
+            "chapters_per_book": 3,
+        },
+        base_dir=tmp_path,
+        llm=llm,
+    )
+
+    prompt = llm.calls[0]["prompt"]
+    assert "Full markdown source" in prompt
+    assert "Short browser summary" not in prompt
+
+
 def _payload():
     return {
         "series_shape": {
