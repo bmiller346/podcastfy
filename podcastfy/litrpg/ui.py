@@ -620,21 +620,24 @@ def generate_series_package(
         raise RuntimeError("Series package generator is not installed yet")
     settings = load_litrpg_settings(SETTINGS_PATH)
     provider = str(settings.get("default_generation_provider") or "openai").lower()
-    if provider != "openai":
-        raise RuntimeError(f"Series package generation currently supports openai, not {provider!r}")
-    api_key = get_provider_api_key("openai", settings)
-    if not api_key:
+    if provider not in {"openai", "gemini", "geminiapi", "google"}:
         raise RuntimeError(
-            "Series package generator is not installed or OpenAI API key is not configured"
+            f"Series package generation currently supports openai or gemini, not {provider!r}"
         )
-    from podcastfy.litrpg.llm import OpenAIResponsesGenerator
-
-    llm = OpenAIResponsesGenerator(
-        api_key=api_key,
-        model=str(settings.get("default_model") or "gpt-5.4"),
-        reasoning_effort="low",
-        verbosity="medium",
+    model = str(
+        settings.get("default_model")
+        or ("gemini-2.5-flash" if provider in {"gemini", "geminiapi", "google"} else "gpt-5.4")
     )
+    try:
+        llm = _llm_from_task(
+            {"generation": {"provider": provider, "model": model, "reasoning_effort": "low"}},
+            settings=settings,
+        )
+    except ValueError as exc:
+        raise RuntimeError(
+            "Series package generator is not installed or provider API key is not configured: "
+            f"{exc}"
+        ) from exc
     for kwargs in (
         {
             "series_id": series_id,

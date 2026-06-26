@@ -17,7 +17,14 @@ from podcastfy.litrpg.continuity import load_emotional_arcs
 from podcastfy.litrpg.continuity import load_world_register
 from podcastfy.litrpg.foreshadowing import format_foreshadow_context
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger
-from podcastfy.litrpg.llm import IntentRoutingOpenAI, OllamaGenerator, OpenAIResponsesGenerator, StageRouterLLM
+from podcastfy.litrpg.llm import (
+    GeminiGenerator,
+    IntentRoutingGemini,
+    IntentRoutingOpenAI,
+    OllamaGenerator,
+    OpenAIResponsesGenerator,
+    StageRouterLLM,
+)
 from podcastfy.litrpg.llm import StageRouting
 from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
@@ -179,15 +186,14 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
     ).lower()
     if provider == "openai":
         return _openai_generator_from_config(generation, settings=settings)
+    if provider in {"gemini", "geminiapi", "google"}:
+        return _gemini_generator_from_config(generation, settings=settings)
     if provider == "ollama":
         return _ollama_generator_from_config(generation)
     if provider == "hybrid":
         return StageRouterLLM(
             local=_ollama_generator_from_config(generation),
-            default=_openai_generator_from_config(
-                _commercial_generation_config(generation),
-                settings=settings,
-            ),
+            default=_commercial_generator_from_config(generation, settings=settings),
             routing=StageRouting(
                 local_exact=_string_tuple(
                     generation.get("local_exact_stages"),
@@ -202,7 +208,8 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
         )
     raise ValueError(
         "Task must include outline and script fields, pass an llm, or configure "
-        "generation.provider=openai, generation.provider=ollama, or generation.provider=hybrid"
+        "generation.provider=openai, generation.provider=gemini, generation.provider=ollama, "
+        "or generation.provider=hybrid"
     )
 
 
@@ -256,6 +263,59 @@ def _openai_generator_from_config(
     )
 
 
+def _gemini_generator_from_config(
+    generation: Mapping[str, Any], *, settings: Mapping[str, Any]
+) -> GeminiGenerator | IntentRoutingGemini:
+    api_key = get_provider_api_key(str(generation.get("provider") or "gemini"), settings) or get_provider_api_key(
+        "gemini", settings
+    )
+    if not api_key:
+        raise ValueError(
+            "Gemini generation requires a valid API key. Set GEMINI_API_KEY or save "
+            "gemini_api_key in the LitRPG UI settings."
+        )
+    base_url = str(
+        generation.get("base_url")
+        or generation.get("api_base_url")
+        or "https://generativelanguage.googleapis.com/v1beta"
+    )
+    default_model = str(
+        generation.get("model")
+        or generation.get("commercial_model")
+        or settings.get("default_model")
+        or "gemini-2.5-flash"
+    )
+    if bool(generation.get("auto_model_routing")):
+        return IntentRoutingGemini(
+            api_key=api_key,
+            base_url=base_url,
+            default_model=str(generation.get("default_model") or generation.get("cheap_model") or "gemini-2.5-flash-lite"),
+            strong_model=str(generation.get("strong_model") or generation.get("commercial_model") or default_model),
+            cheap_model=str(generation.get("cheap_model") or generation.get("mini_model") or "gemini-2.5-flash-lite"),
+            nano_model=str(generation.get("nano_model") or "gemini-2.5-flash-lite"),
+            temperature=_optional_float(generation.get("temperature")),
+            top_p=_optional_float(generation.get("top_p")),
+            max_output_tokens=_optional_int(generation.get("max_output_tokens")),
+            max_retries=int(generation.get("max_retries") or 3),
+            retry_backoff_seconds=float(generation.get("retry_backoff_seconds") or 2.0),
+            timeout_seconds=_optional_timeout(generation, default=120.0),
+            prompt_char_threshold=int(generation.get("strong_prompt_char_threshold") or 12000),
+        )
+    return GeminiGenerator(
+        api_key=api_key,
+        model=default_model,
+        base_url=base_url,
+        system=str(generation.get("system") or generation.get("gemini_system") or "")
+        or None,
+        temperature=_optional_float(generation.get("temperature")),
+        top_p=_optional_float(generation.get("top_p")),
+        max_output_tokens=_optional_int(generation.get("max_output_tokens")),
+        max_retries=int(generation.get("max_retries") or 3),
+        retry_backoff_seconds=float(generation.get("retry_backoff_seconds") or 2.0),
+        timeout_seconds=_optional_timeout(generation, default=120.0),
+    )
+
+
 def _ollama_generator_from_config(generation: Mapping[str, Any]) -> OllamaGenerator:
     options = generation.get("ollama_options") or generation.get("local_options") or {}
     if not isinstance(options, Mapping):
@@ -293,12 +353,22 @@ def _ollama_generator_from_config(generation: Mapping[str, Any]) -> OllamaGenera
     )
 
 
+def _commercial_generator_from_config(generation: Mapping[str, Any], *, settings: Mapping[str, Any]) -> Any:
+    config = _commercial_generation_config(generation)
+    provider = str(config.get("provider") or "openai").lower()
+    if provider == "openai":
+        return _openai_generator_from_config(config, settings=settings)
+    if provider in {"gemini", "geminiapi", "google"}:
+        return _gemini_generator_from_config(config, settings=settings)
+    raise ValueError("generation.commercial_provider currently supports openai or gemini")
+
+
 def _commercial_generation_config(generation: Mapping[str, Any]) -> dict[str, Any]:
     provider = str(
         generation.get("commercial_provider") or generation.get("cloud_provider") or "openai"
     ).lower()
-    if provider != "openai":
-        raise ValueError("generation.commercial_provider currently supports only openai")
+    if provider not in {"openai", "gemini", "geminiapi", "google"}:
+        raise ValueError("generation.commercial_provider currently supports openai or gemini")
     config = dict(generation)
     config["provider"] = provider
     if generation.get("commercial_model") or generation.get("cloud_model"):
@@ -312,6 +382,18 @@ def _commercial_generation_config(generation: Mapping[str, Any]) -> dict[str, An
             "cloud_api_base_url"
         )
     return config
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
 
 
 def _optional_timeout(

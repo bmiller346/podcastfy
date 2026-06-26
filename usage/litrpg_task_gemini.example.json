@@ -7,10 +7,8 @@
   "render_audio": true,
   "replay_existing": true,
   "generation": {
-    "provider": "openai",
-    "model": "gpt-5.4",
-    "reasoning_effort": "medium",
-    "verbosity": "medium"
+    "provider": "gemini",
+    "model": "gemini-2.5-flash"
   },
   "tts": {
     "provider": "geminiapi",

@@ -15,11 +15,11 @@
   "generation": {
     "provider": "hybrid",
     "ollama_model": "dolphin3",
-    "commercial_model": "gpt-5.4",
+    "commercial_provider": "gemini",
+    "commercial_model": "gemini-2.5-flash",
     "auto_model_routing": true,
-    "cheap_model": "gpt-5.4-mini",
-    "nano_model": "gpt-5.4-nano",
-    "strong_reasoning_effort": "medium",
+    "cheap_model": "gemini-2.5-flash-lite",
+    "nano_model": "gemini-2.5-flash-lite",
     "local_exact_stages": [
       "script"
     ],

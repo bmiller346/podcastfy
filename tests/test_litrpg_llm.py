@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from podcastfy.litrpg.llm import GeminiGenerator, IntentRoutingGemini
 from podcastfy.litrpg.llm import IntentRoutingOpenAI, OllamaGenerator, OpenAIResponsesGenerator
 from podcastfy.litrpg.llm import StageRouterLLM, StageRouting
 from podcastfy.litrpg.llm import classify_openai_intent
@@ -158,6 +159,74 @@ def test_ollama_generator_posts_generate_payload(monkeypatch):
         "system": "Write as dark satire.",
         "options": {"temperature": 0.85, "num_ctx": 32768},
     }
+
+
+def test_gemini_generator_posts_generate_content_payload(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        captured["headers"] = dict(request.headers)
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeHTTPResponse(
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": "gemini prose"}],
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("podcastfy.litrpg.llm.urllib.request.urlopen", fake_urlopen)
+    generator = GeminiGenerator(
+        api_key="gemini-key",
+        model="gemini-2.5-flash",
+        system="Return JSON.",
+        temperature=0.2,
+        top_p=0.9,
+        max_output_tokens=1024,
+        timeout_seconds=33,
+        max_retries=1,
+    )
+
+    text = generator.generate(prompt="Extract seed", stage="premise_intake")
+
+    assert text == "gemini prose"
+    assert captured["url"] == (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-2.5-flash:generateContent"
+    )
+    assert captured["timeout"] == 33
+    assert captured["headers"]["X-goog-api-key"] == "gemini-key"
+    assert captured["payload"]["contents"][0]["parts"] == [{"text": "Extract seed"}]
+    assert captured["payload"]["systemInstruction"] == {"parts": [{"text": "Return JSON."}]}
+    assert captured["payload"]["generationConfig"] == {
+        "temperature": 0.2,
+        "topP": 0.9,
+        "maxOutputTokens": 1024,
+    }
+
+
+def test_intent_routing_gemini_selects_flash_for_strong_and_lite_for_cheap():
+    router = IntentRoutingGemini(
+        api_key="gemini-key",
+        strong_model="gemini-2.5-flash",
+        cheap_model="gemini-2.5-flash-lite",
+        nano_model="gemini-2.5-flash-lite",
+        generator_factory=RecordingGenerator,
+    )
+
+    assert router.generate(prompt="extract", stage="premise_intake") == "gemini-2.5-flash:premise_intake"
+    assert router.generate(prompt="review", stage="review:cold-open") == "gemini-2.5-flash-lite:review:cold-open"
+
+    assert router.calls == [
+        {"stage": "premise_intake", "intent": "strong", "model": "gemini-2.5-flash"},
+        {"stage": "review:cold-open", "intent": "cheap", "model": "gemini-2.5-flash-lite"},
+    ]
 
 
 class RecordingLLM:

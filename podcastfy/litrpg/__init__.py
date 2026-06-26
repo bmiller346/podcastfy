@@ -33,6 +33,7 @@ from podcastfy.litrpg.hooks import build_hook_context, hook_type_for_contract
 from podcastfy.litrpg.library import delete_episode, get_audio_path, get_episode
 from podcastfy.litrpg.library import list_episodes, list_regenerable_parts, list_series
 from podcastfy.litrpg.library import mark_episode_status
+from podcastfy.litrpg.llm import GeminiGenerator, IntentRoutingGemini
 from podcastfy.litrpg.llm import IntentRoutingOpenAI, OllamaGenerator, OpenAIResponsesGenerator
 from podcastfy.litrpg.llm import StageRouterLLM, StageRouting
 from podcastfy.litrpg.mechanics import extract_mechanics_events, validate_mechanics
@@ -170,6 +171,8 @@ __all__ = [
     "generate_sfx_candidate",
     "generate_litrpg_audio_episode",
     "generate_litrpg_chapter",
+    "GeminiGenerator",
+    "IntentRoutingGemini",
     "IntentRoutingOpenAI",
     "get_audio_path",
     "get_episode",

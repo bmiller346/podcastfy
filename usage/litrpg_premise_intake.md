@@ -49,7 +49,11 @@ Create a task with:
   "generation": {
     "provider": "hybrid",
     "ollama_model": "dolphin3",
-    "commercial_model": "gpt-5.4"
+    "commercial_provider": "gemini",
+    "commercial_model": "gemini-2.5-flash",
+    "auto_model_routing": true,
+    "cheap_model": "gemini-2.5-flash-lite",
+    "nano_model": "gemini-2.5-flash-lite"
   }
 }
 ```
@@ -88,15 +92,20 @@ Use `premise_path` instead of `premise` when the notes are too large for the tas
 ```
 
 For a local or hybrid pass, set `generation.provider` to `ollama` or `hybrid`.
-Hybrid generation uses local stages where configured and OpenAI for the commercial
-fallback:
+Hybrid generation uses local stages where configured and Gemini or OpenAI for
+the commercial fallback. Gemini Flash/Lite is the cheaper default for intake and
+review-style work:
 
 ```json
 {
   "generation": {
     "provider": "hybrid",
     "ollama_model": "dolphin3",
-    "commercial_model": "gpt-5.4",
+    "commercial_provider": "gemini",
+    "commercial_model": "gemini-2.5-flash",
+    "auto_model_routing": true,
+    "cheap_model": "gemini-2.5-flash-lite",
+    "nano_model": "gemini-2.5-flash-lite",
     "local_exact_stages": ["script"],
     "local_stage_prefixes": ["part:", "revise:"]
   }

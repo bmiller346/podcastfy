@@ -102,7 +102,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "2. Intake Status" in html
     assert "3. Series Workspace" in html
     assert "Advanced Task Builder" in html
-    assert "Auto-route OpenAI model by intent" in html
+    assert "Auto-route cloud model by intent" in html
     assert "Story Workshop -> Queue Intake Agent -> Load Series" in html
     assert "Story file" in html
     assert "usage/litrpg_messy_context_seed.md" in html

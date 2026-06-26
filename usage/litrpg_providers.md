@@ -62,12 +62,11 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
     "local_provider": "ollama",
     "local_model": "litrpg-writer",
     "ollama_host": "http://127.0.0.1:11434",
-    "commercial_provider": "openai",
-    "commercial_model": "gpt-5.4",
+    "commercial_provider": "gemini",
+    "commercial_model": "gemini-2.5-flash",
     "auto_model_routing": true,
-    "cheap_model": "gpt-5.4-mini",
-    "nano_model": "gpt-5.4-nano",
-    "strong_reasoning_effort": "medium",
+    "cheap_model": "gemini-2.5-flash-lite",
+    "nano_model": "gemini-2.5-flash-lite",
     "local_stage_prefixes": ["part:", "revise:"],
     "local_exact_stages": ["script"],
     "reasoning_effort": "low",
@@ -84,4 +83,4 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
 }
 ```
 
-Use story-generation provider names such as `openai` or `hybrid` under `generation.provider`. Use TTS provider names such as `openai`, `geminiapi`, `edge`, `gemini`, `geminimulti`, or `elevenlabs` under `tts.provider`. Unknown provider names are rejected by the relevant provider factory.
+Use story-generation provider names such as `openai`, `gemini`, `ollama`, or `hybrid` under `generation.provider`. In hybrid mode, set `commercial_provider` to `gemini` for the cheaper cloud review/intake path or `openai` when you want OpenAI as the commercial reviewer. Use TTS provider names such as `openai`, `geminiapi`, `edge`, `gemini`, `geminimulti`, or `elevenlabs` under `tts.provider`. Unknown provider names are rejected by the relevant provider factory.

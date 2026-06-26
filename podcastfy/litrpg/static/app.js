@@ -348,13 +348,14 @@ function buildTaskPayload() {
   const generation = {};
   maybeAssign(generation, "provider", cleanValue(formData.get("generation_provider")));
   maybeAssign(generation, "model", cleanValue(formData.get("generation_model")));
-  if (formData.get("auto_model_routing") === "on") {
-    generation.auto_model_routing = true;
-    generation.cheap_model = "gpt-5.4-mini";
-    generation.strong_model = cleanValue(formData.get("generation_model")) || "gpt-5.4";
-    generation.nano_model = "gpt-5.4-nano";
-    generation.strong_reasoning_effort = "medium";
-    generation.reasoning_effort = "low";
+  if (formData.get("auto_model_routing") === "on" && (generation.provider || generation.model)) {
+    Object.assign(
+      generation,
+      defaultCloudIntentRoutingConfig(
+        generation.provider || "hybrid",
+        cleanValue(formData.get("generation_model")),
+      ),
+    );
   }
   if (Object.keys(generation).length) {
     task.generation = generation;
@@ -493,9 +494,9 @@ function buildMessyContextIntakeTask() {
   task.chapters_per_book = task.chapters_per_book || 30;
   if (!task.generation || !task.generation.provider) {
     task.generation = defaultHybridGenerationConfig();
-  } else if (task.generation.provider === "openai" || task.generation.provider === "hybrid") {
+  } else if (["openai", "gemini", "geminiapi", "google", "hybrid"].includes(task.generation.provider)) {
     task.generation = {
-      ...defaultOpenAIIntentRoutingConfig(),
+      ...defaultCloudIntentRoutingConfig(task.generation.provider, task.generation.model || task.generation.commercial_model),
       ...task.generation,
     };
   }
@@ -550,11 +551,20 @@ function storyRevisionGenerationConfig() {
   };
 }
 
-function defaultOpenAIIntentRoutingConfig() {
+function defaultCloudIntentRoutingConfig(provider = "gemini", strongModel = "") {
+  const normalized = String(provider || "").toLowerCase();
+  if (["gemini", "geminiapi", "google", "hybrid"].includes(normalized)) {
+    return {
+      auto_model_routing: true,
+      cheap_model: "gemini-2.5-flash-lite",
+      strong_model: strongModel || "gemini-2.5-flash",
+      nano_model: "gemini-2.5-flash-lite",
+    };
+  }
   return {
     auto_model_routing: true,
     cheap_model: "gpt-5.4-mini",
-    strong_model: "gpt-5.4",
+    strong_model: strongModel || "gpt-5.4",
     nano_model: "gpt-5.4-nano",
     reasoning_effort: "low",
     strong_reasoning_effort: "medium",
@@ -565,10 +575,11 @@ function defaultHybridGenerationConfig() {
   return {
     provider: "hybrid",
     local_model: "litrpg-writer",
-    commercial_model: "gpt-5.4",
+    commercial_provider: "gemini",
+    commercial_model: "gemini-2.5-flash",
     local_exact_stages: ["script"],
     local_stage_prefixes: ["part:", "revise:"],
-    ...defaultOpenAIIntentRoutingConfig(),
+    ...defaultCloudIntentRoutingConfig("gemini"),
   };
 }
 
@@ -1412,6 +1423,16 @@ function diagnosticRecommendations({ task, premiseAnalysis, settings, seriesPack
   }
   if (generationProvider === "hybrid" && commercialProvider === "openai" && !settings.api_keys.openai) {
     recommendations.push("Hybrid generation is selected with OpenAI review, but no valid OpenAI API key is configured.");
+  }
+  if (
+    generationProvider === "hybrid" &&
+    ["gemini", "geminiapi", "google"].includes(commercialProvider) &&
+    !settings.api_keys.gemini
+  ) {
+    recommendations.push("Hybrid generation is selected with Gemini review, but no valid Gemini API key is configured.");
+  }
+  if (["gemini", "geminiapi", "google"].includes(generationProvider) && !settings.api_keys.gemini) {
+    recommendations.push("Gemini generation is selected but no valid Gemini API key is configured.");
   }
   const ttsProvider = (task.tts && task.tts.provider) || settings.defaults.default_tts_provider || "";
   if (task.render_audio && ttsProvider && !settings.api_keys[ttsProvider]) {

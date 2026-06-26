@@ -72,8 +72,11 @@ Then configure a LitRPG task with a hybrid generation block:
     "local_provider": "ollama",
     "local_model": "litrpg-writer",
     "ollama_host": "http://127.0.0.1:11434",
-    "commercial_provider": "openai",
-    "commercial_model": "gpt-5.4",
+    "commercial_provider": "gemini",
+    "commercial_model": "gemini-2.5-flash",
+    "auto_model_routing": true,
+    "cheap_model": "gemini-2.5-flash-lite",
+    "nano_model": "gemini-2.5-flash-lite",
     "local_stage_prefixes": ["part:", "revise:"],
     "local_exact_stages": ["script"],
     "reasoning_effort": "low",
@@ -88,7 +91,7 @@ Then configure a LitRPG task with a hybrid generation block:
 
 Use this first with chapter smoke tasks and `render_audio: false`. After the checkpoints and approved XML look stable, enable your normal TTS provider in a separate pass.
 
-The local UI saves provider keys to `data/litrpg/settings.json`. Hybrid tasks that use OpenAI review should either omit `settings_path` so the default UI settings path is used, or explicitly set `"settings_path": "../data/litrpg/settings.json"` from files in `usage/`. The settings loader validates OpenAI keys and only treats `sk-...` values as configured, which prevents accidentally saving pasted prose as a usable key.
+The local UI saves provider keys to `data/litrpg/settings.json`. Hybrid tasks that use Gemini or OpenAI review should either omit `settings_path` so the default UI settings path is used, or explicitly set `"settings_path": "../data/litrpg/settings.json"` from files in `usage/`. The settings loader validates OpenAI keys and only treats `sk-...` values as configured, which prevents accidentally saving pasted prose as a usable key.
 
 ## Notes of caution
 

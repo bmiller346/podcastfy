@@ -151,7 +151,7 @@ def test_run_litrpg_task_rejects_unknown_generation_provider(tmp_path):
         generation={"provider": "unknown"},
     )
 
-    with pytest.raises(ValueError, match="generation.provider=openai"):
+    with pytest.raises(ValueError, match="generation.provider=openai, generation.provider=gemini"):
         run_litrpg_task(task_path, tts=FakeTTS())
 
 
@@ -242,6 +242,51 @@ def test_llm_from_task_builds_hybrid_router_with_openai_intent_routing(monkeypat
     assert llm.default.strong_model == "gpt-5.4"
     assert llm.default.cheap_model == "gpt-5.4-mini"
     assert llm.default.nano_model == "gpt-5.4-nano"
+
+
+def test_llm_from_task_builds_direct_gemini_generator():
+    llm = _llm_from_task(
+        {
+            "generation": {
+                "provider": "gemini",
+                "model": "gemini-2.5-flash-lite",
+                "temperature": 0.1,
+            }
+        },
+        settings={"gemini_api_key": "gemini-key"},
+    )
+
+    assert llm.model == "gemini-2.5-flash-lite"
+    assert llm.api_key == "gemini-key"
+    assert llm.temperature == 0.1
+
+
+def test_llm_from_task_builds_hybrid_router_with_gemini_commercial():
+    llm = _llm_from_task(
+        {
+            "generation": {
+                "provider": "hybrid",
+                "local_model": "litrpg-writer",
+                "commercial_provider": "gemini",
+                "commercial_model": "gemini-2.5-flash",
+                "auto_model_routing": True,
+                "cheap_model": "gemini-2.5-flash-lite",
+            }
+        },
+        settings={"gemini_api_key": "gemini-key"},
+    )
+
+    assert llm.local.model == "litrpg-writer"
+    assert llm.default.strong_model == "gemini-2.5-flash"
+    assert llm.default.cheap_model == "gemini-2.5-flash-lite"
+
+
+def test_llm_from_task_requires_valid_gemini_key_for_gemini():
+    with pytest.raises(ValueError, match="Gemini generation requires a valid API key"):
+        _llm_from_task(
+            {"generation": {"provider": "gemini", "model": "gemini-2.5-flash"}},
+            settings={},
+        )
 
 
 def test_llm_from_task_requires_valid_openai_key_for_hybrid():
