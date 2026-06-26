@@ -7,6 +7,7 @@ from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
 from podcastfy.litrpg.premise_intake import extract_premise_intake_json
 from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
+from podcastfy.litrpg.premise_intake import validate_premise_intake_payload
 from podcastfy.litrpg.series_architect import SeriesArchitect, load_chapter_outline
 from podcastfy.litrpg.task import run_litrpg_task_data
 from podcastfy.litrpg.voice_cards import load_voice_cards
@@ -186,6 +187,36 @@ def test_run_premise_intake_writes_story_engine_artifacts(tmp_path):
         "The Familiar's First Words",
         "Decompression",
     ]
+
+
+def test_premise_intake_rejects_sparse_long_context_payload():
+    premise = (
+        "Edward and Kelli sail Sophie II with Pedro while Gallowgate and the "
+        "Grand Dredger turn the dungeon into a maritime debt trap. "
+        * 40
+    )
+
+    try:
+        validate_premise_intake_payload(
+            {
+                "series_shape": {
+                    "series_title": "The Knotty Buoy",
+                    "series_promise": "TBD: Convert an unstructured premise dump.",
+                },
+                "story_bible": {"characters": {}},
+                "world_register": {"locations": [], "rules": [], "entity_ecology": []},
+            },
+            premise=premise,
+            chapters_per_book=30,
+        )
+    except ValueError as exc:
+        message = str(exc)
+    else:  # pragma: no cover - defensive clarity.
+        raise AssertionError("Expected sparse long-context intake to fail")
+
+    assert "too sparse or generic" in message
+    assert "Edward" in message or "edward" in message
+    assert "story_bible" in message
 
 
 def test_litrpg_task_supports_premise_intake_mode(tmp_path):

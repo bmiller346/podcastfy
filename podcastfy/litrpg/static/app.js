@@ -319,7 +319,7 @@ function buildTaskPayload() {
     series_id: cleanValue(formData.get("series_id")) || "local-series",
     premise: cleanValue(formData.get("premise")),
     render_audio: formData.get("render_audio") === "on",
-    storage_dir: cleanValue(formData.get("storage_dir")) || "../data/litrpg",
+    storage_dir: cleanValue(formData.get("storage_dir")) || "data/litrpg",
   };
 
   maybeAssign(task, "premise_path", cleanValue(formData.get("premise_path")));
@@ -509,7 +509,7 @@ function buildMcpContextPayload(task = null) {
   return {
     tool: "bootstrap_from_premise",
     arguments: {
-      storage_dir: intakeTask.storage_dir || "../data/litrpg",
+      storage_dir: intakeTask.storage_dir || "data/litrpg",
       series_id: intakeTask.series_id || "local-series",
       premise: intakeTask.source_text || intakeTask.premise || "",
       target_books: intakeTask.target_books || 1,

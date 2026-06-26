@@ -174,6 +174,7 @@ def run_premise_intake(
     )
     raw = llm.generate(prompt=prompt, stage="premise_intake")
     payload = extract_premise_intake_json(str(raw))
+    validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     return save_premise_intake_payload(
         storage_dir=storage_dir,
         series_id=series_id,
@@ -333,6 +334,59 @@ def extract_premise_intake_json(text: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("Premise intake output must be a JSON object")
     return parsed
+
+
+def validate_premise_intake_payload(
+    payload: Mapping[str, Any],
+    *,
+    premise: str,
+    chapters_per_book: int,
+) -> None:
+    """Reject sparse or generic intake extractions before writing artifacts."""
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("Premise intake output must be a JSON object")
+    premise_text = str(premise or "")
+    serialized = json.dumps(payload, ensure_ascii=False).casefold()
+    source_markers = [
+        marker
+        for marker in ("edward", "kelli", "pedro", "sophie", "gallowgate", "dredger")
+        if marker in premise_text.casefold()
+    ]
+    matched_markers = [marker for marker in source_markers if marker in serialized]
+    story_bible = _mapping(payload.get("story_bible"))
+    world_register = _mapping(payload.get("world_register"))
+    book_outlines = payload.get("book_outlines")
+    outline_count = _outline_chapter_count(book_outlines)
+    character_count = len(_mapping(story_bible.get("characters")))
+    world_count = sum(
+        len(_list(world_register.get(key)))
+        for key in ("locations", "rules", "entity_ecology", "economy_anchors")
+    )
+    if len(premise_text) >= 2000:
+        issues = []
+        if source_markers and len(matched_markers) < min(3, len(source_markers)):
+            issues.append(
+                "preserve source markers such as "
+                + ", ".join(source_markers[: min(4, len(source_markers))])
+            )
+        if character_count < 2:
+            issues.append("extract at least two named story_bible characters")
+        if world_count < 3:
+            issues.append("extract concrete world_register locations/rules/entities/economy")
+        if outline_count < max(3, min(6, chapters_per_book)):
+            issues.append("extract a usable chapter outline")
+        if issues:
+            raise ValueError(
+                "Premise intake output is too sparse or generic; "
+                + "; ".join(issues)
+            )
+
+
+def _outline_chapter_count(value: Any) -> int:
+    if isinstance(value, Mapping):
+        return sum(len(_list(outline)) for outline in value.values())
+    return sum(len(_list(item.get("outline") or item.get("chapters"))) for item in _list(value) if isinstance(item, Mapping))
 
 
 def _json_object_slice(text: str) -> str:

@@ -142,7 +142,7 @@ Content-Type: application/json
     "series_id": "paper-cuts",
     "premise": "A warehouse clerk discovers the forklift training course is a dungeon tutorial.",
     "render_audio": true,
-    "storage_dir": "../data/litrpg",
+    "storage_dir": "data/litrpg",
     "generation": {
       "provider": "openai",
       "model": "gpt-5.4"

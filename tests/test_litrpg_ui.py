@@ -140,6 +140,8 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="result_path"' in html
     assert 'name="checkpoint_dir"' in html
     assert 'name="storage_dir"' in html
+    assert 'placeholder="data/litrpg"' in html
+    assert 'placeholder="data/litrpg/paper-cuts/latest.json"' in html
     assert 'id="task-preview"' in html
     assert 'id="diagnostics-summary"' in html
     assert 'id="diagnostics-output"' in html
