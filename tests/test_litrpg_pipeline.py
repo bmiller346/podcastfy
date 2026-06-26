@@ -114,7 +114,7 @@ def test_pipeline_uses_tts_options_for_provider_config(tmp_path, monkeypatch):
     )
 
     assert captured["model"] == "openai"
-    assert captured["api_key"] == "env-openai"
+    assert captured["api_key"] == "sk-env-openai"
     assert captured["conversation_config"]["text_to_speech"]["openai"]["model"] == "gpt-4o-mini-tts"
 
 

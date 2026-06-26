@@ -440,7 +440,12 @@ def test_series_package_generate_uses_generator_when_available(
     assert saved["metadata"]["genre"] == "Retirement heist"
 
 
-def test_series_package_generate_reports_unavailable_without_generator(ui_server):
+def test_series_package_generate_reports_unavailable_without_generator(ui_server, monkeypatch):
+    def unavailable_generator(**kwargs):
+        raise RuntimeError("Series package generator is not installed yet")
+
+    monkeypatch.setattr(ui, "generate_series_package", unavailable_generator)
+
     status, data = request_json(
         ui_server,
         "POST",
