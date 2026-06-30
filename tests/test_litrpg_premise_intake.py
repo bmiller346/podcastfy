@@ -280,6 +280,55 @@ def test_run_premise_intake_repairs_sparse_payload_before_saving(tmp_path):
     assert load_world_register(tmp_path, "knotty-buoy").locations[0].name == "The Knotty Buoy"
 
 
+def test_run_premise_intake_salvages_sparse_output_after_repair_failure(tmp_path):
+    sparse_payload = {
+        "series_shape": {
+            "series_title": "The Knotty Buoy",
+            "series_promise": "Generic LitRPG challenges.",
+        },
+        "story_bible": {"characters": {}},
+        "world_register": {"locations": [], "rules": [], "entity_ecology": [], "economy_anchors": []},
+        "book_outlines": {"1": []},
+    }
+    premise = (
+        "Target title: The Knotty Buoy\n"
+        "Edward Marsh and Kelli Marsh sail Sophie II with Pedro. Sophie II is named "
+        "after Sophie the cockatoo, who died when Kelli overheated pans. Gallowgate "
+        "and the Grand Dredger turn the dungeon into a maritime debt trap. Floor 1 "
+        "is The Drowned Scaffolding with Barnacle Scrip, OSHA Wraiths, Barnacle "
+        "Mimics, and Rebar Gargoyles. The kids are off the boat and become guilt pressure. "
+        * 18
+    )
+    llm = SequencePremiseLLM([sparse_payload, sparse_payload])
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="the-knotty-buoy",
+        premise=premise,
+        llm=llm,
+        target_books=1,
+        chapters_per_book=30,
+        series_title="The Knotty Buoy",
+    )
+
+    assert [call["stage"] for call in llm.calls] == [
+        "premise_intake",
+        "premise_intake_repair",
+    ]
+    assert any(path.endswith("story_bible.json") for path in result.written_files)
+    assert any(path.endswith("world_register.json") for path in result.written_files)
+    bible = load_story_bible(tmp_path, "the-knotty-buoy")
+    world = load_world_register(tmp_path, "the-knotty-buoy")
+    outline = load_chapter_outline(tmp_path, "the-knotty-buoy", 1)
+
+    assert {"Edward Marsh", "Kelli Marsh", "Pedro"}.issubset(bible.characters)
+    assert "Sophie II" in bible.never_contradict_facts[0]
+    assert len(world.locations) >= 3
+    assert any(entity.entity == "OSHA Wraiths" for entity in world.entity_ecology)
+    assert len(outline) == 30
+    assert result.payload["_intake_metadata"]["fallback_used"] is True
+
+
 def test_litrpg_task_supports_premise_intake_mode(tmp_path):
     result = run_litrpg_task_data(
         {

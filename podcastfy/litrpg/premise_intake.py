@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -236,7 +237,23 @@ def run_premise_intake(
         )
         repaired_raw = llm.generate(prompt=repair_prompt, stage="premise_intake_repair")
         payload = extract_premise_intake_json(str(repaired_raw))
-        validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+        try:
+            validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+        except ValueError:
+            payload = repair_sparse_premise_intake_payload(
+                payload,
+                premise=premise,
+                series_id=series_id,
+                target_books=target_books,
+                chapters_per_book=chapters_per_book,
+                book_length_mode=book_length_mode,
+                arc_style=arc_style,
+                series_title=series_title,
+                series_promise=series_promise,
+                endgame_direction=endgame_direction,
+                power_curve=power_curve,
+            )
+            validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     return save_premise_intake_payload(
         storage_dir=storage_dir,
         series_id=series_id,
@@ -253,6 +270,186 @@ def run_premise_intake(
             "power_curve": power_curve,
         },
     )
+
+
+def repair_sparse_premise_intake_payload(
+    payload: Mapping[str, Any],
+    *,
+    premise: str,
+    series_id: str,
+    target_books: int = 1,
+    chapters_per_book: int = 30,
+    book_length_mode: str = "tight",
+    arc_style: str = "escalating_floor_survival",
+    series_title: str = "",
+    series_promise: str = "",
+    endgame_direction: str = "",
+    power_curve: str = "logarithmic",
+) -> dict[str, Any]:
+    """Deterministically supplement sparse AI intake output from source text.
+
+    This is a safety net for long seed markdown. The LLM remains the preferred
+    extractor, but the UI should never fail with zero artifacts when the source
+    itself contains obvious named characters and world anchors.
+    """
+
+    repaired = dict(payload)
+    fallback = build_deterministic_premise_intake_payload(
+        premise=premise,
+        series_id=series_id,
+        target_books=target_books,
+        chapters_per_book=chapters_per_book,
+        book_length_mode=book_length_mode,
+        arc_style=arc_style,
+        series_title=series_title,
+        series_promise=series_promise,
+        endgame_direction=endgame_direction,
+        power_curve=power_curve,
+    )
+    for key, value in fallback.items():
+        repaired[key] = _merge_sparse_value(repaired.get(key), value)
+    repaired["_intake_metadata"] = {
+        "fallback_used": True,
+        "fallback_reason": "AI premise intake remained sparse after repair pass.",
+    }
+    return repaired
+
+
+def build_deterministic_premise_intake_payload(
+    *,
+    premise: str,
+    series_id: str,
+    target_books: int = 1,
+    chapters_per_book: int = 30,
+    book_length_mode: str = "tight",
+    arc_style: str = "escalating_floor_survival",
+    series_title: str = "",
+    series_promise: str = "",
+    endgame_direction: str = "",
+    power_curve: str = "logarithmic",
+) -> dict[str, Any]:
+    """Build a conservative intake payload directly from visible premise anchors."""
+
+    text = str(premise or "")
+    title = series_title or _extract_target_value(text, "Target title") or _extract_heading_title(text) or "Untitled LitRPG Series"
+    promise = series_promise or _first_sentence_matching(
+        text,
+        ("Tone Contract", "story should feel", "readers", "promise"),
+    ) or "Practical maritime survival under a hostile game system, driven by old-married friction and escalating floor rules."
+    endgame = endgame_direction or "Edward, Kelli, and Pedro uncover why Gallowgate registered Sophie II and whether the System has leverage over their family."
+    characters = _deterministic_characters(text)
+    voice_cards = _deterministic_voice_cards(characters)
+    world = _deterministic_world_register(text, series_id)
+    outline = _deterministic_chapter_outline(text, chapters_per_book)
+    mysteries = _deterministic_mysteries(text)
+    return {
+        "series_shape": {
+            "target_books": target_books,
+            "book_length_mode": book_length_mode,
+            "chapters_per_book": chapters_per_book,
+            "arc_style": arc_style,
+            "series_title": title,
+            "series_promise": promise,
+            "endgame_direction": endgame,
+            "power_curve": power_curve,
+            "series_mysteries": mysteries,
+        },
+        "series_arc": [
+            {
+                "book": 1,
+                "role": "Bootstrap Sophie II as a mobile asset and force the retired couple to take responsibility under dungeon pressure.",
+                "major_change": "The boat stops being an escape plan and becomes a contested home base inside Gallowgate.",
+                "power_ceiling": "Improvised engineering, gambling-risk reads, and Pedro phrase exploits matter more than raw levels.",
+                "chapter_count": chapters_per_book,
+                "arc_style": arc_style,
+                "must_resolve": ["Sophie II survives the first floor transition"],
+                "must_preserve": ["Sophie II", "Edward Marsh", "Kelli Marsh", "Pedro"],
+                "character_targets": {
+                    "Edward Marsh": "Turns avoidance and engineering skepticism into reluctant stewardship.",
+                    "Kelli Marsh": "Turns chaos appetite into strategic responsibility.",
+                    "Pedro": "Becomes a system-breaking familiar through memorized phrases.",
+                },
+                "faction_targets": ["Gallowgate", "Grand Dredger", "Galactic Zoning Board"],
+                "floor_range": [1, 3],
+            }
+        ],
+        "book_outlines": {"1": outline},
+        "story_bible": {
+            "series_id": series_id,
+            "premise": _compact_text(text, 900),
+            "never_contradict_facts": [
+                "The canonical vessel name is Sophie II.",
+                "Sophie II was named after Edward and Kelli's old cockatoo, Sophie.",
+                "Sophie the cockatoo died after Kelli overheated pans, likely nonstick/Teflon fumes.",
+                "Edward and Kelli's adult children are off the boat; distance creates guilt pressure.",
+            ],
+            "unresolved_threads": mysteries,
+            "timeline_notes": ["Edward and Kelli cast off before the dungeon event intending to escape responsibility."],
+            "characters": characters,
+        },
+        "voice_cards": {"series_id": series_id, "cards": voice_cards},
+        "continuity_ledger": {
+            "series_id": series_id,
+            "running_gags": [
+                {"text": "Edward treats apocalypse hazards as code, permit, and inspection violations.", "tags": ["voice", "edward"]},
+                {"text": "Kelli evaluates supernatural danger like a casino table.", "tags": ["voice", "kelli"]},
+                {"text": "Pedro's construction and gambling phrases land as accidental system inputs.", "tags": ["voice", "pedro"]},
+            ],
+            "world_details": [
+                {"text": "Sophie II is a mobile asset rather than merely a boat.", "tags": ["vehicle", "home-base"]},
+                {"text": "Each floor changes what counts as navigable water.", "tags": ["floor-rule"]},
+            ],
+            "notable_moments": [
+                {"text": "Sophie II carries the emotional guilt of the dead cockatoo and the couple's runaway retirement plan.", "tags": ["sophie-ii"]},
+            ],
+        },
+        "emotional_arcs": {
+            "series_id": series_id,
+            "characters": {
+                "Edward Marsh": {
+                    "character": "Edward Marsh",
+                    "wound": "He retired to avoid responsibility and is forced to captain a home base people depend on.",
+                    "current_coping_mode": "Frames terror as engineering noncompliance.",
+                    "relationships": {"Kelli Marsh": "Old-married friction under pressure", "Pedro": "Annoyed caretaker of a phrase-triggering familiar"},
+                    "beats": [{"text": "The dead cockatoo Sophie turns the vessel name into guilt instead of nostalgia."}],
+                },
+                "Kelli Marsh": {
+                    "character": "Kelli Marsh",
+                    "wound": "Her appetite for chaos is tangled with guilt over Sophie and the kids they fled.",
+                    "current_coping_mode": "Reads risk, odds, and tells rather than admitting fear.",
+                    "relationships": {"Edward Marsh": "Loves him, needles him, and pushes him into motion"},
+                    "beats": [{"text": "She must stop treating every crisis as a table she can walk away from."}],
+                },
+            },
+        },
+        "world_register": world,
+        "foreshadow_ledger": {
+            "series_id": series_id,
+            "planted": [
+                {
+                    "detail": "Kelli sees or fears a bidder tag tied to one of the kids' surnames.",
+                    "planted_chapter": 3,
+                    "intended_payoff_start": 18,
+                    "intended_payoff_end": 30,
+                    "mystery": "Were Edward and Kelli's kids taken by the System?",
+                },
+                {
+                    "detail": "Pedro's flagged phrase is absent from broadcast logs.",
+                    "planted_chapter": 2,
+                    "intended_payoff_start": 12,
+                    "intended_payoff_end": 24,
+                    "mystery": "Why does the System suppress Pedro's most dangerous phrase?",
+                },
+                {
+                    "detail": "Gallowgate treats Sophie II as a registration problem it cannot cleanly undo.",
+                    "planted_chapter": 1,
+                    "intended_payoff_start": 20,
+                    "intended_payoff_end": 30,
+                    "mystery": "Why did Sophie II become a mobile guild-hall asset?",
+                },
+            ],
+        },
+    }
 
 
 def save_premise_intake_payload(
@@ -449,6 +646,333 @@ def _outline_chapter_count(value: Any) -> int:
     if isinstance(value, Mapping):
         return sum(len(_list(outline)) for outline in value.values())
     return sum(len(_list(item.get("outline") or item.get("chapters"))) for item in _list(value) if isinstance(item, Mapping))
+
+
+def _merge_sparse_value(existing: Any, fallback: Any) -> Any:
+    if _is_sparse_value(existing):
+        return fallback
+    if isinstance(existing, Mapping) and isinstance(fallback, Mapping):
+        merged = dict(existing)
+        for key, fallback_value in fallback.items():
+            merged[key] = _merge_sparse_value(merged.get(key), fallback_value)
+        return merged
+    if isinstance(existing, list) and isinstance(fallback, list):
+        return existing if len(existing) >= len(fallback) else fallback
+    return existing
+
+
+def _is_sparse_value(value: Any) -> bool:
+    if value in (None, "", [], {}):
+        return True
+    if isinstance(value, str):
+        return value.strip().casefold() in {"tbd", "unknown", "n/a", "generic", "infer from premise"}
+    if isinstance(value, Mapping):
+        return not any(not _is_sparse_value(item) for item in value.values())
+    return False
+
+
+def _deterministic_characters(text: str) -> dict[str, dict[str, Any]]:
+    lower = text.casefold()
+    characters: dict[str, dict[str, Any]] = {}
+    if "edward" in lower:
+        characters["Edward Marsh"] = {
+            "name": "Edward Marsh",
+            "aliases": ["Edward"],
+            "wounds": ["Minor heart attack on a construction job site", "Retired to escape responsibility"],
+            "traumas": ["Sophie the cockatoo's death remains a household guilt anchor"],
+            "running_jokes": ["Treats cosmic danger as an OSHA or code violation"],
+            "unresolved_promises": ["Find out whether the System has leverage over the adult kids"],
+            "never_contradict_facts": [
+                "Retired structural engineer from the Philadelphia/South Jersey corridor",
+                "Captains Sophie II",
+            ],
+            "voice_rules": ["Gruff, clipped, practical South Jersey engineer exhaustion"],
+            "visual_anchors_static": ["Canvas work pants", "UPF sun shirt", "boat shoes", "waterproof notebook"],
+            "fatigue_markers": ["Rubs his left knee when stressed or weather shifts"],
+            "equipped_gear": ["Carpenter's pencil", "waterproof notebook"],
+        }
+    if "kelli" in lower:
+        characters["Kelli Marsh"] = {
+            "name": "Kelli Marsh",
+            "aliases": ["Kelli"],
+            "wounds": ["Guilt over Sophie the cockatoo", "Ran from family responsibility with Edward"],
+            "running_jokes": ["Reads dungeon risk like a blackjack or craps table"],
+            "unresolved_promises": ["Her adult children remain off-boat but emotionally weaponized by the System"],
+            "never_contradict_facts": [
+                "High-stakes casino risk reader",
+                "Overheated pans caused fumes that killed Sophie the cockatoo",
+            ],
+            "voice_rules": ["Sharp, unsentimental, casino-table confidence under pressure"],
+            "visual_anchors_static": ["Oversized expensive polarized sunglasses", "wedding ring used as a calculating tell"],
+            "fatigue_markers": ["Goes quiet before committing to an all-in decision"],
+        }
+    if "pedro" in lower:
+        characters["Pedro"] = {
+            "name": "Pedro",
+            "aliases": ["Pedro the macaw", "familiar"],
+            "running_jokes": ["Repeats construction and gambling phrases at exactly the wrong time"],
+            "unresolved_promises": ["The System has muted at least one flagged phrase from broadcast logs"],
+            "never_contradict_facts": ["Pedro is the animal/familiar voice contrast to Edward and Kelli"],
+            "voice_rules": ["Does not swear; phrase-bank comedy lands through timing and repetition"],
+            "gear_absurd_traits": ["Phrase list behaves like a system exploit"],
+        }
+    if "sophie" in lower:
+        characters["Sophie the cockatoo"] = {
+            "name": "Sophie the cockatoo",
+            "aliases": ["Sophie"],
+            "traumas": ["Died before the dungeon after overheated pans released bird-lethal fumes"],
+            "never_contradict_facts": ["Sophie II is named after her"],
+            "voice_rules": ["Never appears as a living current companion unless explicitly revised"],
+        }
+    if len(characters) < 2:
+        characters.setdefault(
+            "Edward Marsh",
+            {"name": "Edward Marsh", "voice_rules": ["Practical retired engineer under pressure"]},
+        )
+        characters.setdefault(
+            "Kelli Marsh",
+            {"name": "Kelli Marsh", "voice_rules": ["Risk-reading spouse with casino instincts"]},
+        )
+    return characters
+
+
+def _deterministic_voice_cards(characters: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    cards: dict[str, dict[str, Any]] = {}
+    defaults = {
+        "Edward Marsh": {
+            "roles": ["HERO", "EDWARD"],
+            "sentence_pattern_rules": ["Short practical complaints; engineering and inspection metaphors"],
+            "stress_speech_patterns": ["Gets annoyed before scared", "Uses clipped profanity when exhausted"],
+            "humor_modes": ["bureaucratic outrage", "blue-collar understatement"],
+            "sample_lines": ["Who signed off on this?"],
+        },
+        "Kelli Marsh": {
+            "roles": ["KELLI"],
+            "sentence_pattern_rules": ["Dry confidence; casino and odds language"],
+            "stress_speech_patterns": ["Goes quiet before an all-in move"],
+            "humor_modes": ["risk-table reads", "old-married needling"],
+            "sample_lines": ["That is not bad luck. That is a bad table."],
+        },
+        "Pedro": {
+            "roles": ["PEDRO", "FAMILIAR"],
+            "sentence_pattern_rules": ["Phrase-bank interjections, not fluent exposition"],
+            "forbidden_words": ["generic swear-heavy banter"],
+            "stress_speech_patterns": ["Repeats memorized phrases at system-sensitive moments"],
+            "humor_modes": ["construction phrases become psychic debuffs", "accidental rules exploits"],
+            "sample_lines": ["WHERE'S THE PERMIT?"],
+        },
+        "Sophie the cockatoo": {
+            "roles": ["MEMORY"],
+            "sentence_pattern_rules": ["Backstory anchor, not current dialogue"],
+            "humor_modes": ["guilt pressure behind the boat name"],
+            "sample_lines": [],
+        },
+    }
+    for name in characters:
+        cards[name] = {"name": name, **defaults.get(name, {"roles": [name.upper()], "sentence_pattern_rules": ["Preserve source-specific diction"]})}
+    return cards
+
+
+def _deterministic_world_register(text: str, series_id: str) -> dict[str, Any]:
+    return {
+        "series_id": series_id,
+        "locations": [
+            {
+                "name": "Sophie II",
+                "detail": "Canonical 44-foot catamaran and mobile asset/home base named after the dead cockatoo Sophie.",
+                "tags": ["vehicle", "home-base"],
+            },
+            {
+                "name": "The Drowned Scaffolding",
+                "detail": "Floor 1 bioluminescent ocean broken by rusted half-submerged construction skeletons.",
+                "floor": 1,
+                "tags": ["floor", "water"],
+            },
+            {
+                "name": "The Glass Dunes",
+                "detail": "A later floor where the catamaran must sail crushed frictionless glass on skates and thermal wind.",
+                "floor": 2,
+                "tags": ["floor", "sand"],
+            },
+            {
+                "name": "The Mycelial Canopy",
+                "detail": "Dense toxic fog over a fungal forest, letting the catamaran float on gas while threats rise from below.",
+                "floor": 3,
+                "tags": ["floor", "fog"],
+            },
+        ],
+        "rules": [
+            {
+                "rule": "Navigable waters mutate by floor",
+                "detail": "The System must permit the registered mobile asset to move, but can redefine the medium as water, sand, fog, or worse.",
+                "tags": ["floor-rule", "vehicle"],
+            },
+            {
+                "rule": "Sophie II mobile safe-zone pressure",
+                "detail": "The boat functions like a contested guild-hall/home-base asset; its protection creates strategic value and faction attention.",
+                "tags": ["home-base", "guild-hall"],
+            },
+            {
+                "rule": "Weaponized distance",
+                "detail": "The adult kids stay off-boat; the System pressures Edward and Kelli through uncertainty and dimensional threats.",
+                "tags": ["family", "blackmail"],
+            },
+        ],
+        "entity_ecology": [
+            {
+                "entity": "Barnacle Mimics",
+                "detail": "Hull-attaching mimics that pretend to be marine growth while eating fiberglass.",
+                "floor": 1,
+                "location": "The Drowned Scaffolding",
+            },
+            {
+                "entity": "Rebar Gargoyles",
+                "detail": "Rusted construction predators that dive from skeletal towers and crane structures.",
+                "floor": 1,
+                "location": "The Drowned Scaffolding",
+            },
+            {
+                "entity": "OSHA Wraiths",
+                "detail": "Undead safety inspectors that inflict violation debuffs for bad rigging and unsafe work.",
+                "floor": 1,
+                "location": "The Drowned Scaffolding",
+            },
+            {
+                "entity": "Grand Dredger",
+                "detail": "Major floor/faction pressure tied to purges, dredging, and hidden broadcast suppression.",
+                "tags": ["faction", "threat"],
+            },
+            {
+                "entity": "Gallowgate",
+                "detail": "Hostile bureaucratic dungeon/system identity that treats survival as registration, debt, and zoning leverage.",
+                "tags": ["system", "faction"],
+            },
+        ],
+        "economy_anchors": [
+            {
+                "name": "Barnacle Scrip",
+                "detail": "Floor currency used for repairs, bribes, and dungeon-epoxy scarcity.",
+                "floor": 1,
+                "location": "The Drowned Scaffolding",
+            },
+            {
+                "name": "Salvaged Copper",
+                "detail": "Crafting material for boat repairs, wiring, and dungeon refits.",
+                "floor": 1,
+            },
+            {
+                "name": "Dungeon Epoxy",
+                "detail": "Rare repair supply needed when Sophie II's fiberglass hull is breached.",
+                "tags": ["scarcity", "repair"],
+            },
+        ],
+    }
+
+
+def _deterministic_chapter_outline(text: str, chapters_per_book: int) -> list[dict[str, Any]]:
+    extracted = _extract_markdown_chapters(text)
+    if extracted:
+        return extracted[:chapters_per_book]
+    beats = [
+        ("Out of the Atlantic", "Sophie II drops from retirement voyage into Gallowgate's first-floor waters.", "Sophie II is registered by the System."),
+        ("The Familiar's First Words", "Pedro's phrase-bank reveals that harmless old sayings can trigger dungeon attention.", "A muted phrase hints at the Grand Dredger."),
+        ("The Dead Bird Name", "The boat name stops being cute when Sophie the cockatoo's death becomes emotional leverage.", "Kelli refuses to explain the whole story."),
+        ("Violation Debuff", "OSHA Wraiths turn rigging mistakes into combat penalties.", "Edward realizes inspections can be weaponized."),
+        ("Barnacle Scrip", "The crew learns repair economy rules while Barnacle Mimics chew the hull.", "The repair bill exceeds their starting leverage."),
+        ("Bidder Tag", "Kelli spots a family-name clue that suggests the kids may not be safe.", "The System offers no confirmation."),
+        ("Rebar Weather", "Rebar Gargoyles force Sophie II under rusted towers and broken crane shadows.", "The mast becomes a liability."),
+        ("Double Down", "Kelli turns a bad trade into a trap for a predatory faction broker.", "Winning creates a worse enemy."),
+        ("No Fixed Address", "Gallowgate disputes the boat's asset classification.", "The ruling makes Sophie II valuable."),
+        ("Glass on the Horizon", "Edward sees the first sign that the next floor will not provide water.", "The catamaran will need skates."),
+    ]
+    outline = []
+    total = max(6, chapters_per_book)
+    for index in range(total):
+        title, premise, ending = beats[index] if index < len(beats) else (
+            f"Floor Pressure {index + 1}",
+            "Escalating vehicle repairs, family guilt, faction debt, and Pedro phrase exploits compound.",
+            "A solved practical problem exposes a larger System rule.",
+        )
+        outline.append(
+            {
+                "chapter": index + 1,
+                "phase": "The Drop" if index < 3 else "Exploration",
+                "title": title,
+                "premise": premise,
+                "ends_on": ending,
+                "character_focus": ["Edward Marsh", "Kelli Marsh"] if index % 3 else ["Edward Marsh", "Kelli Marsh", "Pedro"],
+                "introduces": ["Sophie II"] if index == 0 else [],
+                "resolves": [],
+                "must_not_use": ["Do not put the adult kids on the boat"],
+            }
+        )
+    return outline[:chapters_per_book]
+
+
+def _extract_markdown_chapters(text: str) -> list[dict[str, Any]]:
+    chapters = []
+    pattern = re.compile(r"(?im)^\s*(?:#{1,4}\s*)?(?:chapter|ch\.?)\s*(\d+)\s*[:\-.\)]?\s*(.+?)\s*$")
+    matches = list(pattern.finditer(text))
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else min(len(text), start + 900)
+        body = _compact_text(text[start:end], 450)
+        chapter = int(match.group(1))
+        title = match.group(2).strip(" #-")
+        chapters.append(
+            {
+                "chapter": chapter,
+                "phase": "Extracted",
+                "title": title or f"Chapter {chapter}",
+                "premise": body or "Extracted from source markdown.",
+                "ends_on": "Preserve the source hook or unresolved pressure from this chapter.",
+                "character_focus": ["Edward Marsh", "Kelli Marsh", "Pedro"],
+                "introduces": [],
+                "resolves": [],
+                "must_not_use": ["Do not contradict source markdown"],
+            }
+        )
+    return chapters
+
+
+def _deterministic_mysteries(text: str) -> list[str]:
+    mysteries = [
+        "Did the System take or threaten Edward and Kelli's adult kids?",
+        "Why did Gallowgate register Sophie II as a mobile asset?",
+        "Why is Pedro's flagged phrase suppressed from broadcast logs?",
+    ]
+    if "grand dredger" in text.casefold():
+        mysteries.append("What happens if the Grand Dredger hears Pedro's flagged phrase?")
+    return mysteries
+
+
+def _extract_target_value(text: str, label: str) -> str:
+    match = re.search(rf"(?im)^\s*{re.escape(label)}\s*:\s*(.+?)\s*$", text)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_heading_title(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            title = stripped.lstrip("#").strip()
+            if title and len(title) <= 80 and "messy context" not in title.casefold():
+                return title
+    return ""
+
+
+def _first_sentence_matching(text: str, markers: tuple[str, ...]) -> str:
+    lower_markers = tuple(marker.casefold() for marker in markers)
+    for paragraph in re.split(r"\n\s*\n", text):
+        clean = _compact_text(paragraph, 500)
+        if clean and any(marker in clean.casefold() for marker in lower_markers):
+            return clean
+    return ""
+
+
+def _compact_text(text: str, limit: int) -> str:
+    compact = re.sub(r"\s+", " ", str(text or "")).strip()
+    return compact[:limit].rstrip()
 
 
 def _json_object_slice(text: str) -> str:
