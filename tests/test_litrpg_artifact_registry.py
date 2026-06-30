@@ -21,7 +21,7 @@ def _world_state():
                 "physical_signature": {"sound_fire": "chunk-thwip", "smell": "hot toner"},
                 "behavioral_rules": ["misfires at unsigned paperwork"],
                 "power_ceiling": {"cannot_do": ["kill bosses outright"]},
-                "state": {"ammo": 4, "condition": "jammed", "location": "hero belt"},
+                "state": {"ammo": 4, "charges": 3, "condition": "jammed", "location": "hero belt"},
             }
         },
     }
@@ -57,7 +57,12 @@ def test_artifact_registry_delta_updates_resources_and_scene_brief_contract():
         _world_state(),
         {
             "artifact_state_updates": {
-                "stapler_bow": {"ammo": 2, "condition": "smoking", "location": "floor"}
+                "stapler_bow": {
+                    "ammo": 2,
+                    "charges": None,
+                    "condition": "smoking",
+                    "location": "floor",
+                }
             },
             "artifact_uses": {
                 "stapler_bow": {"chapter_use": "pinned a construct", "resources_spent": "2 staples"}
@@ -72,6 +77,7 @@ def test_artifact_registry_delta_updates_resources_and_scene_brief_contract():
     artifact = brief.to_dict()["active_artifacts"][0]
     assert artifact["locked_name"] == "Redline Stapler"
     assert artifact["state"]["ammo"] == 2
+    assert artifact["state"]["charges"] == 3
     assert artifact["state"]["condition"] == "smoking"
     assert "stapler_bow: forbidden alias staple gun" in brief.to_dict()["forbidden"]
     assert merged["metadata"]["artifact_uses"]["stapler_bow"]["resources_spent"] == "2 staples"

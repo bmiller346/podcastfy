@@ -311,7 +311,7 @@ def merge_artifact_registry_delta(
     artifact_update = {
         "new_artifacts": _mapping(update.get("new_artifacts")),
         "artifact_updates": _mapping(update.get("artifact_updates")),
-        "artifact_state_updates": _mapping(update.get("artifact_state_updates")),
+        "artifact_state_updates": _strip_none_state_values(_mapping(update.get("artifact_state_updates"))),
         "artifact_uses": _mapping(update.get("artifact_uses")),
     }
     return merge_world_state_delta(current_world_state, artifact_update)
@@ -321,6 +321,17 @@ def _artifact_payload(record: ArtifactRecord) -> dict[str, Any]:
     data = record.to_dict()
     data.pop("artifact_id", None)
     return data
+
+
+def _strip_none_state_values(updates: Mapping[str, Any]) -> dict[str, Any]:
+    cleaned = {}
+    for artifact_id, payload in updates.items():
+        if not isinstance(payload, Mapping):
+            continue
+        values = {str(key): value for key, value in payload.items() if value is not None}
+        if values:
+            cleaned[str(artifact_id)] = values
+    return cleaned
 
 
 def _mapping(value: Any) -> dict[str, Any]:
