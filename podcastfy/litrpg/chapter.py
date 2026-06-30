@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from podcastfy.litrpg.casting import build_role_tts_instructions
 from podcastfy.litrpg.casting import cast_plan_from_mapping
+from podcastfy.litrpg.character_arc import build_arc_state_update_prompt
 from podcastfy.litrpg.mechanics import validate_mechanics
 from podcastfy.litrpg.part_reuse import select_reusable_part_scripts
 from podcastfy.litrpg.prompts import build_series_anchor_block
@@ -26,6 +27,7 @@ from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt
 from podcastfy.litrpg.production import build_part_revision_prompt
 from podcastfy.litrpg.production import build_scarcity_audit_prompt
+from podcastfy.litrpg.production import build_scene_rendering_audit_prompt
 from podcastfy.litrpg.production import build_showmanship_audit_prompt
 from podcastfy.litrpg.production import build_tonal_audit_prompt
 from podcastfy.litrpg.production import build_visual_state_extraction_prompt
@@ -371,6 +373,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     rhythm_review = ""
     reader_proxy_prompt = ""
     reader_proxy_review = ""
+    scene_rendering_audit_prompt = ""
+    scene_rendering_audit = ""
     rewrite_attempts: list[dict[str, Any]] = []
     if reviews_enabled:
         visual_state_update_prompt = build_visual_state_extraction_prompt(
@@ -483,8 +487,22 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             stage="reader_proxy",
             retry_options=retry_options,
         )
+        scene_rendering_audit_prompt = build_scene_rendering_audit_prompt(
+            final_script=combined_script,
+            scene_brief=scene_brief,
+            world_state=world_state,
+            genre=genre,
+        )
+        scene_rendering_audit = _generate_with_retry(
+            llm,
+            prompt=scene_rendering_audit_prompt,
+            stage="scene_rendering_audit",
+            retry_options=retry_options,
+        )
     world_state_update_prompt = ""
     world_state_update = ""
+    arc_state_update_prompt = ""
+    arc_state_update = ""
     if task.get("update_world_state"):
         world_state_update_prompt = build_world_state_update_prompt(
             final_script=combined_script,
@@ -495,6 +513,18 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             llm,
             prompt=world_state_update_prompt,
             stage="world_state_update",
+            retry_options=retry_options,
+        )
+    if task.get("update_arc_state") or task.get("update_world_state"):
+        arc_state_update_prompt = build_arc_state_update_prompt(
+            final_script=combined_script,
+            current_arc_registry=_mapping_or_none(task.get("emotional_arcs")) or {},
+            chapter_contract=chapter_contract or showrunner_payload,
+        )
+        arc_state_update = _generate_with_retry(
+            llm,
+            prompt=arc_state_update_prompt,
+            stage="arc_state_update",
             retry_options=retry_options,
         )
     cue_sheet = parse_cue_sheet(combined_script)
@@ -569,6 +599,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "scene_brief": dict(scene_brief),
             "scene_brief_context": scene_brief_context,
             "world_state_update": world_state_update,
+            "arc_state_update": arc_state_update,
             "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),
@@ -593,8 +624,12 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "rhythm_review": rhythm_review,
         "reader_proxy_prompt": reader_proxy_prompt,
         "reader_proxy_review": reader_proxy_review,
+        "scene_rendering_audit_prompt": scene_rendering_audit_prompt,
+        "scene_rendering_audit": scene_rendering_audit,
         "world_state_update_prompt": world_state_update_prompt,
         "world_state_update": world_state_update,
+        "arc_state_update_prompt": arc_state_update_prompt,
+        "arc_state_update": arc_state_update,
         "qa": qa,
         "combined_script": combined_script,
         "render": {
@@ -622,9 +657,11 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 "rewrite_attempts": rewrite_attempts,
                 "rhythm_review": rhythm_review,
                 "reader_proxy_review": reader_proxy_review,
+                "scene_rendering_audit": scene_rendering_audit,
                 "scene_brief": dict(scene_brief),
                 "scene_brief_context": scene_brief_context,
                 "world_state_update": world_state_update,
+                "arc_state_update": arc_state_update,
                 "series_anchor_block": series_anchor_block,
                 "scarcity_registry": scarcity_registry.to_dict(),
                 "audio_readiness": {

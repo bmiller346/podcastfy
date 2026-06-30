@@ -56,6 +56,8 @@ class FakeChapterLLM:
             return '{"verdict":"pass","scores":{"tempo_match":9}}'
         if stage == "reader_proxy":
             return '{"verdict":"pass","scores":{"binge_worthiness":9}}'
+        if stage == "scene_rendering_audit":
+            return '{"verdict":"pass","missing":[],"violations":[],"artifact_violations":[],"character_violations":[],"forbidden_aliases_used":[],"fixes":[]}'
         raise AssertionError(f"unexpected stage {stage}")
 
 
@@ -276,6 +278,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "scarcity_audit",
         "rhythm",
         "reader_proxy",
+        "scene_rendering_audit",
     ]
     assert "The cursed stapler must appear." in llm.calls[0]["prompt"]
     assert result["chapter"]["number"] == 2
@@ -300,7 +303,9 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     assert result["render"]["metadata"]["hook_review"].startswith('{"verdict"')
     assert result["rhythm_review"].startswith('{"verdict"')
     assert result["reader_proxy_review"].startswith('{"verdict"')
+    assert result["scene_rendering_audit"].startswith('{"verdict"')
     assert result["render"]["metadata"]["reader_proxy_review"].startswith('{"verdict"')
+    assert result["render"]["metadata"]["scene_rendering_audit"].startswith('{"verdict"')
     assert result["render"]["metadata"]["chapter_review"] == "chapter review: render ready"
     assert result["render"]["metadata"]["visual_state_update"].startswith('{"characters"')
     assert result["render"]["metadata"]["qa_ready"] is True
@@ -716,6 +721,49 @@ def test_generate_litrpg_chapter_injects_artifact_rendering_contract():
     assert "condition=jammed but usable" in first_prompt
     assert "do not rename artifacts" in first_prompt
     assert result["chapter"]["scene_brief"]["active_artifacts"][0]["locked_name"] == "Redline Stapler"
+
+
+def test_generate_litrpg_chapter_runs_scene_rendering_audit_with_world_state_contract():
+    llm = FakeChapterLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            chapter_contract={
+                "location": "floor_4_market",
+                "scene_type": "apex",
+                "active_artifacts": ["stapler_bow"],
+            },
+            world_state={
+                "locations": {
+                    "floor_4_market": {
+                        "name": "Floor 4 Market",
+                        "sensory": {"spatial": "ceiling 40ft, three exits"},
+                        "threat_geometry": "ambush-friendly east aisle",
+                    }
+                },
+                "artifacts": {
+                    "stapler_bow": {
+                        "locked_name": "Redline Stapler",
+                        "aliases_forbidden": ["staple gun"],
+                        "physical_signature": {"sound_fire": "chunk-thwip"},
+                        "state": {"ammo": 4, "condition": "jammed"},
+                    }
+                },
+            },
+        ),
+        llm=llm,
+    )
+
+    audit_call = next(call for call in llm.calls if call["stage"] == "scene_rendering_audit")
+    assert "Scene rendering contract" in audit_call["prompt"]
+    assert "Floor 4 Market" in audit_call["prompt"]
+    assert "ceiling 40ft, three exits" in audit_call["prompt"]
+    assert "Redline Stapler" in audit_call["prompt"]
+    assert "staple gun" in audit_call["prompt"]
+    assert "chunk-thwip" in audit_call["prompt"]
+    assert "ammo" in audit_call["prompt"]
+    assert result["scene_rendering_audit_prompt"] == audit_call["prompt"]
+    assert result["render"]["metadata"]["scene_rendering_audit"].startswith('{"verdict"')
 
 
 def test_generate_litrpg_chapter_injects_series_package_summary_into_prompts():

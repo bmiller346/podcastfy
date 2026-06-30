@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
+import json
 from typing import Any, Mapping, Sequence
 
 from podcastfy.litrpg.prompts import build_series_anchor_block
@@ -419,6 +420,56 @@ Return only compact JSON:
   "spent_mysteries": [],
   "quarantine_required": false
 }}
+
+Final script:
+{final_script}
+"""
+
+
+def build_scene_rendering_audit_prompt(
+    *,
+    final_script: str,
+    scene_brief: Mapping[str, Any] | None = None,
+    world_state: Mapping[str, Any] | None = None,
+    genre: str = "",
+) -> str:
+    """Build a JSON-only audit prompt for scene brief/world-state rendering compliance."""
+
+    profile = story_profile(genre)
+    return f"""Audit whether this finalized {profile.script_label} obeyed the Scene rendering contract.
+
+This is not prose polish. Do not rewrite the chapter. Check only whether the prose obeyed the scene rendering contract and persistent world-state rendering constraints.
+
+Return compact JSON only:
+{{
+  "verdict": "pass|revise|block",
+  "missing": [],
+  "violations": [],
+  "artifact_violations": [],
+  "character_violations": [],
+  "forbidden_aliases_used": [],
+  "fixes": []
+}}
+
+Audit checks:
+- spatial orientation appears before action/escalation
+- sensory priority from the scene brief appears in prose
+- threat geometry is established
+- active character anchors are respected
+- emotional tells are respected or explicitly justified
+- artifact locked names are used
+- artifact forbidden aliases are avoided
+- artifact physical signatures are respected
+- active mystery forbidden references/payoffs are avoided
+- injuries, gear state, degradation, ammo/charges/condition are not reset
+
+Genre/style: {profile.genre}
+
+Scene rendering contract:
+{json.dumps(dict(scene_brief or {}), ensure_ascii=True, indent=2, sort_keys=True)}
+
+Persistent world state:
+{json.dumps(dict(world_state or {}), ensure_ascii=True, indent=2, sort_keys=True)}
 
 Final script:
 {final_script}

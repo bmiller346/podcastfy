@@ -7,6 +7,7 @@ from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt, default_cast_roles
 from podcastfy.litrpg.production import build_part_revision_prompt
 from podcastfy.litrpg.production import build_scarcity_audit_prompt
+from podcastfy.litrpg.production import build_scene_rendering_audit_prompt
 from podcastfy.litrpg.production import build_showmanship_audit_prompt
 from podcastfy.litrpg.production import build_tonal_audit_prompt
 from podcastfy.litrpg.production import build_visual_state_extraction_prompt
@@ -225,3 +226,39 @@ def test_scarcity_audit_prompt_returns_story_economy_schema():
     assert '"passed": true' in prompt
     assert '"quarantine_required": false' in prompt
     assert "spent_mysteries" in prompt
+
+
+def test_scene_rendering_audit_prompt_checks_scene_brief_and_world_state_contracts():
+    prompt = build_scene_rendering_audit_prompt(
+        final_script="<NARRATOR>Floor 4 Market opens under amber moss.</NARRATOR>",
+        scene_brief={
+            "spatial_anchor": "Floor 4 Market: ceiling 40ft, three exits",
+            "sensory_priority": ["visual", "smell", "audio"],
+            "threat_geometry": "ambush-friendly east aisle",
+            "active_artifacts": [{"locked_name": "Redline Stapler"}],
+        },
+        world_state={
+            "artifacts": {
+                "stapler_bow": {
+                    "locked_name": "Redline Stapler",
+                    "aliases_forbidden": ["staple gun"],
+                    "physical_signature": {"sound_fire": "chunk-thwip"},
+                    "state": {"ammo": 4, "condition": "jammed"},
+                }
+            },
+            "active_mysteries": {"system_true_purpose": {"status": "DO_NOT_SPEND"}},
+        },
+    )
+
+    assert "Scene rendering contract" in prompt
+    assert "spatial orientation" in prompt
+    assert "sensory priority" in prompt
+    assert "threat geometry" in prompt
+    assert "artifact locked names" in prompt
+    assert "forbidden aliases" in prompt
+    assert '"artifact_violations": []' in prompt
+    assert '"character_violations": []' in prompt
+    assert '"forbidden_aliases_used": []' in prompt
+    assert "Redline Stapler" in prompt
+    assert "chunk-thwip" in prompt
+    assert "DO_NOT_SPEND" in prompt
