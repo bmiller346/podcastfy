@@ -18,6 +18,8 @@ from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
 from podcastfy.litrpg.sfx import parse_cue_sheet
 from podcastfy.litrpg.sfx_mix import mix_audio_locally
+from podcastfy.litrpg.voice_processing import apply_voice_processing_to_file
+from podcastfy.litrpg.voice_processing import voice_processing_chain_for_role
 
 if TYPE_CHECKING:
     from podcastfy.text_to_speech import TextToSpeech
@@ -121,6 +123,17 @@ class RoleScriptRenderer:
                 role_instructions=role_instructions,
             )
 
+        voice_processing_result = _apply_dialogue_voice_processing(
+            output_path=output_path,
+            bundle=bundle,
+            performance_contracts=performance_contracts,
+        )
+        dialogue_for_mix = Path(
+            voice_processing_result.get("output_path")
+            if voice_processing_result.get("processed")
+            else output_path
+        )
+
         asset_mappings = list(bundle.get("asset_mappings") or [])
         if not asset_mappings:
             asset_mappings = [
@@ -130,7 +143,7 @@ class RoleScriptRenderer:
         mix_plan = dict(bundle.get("mix_plan") or build_mix_plan(cue_sheet, asset_mappings=asset_mappings))
         mixed_path = audio_dir / f"{output_path.stem}_mixed{output_path.suffix}"
         mix_result = mix_audio_locally(
-            dialogue_path=output_path,
+            dialogue_path=dialogue_for_mix,
             output_path=mixed_path,
             mix_plan=mix_plan,
             asset_mappings=asset_mappings,
@@ -170,6 +183,7 @@ class RoleScriptRenderer:
             ],
             "audio_performance_qa": audio_performance_qa.to_dict(),
             "audio_provider_routes": audio_provider_routes,
+            "voice_processing": voice_processing_result,
             "contracted_script": contracted_script,
             "cue_sheet": cue_sheet if isinstance(cue_sheet, Mapping) else cue_sheet.to_dict(),
             "asset_mappings": asset_mappings,
@@ -381,6 +395,34 @@ def _render_with_audio_performance_provider(
         )
     output_path.write_bytes(b"".join(chunks))
     return routes
+
+
+def _apply_dialogue_voice_processing(
+    *,
+    output_path: Path,
+    bundle: Mapping[str, Any],
+    performance_contracts: Sequence[Any],
+) -> dict[str, Any]:
+    config = bundle.get("config")
+    if not isinstance(config, Mapping):
+        config = {}
+    roles = [str(contract.role).upper() for contract in performance_contracts]
+    role = roles[0] if roles and len(set(roles)) == 1 else "DIALOGUE"
+    register = (
+        str(performance_contracts[0].performance_register)
+        if performance_contracts and len({contract.performance_register for contract in performance_contracts}) == 1
+        else None
+    )
+    chain = voice_processing_chain_for_role(
+        role,
+        config.get("voice_processing") if isinstance(config.get("voice_processing"), Mapping) else {},
+        performance_register=register,
+    )
+    processed_path = output_path.with_name(f"{output_path.stem}_processed{output_path.suffix}")
+    result = apply_voice_processing_to_file(output_path, processed_path, chain)
+    result["role"] = role
+    result["performance_register"] = register
+    return result
 
 
 def _audio_performance_config_from_bundle(bundle: Mapping[str, Any]) -> Mapping[str, Any]:

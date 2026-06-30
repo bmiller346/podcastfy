@@ -15,6 +15,8 @@ from podcastfy.litrpg.script_parser import (
     parse_role_script,
     validate_audio_readiness,
 )
+from podcastfy.litrpg.voice_processing import apply_voice_processing_to_file
+from podcastfy.litrpg.voice_processing import voice_processing_chain_for_role
 from podcastfy.tts.script_parser import parse_role_script as parse_generic_role_script
 from podcastfy.text_to_speech import TextToSpeech
 from podcastfy.tts.base import TTSProvider
@@ -360,6 +362,44 @@ def test_audio_performance_provider_requests_map_contract_by_provider():
     assert openai_request.generation_config["voice_parameters"]["pace"] >= 1.0
 
 
+def test_voice_processing_chain_selects_role_and_register_override():
+    chain = voice_processing_chain_for_role(
+        "SYSTEM",
+        {
+            "SYSTEM": {
+                "chain": "announcer_broadcast",
+                "pitch_shift_semitones": -1.5,
+                "chain_params": {"compression_ratio": 4.0},
+                "register_overrides": {
+                    "corporate_panic": {
+                        "chain_params": {"compression_ratio": 6.0}
+                    }
+                },
+            }
+        },
+        performance_register="corporate_panic",
+    )
+
+    assert chain.role == "SYSTEM"
+    assert chain.chain == "announcer_broadcast"
+    assert chain.pitch_shift_semitones == -1.5
+    assert chain.chain_params["compression_ratio"] == 6.0
+
+
+def test_voice_processing_apply_is_safe_when_chain_none(tmp_path):
+    source = tmp_path / "voice.wav"
+    source.write_bytes(b"not-real-audio")
+
+    result = apply_voice_processing_to_file(
+        source,
+        tmp_path / "processed.wav",
+        voice_processing_chain_for_role("HERO", {"HERO": {"chain": "none"}}),
+    )
+
+    assert result["processed"] is False
+    assert result["reason"] == "chain_none"
+
+
 def test_provider_name_for_contract_prefers_register_override():
     contract = build_line_performance_contracts(
         '<SYSTEM style="genuine awe">Impossible.</SYSTEM>',
@@ -601,6 +641,9 @@ def test_role_renderer_passes_contracted_script_and_metadata(tmp_path, monkeypat
     assert "do not soften" in instruction
     assert metadata["performance_contracts"][0]["reference_clip_id"] == "system_ref_001"
     assert metadata["performance_contracts"][0]["must_not_comedify"] is True
+    assert metadata["voice_processing"]["role"] == "SYSTEM"
+    assert metadata["voice_processing"]["processed"] is False
+    assert metadata["voice_processing"]["reason"] == "chain_none"
 
 
 def test_role_renderer_quarantines_audio_when_post_generation_qa_fails(tmp_path, monkeypatch):
