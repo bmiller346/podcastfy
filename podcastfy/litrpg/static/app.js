@@ -902,6 +902,7 @@ function renderSeriesPackage(data) {
   renderSeriesArtifacts(data);
   renderRoleEditor(data.package || buildPackageDraft());
   renderPackageRadar(summarizeSeriesPackage(data));
+  renderSeriesWorkspace();
   updateDiagnostics();
 }
 
@@ -1488,8 +1489,8 @@ function renderChapterOutlineArtifact(outline) {
     <div class="chapter-outline-list">
       ${chapters.slice(0, 24).map((chapter, index) => `<article class="chapter-outline-card">
         <strong>${escapeHtml(chapter.title || chapter.name || `Chapter ${chapter.chapter || chapter.chapter_number || index + 1}`)}</strong>
-        <p>${escapeHtml(chapter.summary || chapter.beat || chapter.promise || chapter.goal || "")}</p>
-        <span>${escapeHtml(compactValues(chapter, ["book", "chapter", "pov", "status", "cliffhanger"]))}</span>
+        <p>${escapeHtml(chapter.summary || chapter.beat || chapter.promise || chapter.goal || chapter.premise || "")}</p>
+        <span>${escapeHtml(compactValues(chapter, ["book", "chapter", "pov", "status", "ends_on", "cliffhanger"]))}</span>
       </article>`).join("")}
     </div>`);
 }
@@ -1522,11 +1523,12 @@ function renderWorldRegisterArtifact(register) {
 function renderVoiceCardsArtifact(deck) {
   if (!hasArtifact(deck)) return missingArtifact("Expected `voice_cards` in the loaded series payload.");
   const cards = packageArray(deck.cards || deck.voice_cards || deck);
+  if (!cards.length) return missingArtifact("Voice cards exist but are empty. Run enrichment or generate a package before final drafting.");
   return artifactResult(true, `${cards.length} voice card${cards.length === 1 ? "" : "s"}`, `
     ${artifactCards(cards, (card) => [
       card.character || card.name || card.role || "Unnamed voice",
-      card.voice || card.delivery || card.baseline || card.performance || "",
-      compactValues(card, ["tone", "pace", "accent", "avoid", "sample_line"]),
+      card.voice || card.delivery || card.baseline || card.performance || listPreview(card.sentence_pattern_rules) || "",
+      compactValues(card, ["tone", "pace", "accent", "avoid", "sample_line", "sample_lines", "humor_modes"]),
     ])}`);
 }
 
@@ -1537,12 +1539,17 @@ function renderForeshadowLedgerArtifact(ledger) {
     ...artifactList(ledger.ready_to_pay),
     ...artifactList(ledger.paid),
   ];
+  if (!entries.length) return missingArtifact("Foreshadow ledger exists but has no planted threads yet. Derive hooks from chapter endings or run enrichment.");
   return artifactResult(true, `${entries.length} thread${entries.length === 1 ? "" : "s"}`, `
     ${artifactCards(entries, (entry) => [
       entry.mystery || entry.name || entry.thread || "Unnamed thread",
       entry.detail || entry.plant || entry.payoff || "",
       compactValues(entry, ["status", "planted_book", "planted_chapter", "payoff_book", "intended_payoff_start", "intended_payoff_end"]),
     ])}`);
+}
+
+function listPreview(value) {
+  return Array.isArray(value) ? value.slice(0, 2).join("; ") : "";
 }
 
 function artifactResult(available, countLabel, html) {

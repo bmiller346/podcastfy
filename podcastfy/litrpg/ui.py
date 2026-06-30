@@ -536,13 +536,28 @@ def load_intake_artifact_workspace(series_id: str) -> dict[str, Any] | None:
         return None
     series_plan = _mapping_or_empty(present.get("series_plan"))
     story_bible = _mapping_or_empty(present.get("story_bible"))
-    world_register = _mapping_or_empty(present.get("world_register"))
+    chapter_outline = _list_of_dicts(present.get("chapter_outline"))
+    world_register = _enriched_world_register(_mapping_or_empty(present.get("world_register")), chapter_outline)
+    voice_cards = _enriched_voice_cards(_mapping_or_empty(present.get("voice_cards")), story_bible)
+    foreshadow_ledger = _enriched_foreshadow_ledger(
+        _mapping_or_empty(present.get("foreshadow_ledger")),
+        chapter_outline,
+        story_bible,
+    )
+    present["world_register"] = world_register
+    present["voice_cards"] = voice_cards
+    present["foreshadow_ledger"] = foreshadow_ledger
     return {
         "schema_version": "artifact-workspace-v1",
         "series_id": series_id,
         "metadata": {
             "source": "premise_intake_artifacts",
             "artifact_count": len(present),
+            "derived_artifacts": _derived_artifact_names(
+                voice_cards=voice_cards,
+                world_register=world_register,
+                foreshadow_ledger=foreshadow_ledger,
+            ),
             "title": series_plan.get("series_title") or series_plan.get("title") or series_id,
         },
         "premise": str(story_bible.get("premise") or ""),
@@ -1185,6 +1200,222 @@ def _package_collection_count(value: Any) -> int:
     if isinstance(value, dict):
         return len(value)
     return 0
+
+
+def _derived_artifact_names(
+    *,
+    voice_cards: dict[str, Any],
+    world_register: dict[str, Any],
+    foreshadow_ledger: dict[str, Any],
+) -> list[str]:
+    derived = []
+    if _mapping_or_empty(voice_cards.get("metadata")).get("derived"):
+        derived.append("voice_cards")
+    if _mapping_or_empty(world_register.get("metadata")).get("derived"):
+        derived.append("world_register")
+    if _mapping_or_empty(foreshadow_ledger.get("metadata")).get("derived"):
+        derived.append("foreshadow_ledger")
+    return derived
+
+
+def _enriched_voice_cards(voice_cards: dict[str, Any], story_bible: dict[str, Any]) -> dict[str, Any]:
+    cards = _mapping_or_empty(voice_cards.get("cards") or voice_cards.get("voice_cards"))
+    if cards:
+        return voice_cards
+    characters = _package_characters_from_story_bible(story_bible)
+    generated = {}
+    for character in characters:
+        name = str(character.get("name") or "").strip()
+        if not name:
+            continue
+        generated[name] = _derived_voice_card(name)
+    if not generated:
+        return voice_cards
+    return {
+        **voice_cards,
+        "series_id": voice_cards.get("series_id") or story_bible.get("series_id") or "default-series",
+        "cards": generated,
+        "metadata": {"derived": True, "source": "story_bible_character_names"},
+    }
+
+
+def _derived_voice_card(name: str) -> dict[str, Any]:
+    key = name.casefold()
+    if "edward" in key:
+        return {
+            "name": name,
+            "roles": ["EDWARD", "HERO"],
+            "sentence_pattern_rules": ["Short, practical, engineer-brained complaints."],
+            "stress_speech_patterns": ["Gets annoyed before scared; treats magic as code violations."],
+            "humor_modes": ["OSHA outrage", "blue-collar understatement"],
+            "sample_lines": ["Who signed off on this?"],
+            "drift_checks": ["Do not make him a generic fantasy hero."],
+        }
+    if "kelli" in key:
+        return {
+            "name": name,
+            "roles": ["KELLI"],
+            "sentence_pattern_rules": ["Dry, sharp, risk-table confidence."],
+            "stress_speech_patterns": ["Goes quiet before making the all-in move."],
+            "humor_modes": ["casino odds", "old-married needling"],
+            "sample_lines": ["That is not luck. That is a bad table."],
+            "drift_checks": ["Do not soften her chaos appetite into generic supportiveness."],
+        }
+    if "pedro" in key:
+        return {
+            "name": name,
+            "roles": ["PEDRO", "FAMILIAR"],
+            "sentence_pattern_rules": ["Phrase-bank interjections, not fluent exposition."],
+            "forbidden_words": ["generic swearing"],
+            "stress_speech_patterns": ["Repeats construction or gambling phrases at system-sensitive moments."],
+            "humor_modes": ["accidental system exploit", "permit joke"],
+            "sample_lines": ["WHERE'S THE PERMIT?"],
+            "drift_checks": ["Do not make Pedro explain lore in paragraphs."],
+        }
+    if "gallowgate" in key or "dredger" in key or "dockmaster" in key:
+        return {
+            "name": name,
+            "roles": [re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")],
+            "sentence_pattern_rules": ["Institutional menace; bureaucratic language with predatory implications."],
+            "stress_speech_patterns": ["Never sounds rushed; treats cruelty as procedure."],
+            "humor_modes": ["bureaucratic sadism"],
+            "sample_lines": ["Your appeal has been accepted as evidence against you."],
+            "drift_checks": ["Do not make the institution whimsical without teeth."],
+        }
+    return {
+        "name": name,
+        "roles": [re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")],
+        "sentence_pattern_rules": ["Preserve source-specific diction until a stronger voice pass replaces this card."],
+        "stress_speech_patterns": [],
+        "humor_modes": [],
+        "sample_lines": [],
+        "drift_checks": ["Derived placeholder; enrich before final drafting."],
+    }
+
+
+def _enriched_world_register(world_register: dict[str, Any], chapter_outline: list[dict[str, Any]]) -> dict[str, Any]:
+    locations = _list_of_dicts(world_register.get("locations"))
+    rules = _list_of_dicts(world_register.get("rules"))
+    entities = _list_of_dicts(world_register.get("entity_ecology"))
+    economy = _list_of_dicts(world_register.get("economy_anchors"))
+    derived = False
+    outline_text = " ".join(
+        str(chapter.get(key) or "")
+        for chapter in chapter_outline
+        for key in ("title", "premise", "ends_on")
+    ).casefold()
+    if not entities:
+        entities = _derived_entities_from_outline(outline_text)
+        derived = derived or bool(entities)
+    if not economy:
+        economy = _derived_economy_from_outline(outline_text)
+        derived = derived or bool(economy)
+    if not rules:
+        rules = _derived_rules_from_locations(locations, outline_text)
+        derived = derived or bool(rules)
+    enriched = {
+        **world_register,
+        "locations": locations,
+        "rules": rules,
+        "entity_ecology": entities,
+        "economy_anchors": economy,
+    }
+    if derived:
+        enriched["metadata"] = {"derived": True, "source": "chapter_outline_and_location_names"}
+    return enriched
+
+
+def _derived_entities_from_outline(outline_text: str) -> list[dict[str, Any]]:
+    candidates = []
+    if "dockmaster brine" in outline_text or "dockmaster" in outline_text:
+        candidates.append({"entity": "Dockmaster Brine", "detail": "Floor boss / customs authority pressure.", "tags": ["boss", "bureaucracy"]})
+    if "grand dredger" in outline_text:
+        candidates.append({"entity": "Grand Dredger", "detail": "Deep-floor industrial threat signaled by chains, invoices, and suppressed phrases.", "tags": ["major-threat"]})
+    if "barnacle" in outline_text:
+        candidates.append({"entity": "Barnacle Mimics", "detail": "Hull-eating false marine growth.", "tags": ["mob", "hull-threat"]})
+    if "crab court" in outline_text or "crab" in outline_text:
+        candidates.append({"entity": "Crab Court", "detail": "Legalistic encounter ecology where testimony and rules become hazards.", "tags": ["encounter", "social-threat"]})
+    if "osha" in outline_text or "inspection" in outline_text:
+        candidates.append({"entity": "OSHA Wraiths", "detail": "Undead inspection pressure that turns unsafe rigging into debuffs.", "tags": ["hazard", "bureaucracy"]})
+    return candidates
+
+
+def _derived_economy_from_outline(outline_text: str) -> list[dict[str, Any]]:
+    economy = []
+    if "barnacle scrip" in outline_text:
+        economy.append({"name": "Barnacle Scrip", "detail": "Repair/debt currency introduced around hull pressure.", "tags": ["currency"]})
+    if "knife debt" in outline_text or "knife that remembers debts" in outline_text:
+        economy.append({"name": "Kelli's Knife Debt", "detail": "Debt-bearing loot with future cost.", "tags": ["loot", "debt"]})
+    if "invoice" in outline_text or "docking fees" in outline_text:
+        economy.append({"name": "Gallowgate Fees", "detail": "Predatory billing, docking, and customs charges as faction leverage.", "tags": ["debt", "bureaucracy"]})
+    return economy
+
+
+def _derived_rules_from_locations(locations: list[dict[str, Any]], outline_text: str) -> list[dict[str, Any]]:
+    rules = []
+    names = " ".join(str(item.get("name") or "") for item in locations).casefold()
+    if "glass dunes" in names:
+        rules.append({"rule": "Navigable medium changes by floor", "detail": "Sophie II must be refit when water becomes sand, fog, glass, or other traversal media.", "tags": ["floor-rule"]})
+    if "sophie ii" in outline_text or "guild hall" in outline_text:
+        rules.append({"rule": "Mobile asset registration", "detail": "Sophie II can be treated as a contested guild hall / home base, creating both protection and liability.", "tags": ["home-base"]})
+    if "bidder tag" in outline_text or "surname" in outline_text:
+        rules.append({"rule": "Weaponized distance", "detail": "The kids remain off-boat, but Gallowgate can pressure Edward and Kelli through family-name clues.", "tags": ["family-pressure"]})
+    return rules
+
+
+def _enriched_foreshadow_ledger(
+    ledger: dict[str, Any],
+    chapter_outline: list[dict[str, Any]],
+    story_bible: dict[str, Any],
+) -> dict[str, Any]:
+    planted = _list_of_dicts(ledger.get("planted"))
+    ready = _list_of_dicts(ledger.get("ready_to_pay"))
+    if planted or ready:
+        return ledger
+    derived = []
+    for chapter in chapter_outline:
+        chapter_number = _int_value(chapter.get("chapter"), len(derived) + 1)
+        title = str(chapter.get("title") or "")
+        hook = str(chapter.get("ends_on") or "")
+        text = f"{title} {hook}".casefold()
+        if "surname" in text or "family" in text:
+            derived.append(_foreshadow_entry("Are Edward and Kelli's kids inside Gallowgate's leverage chain?", hook, chapter_number, 18, 30))
+        elif "grand dredger" in text or "chain" in text:
+            derived.append(_foreshadow_entry("What does the Grand Dredger want from Sophie II?", hook, chapter_number, 20, 30))
+        elif "pedro" in text and ("voice" in text or "phrase" in text or "rule" in text):
+            derived.append(_foreshadow_entry("Why can Pedro's phrases damage or alter system rules?", hook, chapter_number, 12, 24))
+        elif "inspection number" in text or "old inspector" in text:
+            derived.append(_foreshadow_entry("What is Edward's prior connection to Gallowgate's bureaucracy?", hook, chapter_number, 22, 30))
+        if len(derived) >= 5:
+            break
+    if not derived and story_bible:
+        derived.append(_foreshadow_entry("What debt did the Marshes unknowingly carry into Gallowgate?", "Derived from sparse story bible; needs enrichment.", 1, 18, 30))
+    return {
+        **ledger,
+        "planted": derived,
+        "ready_to_pay": ready,
+        "metadata": {"derived": True, "source": "chapter_outline_hooks"},
+    }
+
+
+def _foreshadow_entry(mystery: str, detail: str, chapter: int, payoff_start: int, payoff_end: int) -> dict[str, Any]:
+    return {
+        "mystery": mystery,
+        "detail": detail or mystery,
+        "planted_book": 1,
+        "planted_chapter": chapter,
+        "payoff_book": 1,
+        "intended_payoff_start": payoff_start,
+        "intended_payoff_end": payoff_end,
+        "status": "planted",
+    }
+
+
+def _int_value(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _read_json_if_any(path: Path) -> Any | None:

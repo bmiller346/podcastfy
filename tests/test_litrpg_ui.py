@@ -437,6 +437,14 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
         ),
         encoding="utf-8",
     )
+    (series_root / "voice_cards.json").write_text(
+        json.dumps({"series_id": "the-knotty-buoy", "cards": {}}),
+        encoding="utf-8",
+    )
+    (series_root / "foreshadow_ledger.json").write_text(
+        json.dumps({"series_id": "the-knotty-buoy", "planted": [], "ready_to_pay": []}),
+        encoding="utf-8",
+    )
 
     status, data = request_json(
         ui_server,
@@ -451,6 +459,8 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
     assert data["package"]["chapter_outline"][0]["title"] == "Out of the Atlantic"
     assert data["package"]["story_bible"]["characters"]["Pedro"]["name"] == "Pedro"
     assert data["package"]["world_register"]["entity_ecology"][0]["entity"] == "OSHA Wraiths"
+    assert data["package"]["voice_cards"]["cards"]["Pedro"]["sample_lines"] == ["WHERE'S THE PERMIT?"]
+    assert data["package"]["foreshadow_ledger"]["planted"]
     assert [item["name"] for item in data["package"]["characters"]] == [
         "Edward Marsh",
         "Kelli Marsh",
@@ -458,6 +468,7 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
     ]
     assert data["package"]["home_base"]["name"] == "Sophie II"
     assert data["package"]["bestiary"][0]["name"] == "OSHA Wraiths"
+    assert set(data["package"]["metadata"]["derived_artifacts"]) >= {"voice_cards", "foreshadow_ledger"}
 
 
 def test_series_package_generate_uses_generator_when_available(
