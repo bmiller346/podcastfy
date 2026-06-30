@@ -234,6 +234,14 @@ function setActiveSeriesId(seriesId, { syncTask = true, syncPackage = true } = {
   renderSeriesWorkspace();
 }
 
+async function loadSelectedSeriesPackage() {
+  const selectedSeries = cleanValue(seriesSelect && seriesSelect.value);
+  if (selectedSeries) {
+    setActiveSeriesId(selectedSeries, { syncTask: true, syncPackage: true });
+  }
+  return loadSeriesPackage();
+}
+
 function renderLibrary(data) {
   latestLibrary = data;
   renderSeriesWorkspace();
@@ -2058,10 +2066,9 @@ if (useTaskSeriesButton) {
 
 if (loadActiveSeriesButton) {
   loadActiveSeriesButton.addEventListener("click", async () => {
-    setActiveSeriesId(currentSeriesId(), { syncTask: true, syncPackage: true });
     taskOutput.textContent = "Loading series...";
     try {
-      const data = await loadSeriesPackage();
+      const data = await loadSelectedSeriesPackage();
       taskOutput.textContent = loadedSeriesMessage(data);
     } catch (error) {
       taskOutput.textContent = error.message;
@@ -2335,6 +2342,22 @@ if (copyMcpContextButton) {
 
 async function runQuickAction(action) {
   if (action === "focus-premise") {
+    if (fillPremiseFromAvailableContext()) {
+      return;
+    }
+    const selectedSeries = cleanValue(seriesSelect && seriesSelect.value);
+    if (selectedSeries && selectedSeries !== currentSeriesId()) {
+      taskOutput.textContent = `Loading ${selectedSeries} before creating premise...`;
+      try {
+        await loadSelectedSeriesPackage();
+        if (fillPremiseFromAvailableContext()) {
+          return;
+        }
+      } catch (error) {
+        taskOutput.textContent = error.message;
+        return;
+      }
+    }
     if (!fillPremiseFromAvailableContext()) {
       taskForm.elements.premise.focus();
       taskOutput.textContent = "Premise field focused. Add a short story premise or load/queue messy context first.";
