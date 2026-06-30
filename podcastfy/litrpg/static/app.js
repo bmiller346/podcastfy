@@ -456,7 +456,7 @@ function refreshAdvancedTaskDropdowns() {
 function refreshOptionSelect(select, options) {
   if (!select) return;
   const previous = select.value;
-  const knownOptions = [["", "settings/default"], ...options, [CUSTOM_OPTION, "Custom..."]];
+  const knownOptions = [["", "Use provider default model"], ...options, [CUSTOM_OPTION, "Custom..."]];
   select.innerHTML = knownOptions
     .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
     .join("");

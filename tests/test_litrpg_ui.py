@@ -147,6 +147,8 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="power_curve"' in html
     assert 'value="logarithmic"' in html
     assert 'name="generation_provider"' in html
+    assert "Use settings default provider" in html
+    assert "hybrid auto" in html
     assert 'value="hybrid"' in html
     assert 'value="gemini"' in html
     assert 'value="openai"' in html
