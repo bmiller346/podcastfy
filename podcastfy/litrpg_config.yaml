@@ -131,6 +131,43 @@ voice_processing:
   BOSS:
     chain: monster_distortion
     pitch_shift_semitones: -2.0
+  scene_profiles:
+    neutral:
+      chain_params:
+        highpass_hz: 80
+        room_size: 0.04
+        wet_level: 0.015
+        compression_ratio: 2.0
+    dungeon:
+      chain_params:
+        highpass_hz: 95
+        room_size: 0.18
+        wet_level: 0.045
+        compression_ratio: 2.4
+    stone_corridor:
+      chain_params:
+        highpass_hz: 100
+        room_size: 0.24
+        wet_level: 0.055
+        compression_ratio: 2.3
+    cathedral:
+      chain_params:
+        highpass_hz: 90
+        room_size: 0.62
+        wet_level: 0.08
+        compression_ratio: 2.1
+    outdoor:
+      chain_params:
+        highpass_hz: 70
+        room_size: 0.02
+        wet_level: 0.008
+        compression_ratio: 1.8
+    tavern:
+      chain_params:
+        highpass_hz: 75
+        room_size: 0.12
+        wet_level: 0.03
+        compression_ratio: 2.2
 effects:
   notification: short crystalline ping before SYSTEM updates
   loot_drop: small rising sparkle under the reveal

@@ -386,6 +386,32 @@ def test_voice_processing_chain_selects_role_and_register_override():
     assert chain.chain_params["compression_ratio"] == 6.0
 
 
+def test_voice_processing_chain_applies_scene_acoustic_profile():
+    chain = voice_processing_chain_for_role("DIALOGUE", {}, scene_type="dungeon")
+
+    assert chain.role == "DIALOGUE"
+    assert chain.chain == "scene_acoustic"
+    assert chain.chain_params["room_size"] == 0.18
+    assert chain.chain_params["wet_level"] == 0.045
+
+
+def test_voice_processing_scene_profile_preserves_role_overrides():
+    chain = voice_processing_chain_for_role(
+        "SYSTEM",
+        {
+            "SYSTEM": {
+                "chain": "announcer_broadcast",
+                "chain_params": {"compression_ratio": 4.0},
+            }
+        },
+        scene_type="cathedral",
+    )
+
+    assert chain.chain == "announcer_broadcast"
+    assert chain.chain_params["room_size"] == 0.62
+    assert chain.chain_params["compression_ratio"] == 4.0
+
+
 def test_voice_processing_apply_is_safe_when_chain_none(tmp_path):
     source = tmp_path / "voice.wav"
     source.write_bytes(b"not-real-audio")

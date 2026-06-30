@@ -9,6 +9,13 @@ from typing import Any, Mapping
 
 DEFAULT_VOICE_PROCESSING_CHAINS: dict[str, dict[str, Any]] = {
     "none": {"effects": []},
+    "scene_acoustic": {
+        "effects": [
+            {"type": "highpass", "cutoff_frequency_hz": 80},
+            {"type": "compressor", "threshold_db": -24, "ratio": 2.0},
+            {"type": "reverb", "room_size": 0.05, "wet_level": 0.02},
+        ]
+    },
     "announcer_broadcast": {
         "effects": [
             {"type": "highpass", "cutoff_frequency_hz": 120},
@@ -34,6 +41,57 @@ DEFAULT_VOICE_PROCESSING_CHAINS: dict[str, dict[str, Any]] = {
     },
 }
 
+DEFAULT_SCENE_ACOUSTIC_PROFILES: dict[str, dict[str, Any]] = {
+    "neutral": {
+        "chain_params": {
+            "highpass_hz": 80,
+            "room_size": 0.04,
+            "wet_level": 0.015,
+            "compression_ratio": 2.0,
+        }
+    },
+    "dungeon": {
+        "chain_params": {
+            "highpass_hz": 95,
+            "room_size": 0.18,
+            "wet_level": 0.045,
+            "compression_ratio": 2.4,
+        }
+    },
+    "stone_corridor": {
+        "chain_params": {
+            "highpass_hz": 100,
+            "room_size": 0.24,
+            "wet_level": 0.055,
+            "compression_ratio": 2.3,
+        }
+    },
+    "cathedral": {
+        "chain_params": {
+            "highpass_hz": 90,
+            "room_size": 0.62,
+            "wet_level": 0.08,
+            "compression_ratio": 2.1,
+        }
+    },
+    "outdoor": {
+        "chain_params": {
+            "highpass_hz": 70,
+            "room_size": 0.02,
+            "wet_level": 0.008,
+            "compression_ratio": 1.8,
+        }
+    },
+    "tavern": {
+        "chain_params": {
+            "highpass_hz": 75,
+            "room_size": 0.12,
+            "wet_level": 0.03,
+            "compression_ratio": 2.2,
+        }
+    },
+}
+
 
 @dataclass(frozen=True, slots=True)
 class VoiceProcessingChain:
@@ -53,24 +111,48 @@ def voice_processing_chain_for_role(
     config: Mapping[str, Any] | None = None,
     *,
     performance_register: str | None = None,
+    scene_type: str | None = None,
 ) -> VoiceProcessingChain:
     """Return deterministic post-processing settings for role/register."""
 
     role_key = str(role).upper()
     values = _voice_processing_values(config)
     selected = _mapping(values.get(role_key))
+    if not selected and scene_type:
+        selected = {"chain": "scene_acoustic"}
     register_key = str(performance_register or "").lower()
     register_overrides = _mapping(selected.get("register_overrides"))
     if register_key and register_key in register_overrides:
         merged = dict(selected)
         merged.update(_mapping(register_overrides[register_key]))
         selected = merged
+    scene_profile = scene_acoustic_profile_for_type(scene_type, values)
+    if scene_profile:
+        selected = _merge_scene_profile(selected, scene_profile)
     return VoiceProcessingChain(
         role=role_key,
         chain=str(selected.get("chain") or "none"),
         pitch_shift_semitones=_float(selected.get("pitch_shift_semitones"), 0.0),
         chain_params=dict(selected.get("chain_params") or {}),
     )
+
+
+def scene_acoustic_profile_for_type(
+    scene_type: str | None,
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return deterministic acoustic processing parameters for a scene type."""
+
+    normalized = _normalize_scene_type(scene_type)
+    if not normalized:
+        return {}
+    values = _voice_processing_values(config)
+    configured = _mapping(values.get("scene_profiles"))
+    profile = _mapping(configured.get(normalized))
+    if profile:
+        return dict(profile, profile=normalized, source="config")
+    builtin = DEFAULT_SCENE_ACOUSTIC_PROFILES.get(normalized)
+    return dict(builtin, profile=normalized, source="builtin") if builtin else {}
 
 
 def apply_voice_processing_to_file(
@@ -168,6 +250,45 @@ def _voice_processing_values(config: Mapping[str, Any] | None) -> Mapping[str, A
         return {}
     values = config.get("voice_processing")
     return values if isinstance(values, Mapping) else config
+
+
+def _merge_scene_profile(
+    selected: Mapping[str, Any],
+    scene_profile: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged = dict(selected)
+    if not merged.get("chain") or merged.get("chain") == "none":
+        merged["chain"] = str(scene_profile.get("chain") or "scene_acoustic")
+    merged_params = dict(merged.get("chain_params") or {})
+    scene_params = dict(scene_profile.get("chain_params") or {})
+    scene_params.update(merged_params)
+    merged["chain_params"] = scene_params
+    metadata = dict(merged.get("scene_acoustic") or {})
+    metadata.update(
+        {
+            "profile": str(scene_profile.get("profile") or ""),
+            "source": str(scene_profile.get("source") or "builtin"),
+        }
+    )
+    merged["scene_acoustic"] = metadata
+    return merged
+
+
+def _normalize_scene_type(scene_type: str | None) -> str:
+    text = str(scene_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "stone": "stone_corridor",
+        "corridor": "stone_corridor",
+        "dungeon_room": "dungeon",
+        "outside": "outdoor",
+        "outdoors": "outdoor",
+        "forest": "outdoor",
+        "arena": "cathedral",
+        "grand_hall": "cathedral",
+        "bar": "tavern",
+        "inn": "tavern",
+    }
+    return aliases.get(text, text)
 
 
 def _params_for_effect(effect_type: str, params: Mapping[str, Any]) -> dict[str, Any]:

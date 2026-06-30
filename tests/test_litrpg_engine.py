@@ -46,6 +46,10 @@ def test_load_litrpg_config_reads_package_defaults():
     assert config.voices["SYSTEM"]["model"] == "gpt-4o-mini-tts"
     assert config.voice_processing["SYSTEM"]["chain"] == "announcer_broadcast"
     assert (
+        config.voice_processing["scene_profiles"]["dungeon"]["chain_params"]["room_size"]
+        == 0.18
+    )
+    assert (
         config.voice_effects_metadata()["voice_processing"]["SYSTEM"]["chain"]
         == "announcer_broadcast"
     )

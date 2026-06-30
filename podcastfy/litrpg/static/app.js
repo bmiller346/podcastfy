@@ -42,6 +42,7 @@ const packageRadar = document.querySelector("#package-radar");
 const library = document.querySelector("#library");
 const runTaskButton = document.querySelector("#run-task");
 const refreshButton = document.querySelector("#refresh");
+const themeToggleButton = document.querySelector("#theme-toggle");
 const messyContextInput = document.querySelector("#messy-context");
 const revisionChatLog = document.querySelector("#revision-chat-log");
 const revisionChatInput = document.querySelector("#revision-chat-input");
@@ -66,6 +67,7 @@ const copyMcpContextButton = document.querySelector("#copy-mcp-context");
 const messyContextSummary = document.querySelector("#messy-context-summary");
 const premiseIntakeResult = document.querySelector("#premise-intake-result");
 const defaultStorySeedPath = "usage/litrpg_messy_context_seed.md";
+const THEME_STORAGE_KEY = "litrpg-studio-theme";
 
 let latestSettings = null;
 let latestTasks = null;
@@ -77,6 +79,30 @@ let activeSeriesId = "";
 let lastSyncedPackageSeriesId = "";
 let packageRevision = 0;
 let pendingRevisionProposal = null;
+
+function preferredTheme() {
+  const saved = localStorage.getItem(THEME_STORAGE_KEY);
+  if (saved === "dark" || saved === "light") return saved;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  const normalized = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalized;
+  document.documentElement.style.colorScheme = normalized;
+  if (themeToggleButton) {
+    themeToggleButton.textContent = normalized === "dark" ? "Light Mode" : "Dark Mode";
+    themeToggleButton.setAttribute("aria-pressed", normalized === "dark" ? "true" : "false");
+  }
+}
+
+function setTheme(theme) {
+  const normalized = theme === "dark" ? "dark" : "light";
+  localStorage.setItem(THEME_STORAGE_KEY, normalized);
+  applyTheme(normalized);
+}
+
+applyTheme(preferredTheme());
 
 const CUSTOM_OPTION = "__custom__";
 const QUICK_ACTION_TOOLTIPS = {
@@ -2495,6 +2521,13 @@ refreshButton.addEventListener("click", () => {
     taskOutput.textContent = error.message;
   });
 });
+
+if (themeToggleButton) {
+  themeToggleButton.addEventListener("click", () => {
+    const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    setTheme(current === "dark" ? "light" : "dark");
+  });
+}
 
 refreshDiagnosticsButton.addEventListener("click", () => {
   updateDiagnostics();

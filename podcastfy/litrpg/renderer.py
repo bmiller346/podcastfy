@@ -517,16 +517,35 @@ def _apply_dialogue_voice_processing(
         if performance_contracts and len({contract.performance_register for contract in performance_contracts}) == 1
         else None
     )
+    scene_type = _scene_type_from_bundle(bundle)
     chain = voice_processing_chain_for_role(
         role,
         config.get("voice_processing") if isinstance(config.get("voice_processing"), Mapping) else {},
         performance_register=register,
+        scene_type=scene_type,
     )
     processed_path = output_path.with_name(f"{output_path.stem}_processed{output_path.suffix}")
     result = apply_voice_processing_to_file(output_path, processed_path, chain)
     result["role"] = role
     result["performance_register"] = register
+    result["scene_type"] = scene_type
     return result
+
+
+def _scene_type_from_bundle(bundle: Mapping[str, Any]) -> str | None:
+    for key in ("scene_type", "acoustic_scene_type", "room_type"):
+        value = bundle.get(key)
+        if value:
+            return str(value)
+    for container_key in ("metadata", "chapter", "chapter_contract"):
+        container = bundle.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        for key in ("scene_type", "acoustic_scene_type", "room_type", "setting_type"):
+            value = container.get(key)
+            if value:
+                return str(value)
+    return None
 
 
 def _audio_performance_config_from_bundle(bundle: Mapping[str, Any]) -> Mapping[str, Any]:

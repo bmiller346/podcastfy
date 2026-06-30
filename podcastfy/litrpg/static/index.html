@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Local Audio Story Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
@@ -13,7 +16,10 @@
           <h1>Local Audio Story Studio</h1>
           <p>Settings, task runs, reusable cast packages, and saved episode audio.</p>
         </div>
-        <button id="refresh" type="button">Refresh</button>
+        <div class="topbar-actions">
+          <button id="theme-toggle" class="secondary-button has-tooltip" type="button" data-tooltip="Switch between light and dark display modes." title="Switch between light and dark display modes." aria-pressed="false">Dark Mode</button>
+          <button id="refresh" type="button">Refresh</button>
+        </div>
       </header>
 
       <details class="panel settings-panel">
@@ -231,192 +237,224 @@
           <p>Manual task controls for overrides, debugging, and chapter/audio runs after the story seed exists.</p>
         </div>
         <form id="task-form" class="grid-form task-form">
-          <label class="has-tooltip" data-tooltip="Target series for queued manual tasks. Load Series can sync this from the workspace selector." title="Target series for queued manual tasks. Load Series can sync this from the workspace selector.">
-            Series ID
-            <input name="series_id" type="text" placeholder="paper-cuts" required>
-          </label>
-          <label class="wide has-tooltip" data-tooltip="Optional short override for manual/debug jobs. The full source of truth is the markdown seed above." title="Optional short override for manual/debug jobs. The full source of truth is the markdown seed above.">
-            Short premise override
-            <textarea name="premise" rows="3" placeholder="Optional short summary for manual/debug tasks. For full intake, use the Premise Intake markdown box above." required></textarea>
-          </label>
-          <label class="has-tooltip" data-tooltip="premise_intake builds artifacts; chapter/episode modes are for downstream prose/audio runs." title="premise_intake builds artifacts; chapter/episode modes are for downstream prose/audio runs.">
-            Mode
-            <select name="mode">
-              <option value="episode">episode</option>
-              <option value="chapter">chapter</option>
-              <option value="premise_intake">premise_intake</option>
-            </select>
-          </label>
-          <label>
-            Series title
-            <input name="series_title" type="text" placeholder="The Knotty Buoy">
-          </label>
-          <label>
-            Target books
-            <input name="target_books" type="number" min="1" step="1" placeholder="1">
-          </label>
-          <label>
-            Chapters per book
-            <input name="chapters_per_book" type="number" min="1" step="1" placeholder="30">
-          </label>
-          <label>
-            Book number
-            <input name="book_number" type="number" min="1" step="1" placeholder="1">
-          </label>
-          <label>
-            Chapter number
-            <input name="chapter_number" type="number" min="1" step="1" placeholder="1">
-          </label>
-          <label>
-            Target minutes
-            <input name="target_minutes" type="number" min="1" step="1" placeholder="30">
-          </label>
-          <label>
-            Max rewrites
-            <input name="max_rewrite_attempts" type="number" min="1" step="1" placeholder="3">
-          </label>
-          <label class="wide">
-            Premise file path
-            <input name="premise_path" type="text" placeholder="usage/knotty-buoy-notes.md">
-          </label>
-          <label class="wide">
-            Series promise
-            <input name="series_promise" type="text" placeholder="What readers/listeners come back for.">
-          </label>
-          <label class="wide">
-            Endgame direction
-            <input name="endgame_direction" type="text" placeholder="The long-term destination or final pressure.">
-          </label>
-          <label>
-            Genre / style
-            <input name="genre" type="text" placeholder="LitRPG, cozy mystery, space opera, workplace satire">
-          </label>
-          <label>
-            Book length
-            <select name="book_length_mode">
-              <option value="">default tight</option>
-              <option value="tight">tight</option>
-              <option value="standard">standard</option>
-              <option value="sprawling">sprawling</option>
-            </select>
-          </label>
-          <label>
-            Arc style
-            <select name="arc_style">
-              <option value="">default escalating_floor_survival</option>
-              <option value="escalating_floor_survival">escalating_floor_survival</option>
-              <option value="mystery_box">mystery_box</option>
-              <option value="heist_chain">heist_chain</option>
-              <option value="tournament_ladder">tournament_ladder</option>
-              <option value="settlement_builder">settlement_builder</option>
-              <option value="road_trip">road_trip</option>
-            </select>
-          </label>
-          <label>
-            Power curve
-            <select name="power_curve">
-              <option value="">default logarithmic</option>
-              <option value="logarithmic">logarithmic</option>
-              <option value="linear">linear</option>
-              <option value="explosive">explosive</option>
-              <option value="flat_skill_based">flat_skill_based</option>
-              <option value="social_leverage">social_leverage</option>
-            </select>
-          </label>
-          <label class="has-tooltip" data-tooltip="Choose which provider family runs generation. Blank uses saved settings." title="Choose which provider family runs generation. Blank uses saved settings.">
-            Generation provider
-            <select name="generation_provider">
-              <option value="">Use settings default provider</option>
-              <option value="hybrid">hybrid auto</option>
-              <option value="gemini">gemini</option>
-              <option value="openai">openai</option>
-              <option value="ollama">ollama</option>
-            </select>
-          </label>
-          <label class="has-tooltip" data-tooltip="Leave this on provider default unless you need to force a specific model." title="Leave this on provider default unless you need to force a specific model.">
-            Generation model
-            <select name="generation_model" data-custom-input="generation_model_custom">
-              <option value="">Use provider default model</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gpt-5.4">GPT-5.4</option>
-              <option value="litrpg-writer">litrpg-writer</option>
-              <option value="__custom__">Custom...</option>
-            </select>
-          </label>
-          <label class="custom-field hidden" data-custom-field="generation_model_custom">
-            Custom generation model
-            <input name="generation_model_custom" type="text" placeholder="provider-specific model id">
-          </label>
-          <label class="toggle has-tooltip" data-tooltip="When enabled, short/cheap tasks and long/strong tasks are routed to different cloud models automatically." title="When enabled, short/cheap tasks and long/strong tasks are routed to different cloud models automatically.">
-            <input name="auto_model_routing" type="checkbox" checked>
-            <span>Auto-route cloud model by intent</span>
-          </label>
-          <label class="has-tooltip" data-tooltip="Controls audio rendering provider. Leave blank to use saved settings." title="Controls audio rendering provider. Leave blank to use saved settings.">
-            TTS provider
-            <select name="tts_provider">
-              <option value="">settings default</option>
-              <option value="edge">edge</option>
-              <option value="openai">openai</option>
-              <option value="elevenlabs">elevenlabs</option>
-              <option value="geminiapi">geminiapi</option>
-              <option value="geminimulti">geminimulti</option>
-            </select>
-          </label>
-          <label class="has-tooltip" data-tooltip="Leave this on provider default unless you need a specific voice/model id." title="Leave this on provider default unless you need a specific voice/model id.">
-            TTS model
-            <select name="tts_model" data-custom-input="tts_model_custom">
-              <option value="">Use provider default model</option>
-              <option value="edge">Edge default voice</option>
-              <option value="gpt-4o-mini-tts">GPT-4o Mini TTS</option>
-              <option value="eleven_multilingual_v2">Eleven Multilingual v2</option>
-              <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash Preview TTS</option>
-              <option value="__custom__">Custom...</option>
-            </select>
-          </label>
-          <label class="custom-field hidden" data-custom-field="tts_model_custom">
-            Custom TTS model
-            <input name="tts_model_custom" type="text" placeholder="provider-specific voice or model id">
-          </label>
-          <label>
-            TTS format
-            <select name="tts_format">
-              <option value="">settings default</option>
-              <option value="mp3">mp3</option>
-              <option value="wav">wav</option>
-              <option value="opus">opus</option>
-              <option value="flac">flac</option>
-              <option value="aac">aac</option>
-              <option value="pcm">pcm</option>
-            </select>
-          </label>
-          <label>
-            Result path
-            <input name="result_path" type="text" placeholder="data/litrpg/paper-cuts/latest.json">
-          </label>
-          <label>
-            Checkpoint dir
-            <input name="checkpoint_dir" type="text" placeholder="data/litrpg/paper-cuts/checkpoints">
-          </label>
-          <label>
-            Storage dir
-            <input name="storage_dir" type="text" placeholder="data/litrpg">
-          </label>
-          <label class="toggle has-tooltip" data-tooltip="Turn this off for cheaper text-only smoke tests before producing audio." title="Turn this off for cheaper text-only smoke tests before producing audio.">
-            <input name="render_audio" type="checkbox" checked>
-            <span>Render audio after generation</span>
-          </label>
-          <label class="toggle">
-            <input name="harness_enabled" type="checkbox">
-            <span>Enable harness gates</span>
-          </label>
-          <label class="toggle">
-            <input name="rewrite_quarantined" type="checkbox">
-            <span>Rewrite quarantined chapter</span>
-          </label>
-          <label class="toggle">
-            <input name="generate_handoff" type="checkbox">
-            <span>Generate handoff</span>
-          </label>
+          <fieldset class="task-section task-section-primary">
+            <legend>Run Basics</legend>
+            <label class="has-tooltip" data-tooltip="Target series for queued manual tasks. Load Series can sync this from the workspace selector." title="Target series for queued manual tasks. Load Series can sync this from the workspace selector.">
+              Series ID
+              <input name="series_id" type="text" placeholder="paper-cuts" required>
+            </label>
+            <label class="has-tooltip" data-tooltip="premise_intake builds artifacts; chapter/episode modes are for downstream prose/audio runs." title="premise_intake builds artifacts; chapter/episode modes are for downstream prose/audio runs.">
+              Mode
+              <select name="mode">
+                <option value="episode">episode</option>
+                <option value="chapter">chapter</option>
+                <option value="premise_intake">premise_intake</option>
+              </select>
+            </label>
+            <label>
+              Series title
+              <input name="series_title" type="text" placeholder="The Knotty Buoy">
+            </label>
+            <label class="wide has-tooltip" data-tooltip="Optional short override for manual/debug jobs. The full source of truth is the markdown seed above." title="Optional short override for manual/debug jobs. The full source of truth is the markdown seed above.">
+              Short premise override
+              <textarea name="premise" rows="3" placeholder="Optional short summary for manual/debug tasks. For full intake, use the Premise Intake markdown box above." required></textarea>
+            </label>
+            <label class="wide">
+              Premise file path
+              <input name="premise_path" type="text" placeholder="usage/knotty-buoy-notes.md">
+            </label>
+          </fieldset>
+
+          <fieldset class="task-section">
+            <legend>Book / Chapter</legend>
+            <label>
+              Target books
+              <input name="target_books" type="number" min="1" step="1" placeholder="1">
+            </label>
+            <label>
+              Chapters per book
+              <input name="chapters_per_book" type="number" min="1" step="1" placeholder="30">
+            </label>
+            <label>
+              Book number
+              <input name="book_number" type="number" min="1" step="1" placeholder="1">
+            </label>
+            <label>
+              Chapter number
+              <input name="chapter_number" type="number" min="1" step="1" placeholder="1">
+            </label>
+            <label>
+              Target minutes
+              <input name="target_minutes" type="number" min="1" step="1" placeholder="30">
+            </label>
+            <label>
+              Max rewrites
+              <input name="max_rewrite_attempts" type="number" min="1" step="1" placeholder="3">
+            </label>
+            <label class="wide">
+              Series promise
+              <input name="series_promise" type="text" placeholder="What readers/listeners come back for.">
+            </label>
+            <label class="wide">
+              Endgame direction
+              <input name="endgame_direction" type="text" placeholder="The long-term destination or final pressure.">
+            </label>
+            <label>
+              Genre / style
+              <input name="genre" type="text" placeholder="LitRPG, cozy mystery, space opera, workplace satire">
+            </label>
+            <label>
+              Book length
+              <select name="book_length_mode">
+                <option value="">default tight</option>
+                <option value="tight">tight</option>
+                <option value="standard">standard</option>
+                <option value="sprawling">sprawling</option>
+              </select>
+            </label>
+            <label>
+              Arc style
+              <select name="arc_style">
+                <option value="">default escalating_floor_survival</option>
+                <option value="escalating_floor_survival">escalating_floor_survival</option>
+                <option value="mystery_box">mystery_box</option>
+                <option value="heist_chain">heist_chain</option>
+                <option value="tournament_ladder">tournament_ladder</option>
+                <option value="settlement_builder">settlement_builder</option>
+                <option value="road_trip">road_trip</option>
+              </select>
+            </label>
+            <label>
+              Power curve
+              <select name="power_curve">
+                <option value="">default logarithmic</option>
+                <option value="logarithmic">logarithmic</option>
+                <option value="linear">linear</option>
+                <option value="explosive">explosive</option>
+                <option value="flat_skill_based">flat_skill_based</option>
+                <option value="social_leverage">social_leverage</option>
+              </select>
+            </label>
+          </fieldset>
+
+          <details class="task-section task-section-collapsible" open>
+            <summary>Generation</summary>
+            <div class="task-section-grid">
+              <label class="has-tooltip" data-tooltip="Choose which provider family runs generation. Blank uses saved settings." title="Choose which provider family runs generation. Blank uses saved settings.">
+                Generation provider
+                <select name="generation_provider">
+                  <option value="">Use settings default provider</option>
+                  <option value="hybrid">hybrid auto</option>
+                  <option value="gemini">gemini</option>
+                  <option value="openai">openai</option>
+                  <option value="ollama">ollama</option>
+                </select>
+              </label>
+              <label class="has-tooltip" data-tooltip="Leave this on provider default unless you need to force a specific model." title="Leave this on provider default unless you need to force a specific model.">
+                Generation model
+                <select name="generation_model" data-custom-input="generation_model_custom">
+                  <option value="">Use provider default model</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="gpt-5.4">GPT-5.4</option>
+                  <option value="litrpg-writer">litrpg-writer</option>
+                  <option value="__custom__">Custom...</option>
+                </select>
+              </label>
+              <label class="custom-field hidden" data-custom-field="generation_model_custom">
+                Custom generation model
+                <input name="generation_model_custom" type="text" placeholder="provider-specific model id">
+              </label>
+              <label class="toggle has-tooltip" data-tooltip="When enabled, short/cheap tasks and long/strong tasks are routed to different cloud models automatically." title="When enabled, short/cheap tasks and long/strong tasks are routed to different cloud models automatically.">
+                <input name="auto_model_routing" type="checkbox" checked>
+                <span>Auto-route cloud model by intent</span>
+              </label>
+            </div>
+          </details>
+
+          <details class="task-section task-section-collapsible">
+            <summary>Audio</summary>
+            <div class="task-section-grid">
+              <label class="has-tooltip" data-tooltip="Controls audio rendering provider. Leave blank to use saved settings." title="Controls audio rendering provider. Leave blank to use saved settings.">
+                TTS provider
+                <select name="tts_provider">
+                  <option value="">settings default</option>
+                  <option value="edge">edge</option>
+                  <option value="openai">openai</option>
+                  <option value="elevenlabs">elevenlabs</option>
+                  <option value="geminiapi">geminiapi</option>
+                  <option value="geminimulti">geminimulti</option>
+                </select>
+              </label>
+              <label class="has-tooltip" data-tooltip="Leave this on provider default unless you need a specific voice/model id." title="Leave this on provider default unless you need a specific voice/model id.">
+                TTS model
+                <select name="tts_model" data-custom-input="tts_model_custom">
+                  <option value="">Use provider default model</option>
+                  <option value="edge">Edge default voice</option>
+                  <option value="gpt-4o-mini-tts">GPT-4o Mini TTS</option>
+                  <option value="eleven_multilingual_v2">Eleven Multilingual v2</option>
+                  <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash Preview TTS</option>
+                  <option value="__custom__">Custom...</option>
+                </select>
+              </label>
+              <label class="custom-field hidden" data-custom-field="tts_model_custom">
+                Custom TTS model
+                <input name="tts_model_custom" type="text" placeholder="provider-specific voice or model id">
+              </label>
+              <label>
+                TTS format
+                <select name="tts_format">
+                  <option value="">settings default</option>
+                  <option value="mp3">mp3</option>
+                  <option value="wav">wav</option>
+                  <option value="opus">opus</option>
+                  <option value="flac">flac</option>
+                  <option value="aac">aac</option>
+                  <option value="pcm">pcm</option>
+                </select>
+              </label>
+              <label class="toggle has-tooltip" data-tooltip="Turn this off for cheaper text-only smoke tests before producing audio." title="Turn this off for cheaper text-only smoke tests before producing audio.">
+                <input name="render_audio" type="checkbox" checked>
+                <span>Render audio after generation</span>
+              </label>
+            </div>
+          </details>
+
+          <details class="task-section task-section-collapsible">
+            <summary>Robust Controls</summary>
+            <div class="task-section-grid">
+              <label class="toggle">
+                <input name="harness_enabled" type="checkbox">
+                <span>Enable harness gates</span>
+              </label>
+              <label class="toggle">
+                <input name="rewrite_quarantined" type="checkbox">
+                <span>Rewrite quarantined chapter</span>
+              </label>
+              <label class="toggle">
+                <input name="generate_handoff" type="checkbox">
+                <span>Generate handoff</span>
+              </label>
+            </div>
+          </details>
+
+          <details class="task-section task-section-collapsible">
+            <summary>Outputs</summary>
+            <div class="task-section-grid">
+              <label>
+                Result path
+                <input name="result_path" type="text" placeholder="data/litrpg/paper-cuts/latest.json">
+              </label>
+              <label>
+                Checkpoint dir
+                <input name="checkpoint_dir" type="text" placeholder="data/litrpg/paper-cuts/checkpoints">
+              </label>
+              <label>
+                Storage dir
+                <input name="storage_dir" type="text" placeholder="data/litrpg">
+              </label>
+            </div>
+          </details>
+
           <div class="actions task-actions">
             <button id="submit-task" class="has-tooltip" type="submit" data-tooltip="Queue the currently previewed local task payload." title="Queue the currently previewed local task payload.">Queue Generation</button>
           </div>

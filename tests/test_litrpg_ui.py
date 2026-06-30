@@ -80,6 +80,9 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert status == 200
     assert content_type == "text/html"
     assert 'id="active-series-id"' in html
+    assert 'id="theme-toggle"' in html
+    assert "Dark Mode" in html
+    assert "Switch between light and dark display modes." in html
     assert 'id="series-select"' in html
     assert 'id="use-task-series"' in html
     assert 'id="load-active-series"' in html
@@ -122,9 +125,17 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "2. Intake Status" in html
     assert "3. Series Workspace" in html
     assert "Advanced Task Builder" in html
+    assert "Run Basics" in html
+    assert "Book / Chapter" in html
+    assert "<summary>Generation</summary>" in html
+    assert "<summary>Audio</summary>" in html
+    assert "<summary>Robust Controls</summary>" in html
+    assert "<summary>Outputs</summary>" in html
     assert "Auto-route cloud model by intent" in html
     assert "Premise Intake -> Run Premise Intake -> Load Series" in html
     assert "Story file" in html
+    assert "https://fonts.googleapis.com" in html
+    assert "family=Inter" in html
     assert '<script src="/static/app.js" defer></script>' in html
     assert "usage/litrpg_messy_context_seed.md" in html
     assert "Revision Chat" in html
@@ -238,6 +249,22 @@ def test_ui_static_assets_are_not_cached_during_local_dev(ui_server):
     assert app_status == 200
     assert "no-store" in index_headers["Cache-Control"]
     assert "no-store" in app_headers["Cache-Control"]
+
+
+def test_ui_stylesheet_uses_font_and_type_tokens(ui_server):
+    status, body, content_type = request_bytes(ui_server, "/static/styles.css")
+    css = body.decode("utf-8")
+
+    assert status == 200
+    assert content_type == "text/css"
+    assert '--font-body: "Inter"' in css
+    assert "--type-2xl: 28px;" in css
+    assert "font-size: var(--type-md);" in css
+    assert "overflow-x: clip;" in css
+    assert ':root[data-theme="dark"]' in css
+    assert "color-scheme: dark;" in css
+    assert ".topbar-actions" in css
+    assert ".secondary-button" in css
 
 
 def test_favicon_request_is_ignored_without_404_noise(ui_server):
