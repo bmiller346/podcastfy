@@ -592,6 +592,89 @@ function analyzeMessyContext(text) {
   };
 }
 
+function extractLabeledBlock(text, labels) {
+  const lines = String(text || "").split(/\r?\n/);
+  const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const startPattern = new RegExp(`^\\s*(?:${labelPattern})\\s*[:=-]\\s*(.*)$`, "i");
+  const stopPattern = /^\s*(?:title|series title|name|promise|logline|long arc|arc|tone|premise)\s*[:=-]\s*/i;
+  const collected = [];
+  let collecting = false;
+  for (const line of lines) {
+    const start = line.match(startPattern);
+    if (start) {
+      collecting = true;
+      if (start[1]) collected.push(start[1].trim());
+      continue;
+    }
+    if (collecting && stopPattern.test(line)) break;
+    if (collecting) collected.push(line.trim());
+  }
+  return collected.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function derivePremiseFromMessyContext(text) {
+  const raw = cleanValue(text);
+  if (!raw) return "";
+  const analysis = analyzeMessyContext(raw);
+  const title = extractLabeledBlock(raw, ["Title", "Series title", "Name"]) || analysis.title;
+  const promise = extractLabeledBlock(raw, ["Promise", "Logline"]) || analysis.premise;
+  const longArc = extractLabeledBlock(raw, ["Long arc", "Arc"]);
+  const tone = extractLabeledBlock(raw, ["Tone"]);
+  return [
+    title ? `${title}.` : "",
+    promise,
+    longArc ? `Long arc: ${longArc}` : "",
+    tone ? `Tone: ${tone}` : "",
+  ].filter(Boolean).join("\n\n").slice(0, 2400);
+}
+
+function derivePremiseFromPackage(packageValue) {
+  const source = packageValue && typeof packageValue === "object" ? packageValue : {};
+  const metadata = source.metadata && typeof source.metadata === "object" ? source.metadata : {};
+  const plan = firstObject(source.series_plan, source.seriesPlan, source.series_shape, source.seriesShape);
+  const bible = firstObject(source.story_bible, source.storyBible, source.bible);
+  const title = metadata.title || plan.series_title || plan.title || source.series_title || source.title || currentSeriesId();
+  const promise = source.premise || bible.premise || plan.series_promise || plan.promise || "";
+  const endgame = plan.endgame_direction || plan.endgame || "";
+  const world = firstObject(source.world_register, source.worldRegister);
+  const locations = packageArray(world.locations || []).map((item) => item.name).filter(Boolean).slice(0, 4);
+  const characters = roleArrayFromPackage(source).map((role) => role.name).filter(Boolean).slice(0, 5);
+  const parts = [
+    title ? `${title}.` : "",
+    promise,
+    characters.length ? `Main cast: ${characters.join(", ")}.` : "",
+    locations.length ? `Core locations/biomes: ${locations.join(", ")}.` : "",
+    endgame ? `Long arc: ${endgame}` : "",
+  ].filter(Boolean);
+  return parts.join("\n\n").slice(0, 2400);
+}
+
+function fillPremiseFromAvailableContext() {
+  if (!taskForm || !taskForm.elements.premise) return false;
+  const current = cleanValue(taskForm.elements.premise.value);
+  if (current) {
+    taskForm.elements.premise.focus();
+    taskOutput.textContent = "Premise already exists.";
+    return true;
+  }
+  const packageValue = latestPackage && latestPackage.package;
+  const fromWorkspace = derivePremiseFromPackage(packageValue);
+  const fromMarkdown = derivePremiseFromMessyContext(messyContextInput && messyContextInput.value);
+  const premise = cleanValue(fromWorkspace) || cleanValue(fromMarkdown);
+  if (!premise) return false;
+  taskForm.elements.premise.value = premise;
+  if (taskForm.elements.mode && taskForm.elements.mode.value === "premise_intake") {
+    taskForm.elements.mode.value = "chapter";
+  }
+  if (taskForm.elements.render_audio) taskForm.elements.render_audio.checked = false;
+  updateTaskPreview({ syncSeries: true });
+  taskForm.elements.premise.focus();
+  taskOutput.textContent = cleanValue(fromWorkspace)
+    ? "Premise filled from loaded series workspace."
+    : "Premise filled from messy context.";
+  return true;
+}
+
 function renderMessyContextSummary(analysis) {
   if (!messyContextSummary) return;
   const markerText = Object.entries(analysis.markers || {})
@@ -620,7 +703,7 @@ function applyMessyContextToStoryFields({ queueMode = false } = {}) {
     taskForm.elements.series_title.value = analysis.title;
   }
   if (taskForm.elements.premise) {
-    taskForm.elements.premise.value = analysis.premise || raw.slice(0, 1200);
+    taskForm.elements.premise.value = derivePremiseFromMessyContext(raw) || analysis.premise || raw.slice(0, 1200);
   }
   if (taskForm.elements.render_audio) taskForm.elements.render_audio.checked = false;
   if (packageForm && packageForm.elements.baseline_text) {
@@ -1364,7 +1447,15 @@ function renderFlowStep(step) {
 function buildNextActions(report) {
   const actions = [];
   if (!report.task.premise) {
-    actions.push({ label: "Add Premise", action: "focus-premise", tone: "primary" });
+    const canCreatePremise = Boolean(
+      (latestPackage && latestPackage.available)
+      || cleanValue(messyContextInput && messyContextInput.value)
+    );
+    actions.push({
+      label: canCreatePremise ? "Create Premise" : "Add Premise",
+      action: "focus-premise",
+      tone: "primary",
+    });
   }
   if (!report.series_package.available) {
     actions.push({ label: "New Package Draft", action: "new-package", tone: "primary" });
@@ -2233,8 +2324,10 @@ if (copyMcpContextButton) {
 
 async function runQuickAction(action) {
   if (action === "focus-premise") {
-    taskForm.elements.premise.focus();
-    taskOutput.textContent = "Premise field focused.";
+    if (!fillPremiseFromAvailableContext()) {
+      taskForm.elements.premise.focus();
+      taskOutput.textContent = "Premise field focused. Add a short story premise or load/queue messy context first.";
+    }
     return;
   }
   if (action === "new-package") {
