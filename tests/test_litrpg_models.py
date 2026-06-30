@@ -62,6 +62,27 @@ def test_chapter_contract_coerces_backward_compatible_defaults():
     assert contract.series_title == "Untitled Series"
     assert contract.must_not_spend == []
     assert contract.chapter_count == 1
+    assert contract.beat_type == ""
+    assert contract.scene_type == ""
+
+
+def test_chapter_contract_preserves_audio_render_context_fields():
+    contract = chapter_contract_from_mapping(
+        {
+            "book": 1,
+            "chapter": 8,
+            "phase": "The Apex",
+            "tension": 10,
+            "creativity": 3,
+            "absurdity": 8,
+            "beat_type": "apex",
+            "scene_type": "cathedral",
+        }
+    )
+
+    assert contract.beat_type == "apex"
+    assert contract.scene_type == "cathedral"
+    assert contract.to_dict()["scene_type"] == "cathedral"
 
 
 def test_series_arc_beat_rejects_out_of_range_tension():

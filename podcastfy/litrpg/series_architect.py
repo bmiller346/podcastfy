@@ -332,6 +332,8 @@ class SeriesArchitect:
             "floor_range": list(book_plan.floor_range),
             "chapter_count": book_plan.chapter_count,
             "arc_style": book_plan.arc_style,
+            "beat_type": _beat_type_for_contract(beat),
+            "scene_type": _scene_type_for_contract(beat, book_plan),
         }
         if outline is not None:
             contract.update(
@@ -345,6 +347,11 @@ class SeriesArchitect:
                     "must_not_use": list(outline.must_not_use),
                 }
             )
+            outline_values = outline.to_dict()
+            if outline_values.get("beat_type"):
+                contract["beat_type"] = outline_values["beat_type"]
+            if outline_values.get("scene_type"):
+                contract["scene_type"] = outline_values["scene_type"]
         return chapter_contract_from_mapping(contract).to_dict()
 
 
@@ -361,6 +368,11 @@ def format_chapter_contract_context(contract: Mapping[str, Any]) -> str:
         ),
         f"- Book role: {contract.get('book_role') or 'unspecified'}",
         f"- Power ceiling: {contract.get('power_ceiling') or 'unspecified'}",
+        (
+            "- Audio context: "
+            f"beat {contract.get('beat_type') or 'neutral'}, "
+            f"scene {contract.get('scene_type') or 'dungeon'}"
+        ),
     ]
     if contract.get("title"):
         lines.append(f"- Outline title: {contract['title']}")
@@ -383,6 +395,43 @@ def format_chapter_contract_context(contract: Mapping[str, Any]) -> str:
             lines.append(f"- {label}:")
             lines.extend(f"  - {value}" for value in values)
     return "\n".join(lines)
+
+
+def _beat_type_for_contract(beat: ChapterBeat) -> str:
+    phase = str(beat.phase or "").strip().lower()
+    if "apex" in phase:
+        return "apex"
+    if "setback" in phase or "lost" in phase:
+        return "disaster"
+    if "drop" in phase or "threshold" in phase:
+        return "disaster"
+    if "boss" in phase or "threat" in phase or beat.tension >= 8:
+        return "combat"
+    if "loot" in phase or "unearthed" in phase or "new terms" in phase:
+        return "triumph"
+    if "bivouac" in phase or "survey" in phase:
+        return "reflection"
+    if "build" in phase or "spiral" in phase or "contact" in phase:
+        return "tension"
+    return "neutral"
+
+
+def _scene_type_for_contract(beat: ChapterBeat, book_plan: BookPlan) -> str:
+    phase = str(beat.phase or "").strip().lower()
+    arc_style = str(book_plan.arc_style or "").strip().lower()
+    if "public" in phase or "faction" in phase or "alliance" in phase:
+        return "tavern"
+    if "apex" in phase or "boss" in phase:
+        return "cathedral"
+    if "bivouac" in phase:
+        return "tavern"
+    if "deep_dungeon" in arc_style or "descent" in arc_style:
+        return "stone_corridor"
+    if "drop" in phase or "threshold" in phase or "dungeon" in arc_style:
+        return "dungeon"
+    if "survey" in phase:
+        return "outdoor"
+    return "dungeon"
 
 
 def bootstrap_series(

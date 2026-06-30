@@ -76,6 +76,8 @@ class ChapterContract:
     floor_range: list[int] = field(default_factory=list)
     chapter_count: int = 1
     arc_style: str = ""
+    beat_type: str = ""
+    scene_type: str = ""
     title: str = ""
     premise: str = ""
     ends_on: str = ""
@@ -286,6 +288,8 @@ def chapter_contract_from_mapping(value: ChapterContract | Mapping[str, Any]) ->
         floor_range=[_int(item, "chapter_contract.floor_range") for item in _list(data.get("floor_range"), "chapter_contract.floor_range")],
         chapter_count=max(1, _int(data.get("chapter_count", 1), "chapter_contract.chapter_count")),
         arc_style=_optional_str(data.get("arc_style")),
+        beat_type=_optional_str(data.get("beat_type")),
+        scene_type=_optional_str(data.get("scene_type")),
         title=_optional_str(data.get("title")),
         premise=_optional_str(data.get("premise")),
         ends_on=_optional_str(data.get("ends_on")),

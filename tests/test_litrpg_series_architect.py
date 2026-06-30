@@ -5,6 +5,7 @@ from podcastfy.litrpg.series_architect import ChapterOutlineEntry
 from podcastfy.litrpg.series_architect import SeriesArchitect
 from podcastfy.litrpg.series_architect import SeriesShape
 from podcastfy.litrpg.series_architect import bootstrap_series
+from podcastfy.litrpg.series_architect import format_chapter_contract_context
 from podcastfy.litrpg.series_architect import generate_tempo_map
 from podcastfy.litrpg.series_architect import length_mode_for_chapters
 from podcastfy.litrpg.series_architect import save_chapter_outline
@@ -140,6 +141,11 @@ def test_chapter_contract_merges_tempo_book_and_outline(tmp_path):
     assert contract["book_role"] == "Origin and first floor survival"
     assert contract["power_ceiling"] == "level 10"
     assert contract["title"] == "Notification: You Are Already Dead"
+    assert contract["beat_type"] == "reflection"
+    assert contract["scene_type"] == "tavern"
     assert "sponsor true identity" in contract["must_not_spend"]
     assert "sponsor true identity" in contract["must_not_use"]
     assert contract["character_targets"]["protagonist"] == "stops denying the dungeon"
+
+    context = format_chapter_contract_context(contract)
+    assert "- Audio context: beat reflection, scene tavern" in context

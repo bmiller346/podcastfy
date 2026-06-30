@@ -37,6 +37,9 @@ from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
 from podcastfy.litrpg.sfx import parse_cue_sheet
 from podcastfy.litrpg.showrunner import format_showrunner_context
+from podcastfy.litrpg.world_state import build_scene_brief
+from podcastfy.litrpg.world_state import build_world_state_update_prompt
+from podcastfy.litrpg.world_state import format_scene_brief_context
 
 
 def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, Any]:
@@ -130,6 +133,14 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         previous_hook_context=hook_context,
     )
     story_engine_context = str(task.get("story_engine_context") or "").strip()
+    world_state = _mapping_or_none(task.get("world_state") or task.get("sensory_world_state")) or {}
+    explicit_scene_brief = _mapping_or_none(task.get("scene_brief"))
+    scene_brief = explicit_scene_brief or build_scene_brief(
+        world_state=world_state,
+        chapter_contract=chapter_contract or showrunner_payload,
+        prior_chapter_tail=str(task.get("last_chapter_tail") or task.get("prior_chapter_tail") or ""),
+    ).to_dict()
+    scene_brief_context = format_scene_brief_context(scene_brief, world_state=world_state)
     mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
     max_rewrite_attempts = max(1, int(task.get("max_rewrite_attempts") or 3))
@@ -148,6 +159,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             showrunner_context=showrunner_context,
             hook_context=hook_context,
             story_engine_context=story_engine_context,
+            scene_brief_context=scene_brief_context,
             series_anchor_block=series_anchor_block,
             genre=genre,
         )
@@ -471,6 +483,20 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             stage="reader_proxy",
             retry_options=retry_options,
         )
+    world_state_update_prompt = ""
+    world_state_update = ""
+    if task.get("update_world_state"):
+        world_state_update_prompt = build_world_state_update_prompt(
+            final_script=combined_script,
+            current_world_state=world_state,
+            chapter_contract=chapter_contract or showrunner_payload,
+        )
+        world_state_update = _generate_with_retry(
+            llm,
+            prompt=world_state_update_prompt,
+            stage="world_state_update",
+            retry_options=retry_options,
+        )
     cue_sheet = parse_cue_sheet(combined_script)
     asset_mappings = map_assets_for_cue_sheet(cue_sheet)
     mix_plan = build_mix_plan(cue_sheet, asset_mappings=asset_mappings)
@@ -539,6 +565,10 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "scarcity_registry": scarcity_registry.to_dict(),
             "hook_context": hook_context,
             "story_engine_context": story_engine_context,
+            "world_state": dict(world_state),
+            "scene_brief": dict(scene_brief),
+            "scene_brief_context": scene_brief_context,
+            "world_state_update": world_state_update,
             "mechanics_context": dict(mechanics_context),
             "plan": plan.to_dict(),
             "generation": dict(task.get("generation") or {}),
@@ -563,6 +593,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "rhythm_review": rhythm_review,
         "reader_proxy_prompt": reader_proxy_prompt,
         "reader_proxy_review": reader_proxy_review,
+        "world_state_update_prompt": world_state_update_prompt,
+        "world_state_update": world_state_update,
         "qa": qa,
         "combined_script": combined_script,
         "render": {
@@ -590,6 +622,9 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 "rewrite_attempts": rewrite_attempts,
                 "rhythm_review": rhythm_review,
                 "reader_proxy_review": reader_proxy_review,
+                "scene_brief": dict(scene_brief),
+                "scene_brief_context": scene_brief_context,
+                "world_state_update": world_state_update,
                 "series_anchor_block": series_anchor_block,
                 "scarcity_registry": scarcity_registry.to_dict(),
                 "audio_readiness": {

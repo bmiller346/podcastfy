@@ -81,6 +81,11 @@ def test_part_prompt_requires_roles_and_review_before_render():
         series_package_summary="System announcer: hostile office PA.",
         showrunner_context="Director's Console: PACING: SLOW.",
         story_engine_context="Continuity Ledger: Pedro invoices every insult.",
+        scene_brief_context=(
+            "Scene rendering contract:\n"
+            "- Spatial anchor: Floor 4 Market, ceiling 40ft, three exits\n"
+            "- Sensory hooks to re-trigger: copper and spoiled mushroom"
+        ),
         series_anchor_block="Series Anchor Block:\n- Forbidden mysteries: Grand Dredger patron",
     )
     review = build_part_review_prompt(
@@ -107,6 +112,10 @@ def test_part_prompt_requires_roles_and_review_before_render():
     assert "diction, sentence rhythm, taboo phrases" in review
     assert "Scarcity lock" in prompt
     assert "Mystery lock discipline" in prompt
+    assert "Scene brief / rendering contract:" in prompt
+    assert "Floor 4 Market, ceiling 40ft" in prompt
+    assert "copper and spoiled mushroom" in prompt
+    assert "spatial + sensory + threat orientation" in prompt
 
 
 def test_chapter_review_checks_cast_separation_and_injected_scenes():

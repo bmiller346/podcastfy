@@ -245,6 +245,7 @@ def build_chapter_part_prompt(
     showrunner_context: str = "",
     hook_context: str = "",
     story_engine_context: str = "",
+    scene_brief_context: str = "",
     series_anchor_block: str = "",
     genre: str = "",
 ) -> str:
@@ -290,6 +291,9 @@ Hook continuity and binge-read context:
 Story engine continuity context:
 {story_engine_context or "No additional continuity, voice, foreshadowing, or world-register context is available yet."}
 
+Scene brief / rendering contract:
+{scene_brief_context or "No scene brief supplied. Ground spatial orientation, sensory priority, threat geometry, and physical state before action."}
+
 Series anchor:
 {series_anchor_block or build_series_anchor_block()}
 
@@ -306,6 +310,8 @@ Requirements:
 - Every required role must appear at least once unless physically impossible.
 - Keep each spoken block short enough for TTS regeneration and later review.
 - Include audible {profile.mechanics_label} where relevant: {profile.mechanics_examples}.
+- Open with fast spatial + sensory + threat orientation before action or exposition.
+- Re-trigger established character anchors and emotional tells; do not re-introduce or visually reset recurring characters.
 - Preserve continuity and leave a clear handoff into the next part.
 """
 
