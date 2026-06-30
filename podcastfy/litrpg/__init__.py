@@ -1,5 +1,10 @@
 """Storage primitives for local LitRPG audio serials."""
 
+from podcastfy.litrpg.artifact_registry import ArtifactRecord, ArtifactRegistry
+from podcastfy.litrpg.artifact_registry import ArtifactRegistryState
+from podcastfy.litrpg.artifact_registry import build_artifact_forge_prompt
+from podcastfy.litrpg.artifact_registry import build_artifact_state_update_prompt
+from podcastfy.litrpg.artifact_registry import merge_artifact_registry_delta
 from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible
 from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
 from podcastfy.litrpg.bible import merge_story_bible_updates, save_story_bible
@@ -134,7 +139,6 @@ from podcastfy.litrpg.voice_cards import save_voice_cards
 from podcastfy.litrpg.world_state import BEAT_SENSORY_MAP, SceneBrief
 from podcastfy.litrpg.world_state import SensoryHookLibrary
 from podcastfy.litrpg.world_state import WorldStateManager
-from podcastfy.litrpg.world_state import build_artifact_forge_prompt
 from podcastfy.litrpg.world_state import build_scene_brief
 from podcastfy.litrpg.world_state import build_scene_brief_prompt
 from podcastfy.litrpg.world_state import build_world_state_update_prompt
@@ -147,6 +151,9 @@ __all__ = [
     "CastMember",
     "CastPlan",
     "CharacterBibleEntry",
+    "ArtifactRecord",
+    "ArtifactRegistry",
+    "ArtifactRegistryState",
     "BookPlan",
     "ChapterBeat",
     "ChapterContract",
@@ -217,6 +224,7 @@ __all__ = [
     "build_reader_proxy_prompt",
     "build_role_tts_instructions",
     "build_artifact_forge_prompt",
+    "build_artifact_state_update_prompt",
     "build_scene_brief",
     "build_scene_brief_prompt",
     "build_series_package_prompt",
@@ -306,6 +314,7 @@ __all__ = [
     "make_idempotency_key",
     "merge_story_bible_updates",
     "merge_arc_state_delta",
+    "merge_artifact_registry_delta",
     "merge_continuity_ledgers",
     "merge_voice_cards",
     "merge_world_registers",
