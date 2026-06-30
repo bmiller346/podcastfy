@@ -139,6 +139,7 @@ class RoleScriptRenderer:
             voice_similarity_threshold=float(
                 bundle.get("voice_similarity_threshold") or 0.82
             ),
+            performance_context=_performance_context_from_bundle(bundle),
         )
 
         metadata = {
@@ -326,3 +327,30 @@ def _run_audio_qa_probe(
         if scores is not None:
             result["voice_similarity_scores"] = scores
     return result
+
+
+def _performance_context_from_bundle(bundle: Mapping[str, Any]) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    for key in ("chapter_number", "chapter", "phase", "register_usage_counts"):
+        if key in bundle:
+            context[key] = bundle[key]
+    metadata = bundle.get("metadata")
+    if isinstance(metadata, Mapping):
+        for key in ("chapter_number", "chapter", "phase", "register_usage_counts"):
+            if key in metadata and key not in context:
+                context[key] = metadata[key]
+    chapter = bundle.get("chapter")
+    if isinstance(chapter, Mapping):
+        if "chapter_number" not in context and "number" in chapter:
+            context["chapter_number"] = chapter["number"]
+        for key in ("phase", "register_usage_counts"):
+            if key in chapter and key not in context:
+                context[key] = chapter[key]
+    chapter_contract = bundle.get("chapter_contract")
+    if isinstance(chapter_contract, Mapping):
+        if "chapter_number" not in context and "chapter" in chapter_contract:
+            context["chapter_number"] = chapter_contract["chapter"]
+        for key in ("phase", "register_usage_counts"):
+            if key in chapter_contract and key not in context:
+                context[key] = chapter_contract[key]
+    return context

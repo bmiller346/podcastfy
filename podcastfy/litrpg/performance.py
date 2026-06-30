@@ -11,6 +11,64 @@ from podcastfy.tts.script_parser import RoleLine
 
 
 ANNOUNCER_ROLES = {"SYSTEM", "ANNOUNCER", "SYSTEM_ANNOUNCER"}
+ANNOUNCER_REGISTER_UNLOCK_CONDITIONS: dict[str, dict[str, Any]] = {
+    "bureaucratic_default": {
+        "scarcity_level": 1,
+        "transition": "hold",
+        "min_chapter": 1,
+        "max_uses_per_book": None,
+        "requires_apex_beat": False,
+    },
+    "hostile_pleasure": {
+        "scarcity_level": 2,
+        "transition": "slide",
+        "min_chapter": 1,
+        "max_uses_per_book": None,
+        "requires_apex_beat": False,
+    },
+    "genuine_alarm": {
+        "scarcity_level": 4,
+        "transition": "snap",
+        "min_chapter": 10,
+        "max_uses_per_book": 3,
+        "requires_apex_beat": False,
+    },
+    "corporate_panic": {
+        "scarcity_level": 4,
+        "transition": "slide",
+        "min_chapter": 15,
+        "max_uses_per_book": 4,
+        "requires_apex_beat": False,
+    },
+    "genuine_awe": {
+        "scarcity_level": 5,
+        "transition": "collapse",
+        "min_chapter": 30,
+        "max_uses_per_book": 1,
+        "requires_apex_beat": True,
+    },
+    "stripped_plain": {
+        "scarcity_level": 5,
+        "transition": "strip",
+        "min_chapter": 30,
+        "max_uses_per_book": 1,
+        "requires_apex_beat": True,
+    },
+}
+
+
+@dataclass(frozen=True, slots=True)
+class AnnouncerRegister:
+    """Controlled Announcer register shift metadata."""
+
+    name: str
+    transition_from: str | None
+    transition_type: str
+    earned_by: str
+    scarcity_level: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +87,11 @@ class LinePerformanceContract:
     must_not_comedify: bool = False
     reference_clip_id: str | None = None
     source_style: str = ""
+    performance_register: str | None = None
+    prior_register: str | None = None
+    register_transition: str | None = None
+    register_scarcity_level: int = 0
+    register_earned_by: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -45,6 +108,16 @@ class LinePerformanceContract:
             flags.append(f"reference clip {self.reference_clip_id}")
         if self.source_style:
             flags.append(f"source style {self.source_style}")
+        if self.performance_register:
+            flags.append(f"performance register {self.performance_register}")
+        if self.prior_register:
+            flags.append(f"prior register {self.prior_register}")
+        if self.register_transition:
+            flags.append(f"register transition {self.register_transition}")
+        if self.register_scarcity_level:
+            flags.append(f"register scarcity {self.register_scarcity_level}")
+        if self.register_earned_by:
+            flags.append(f"register earned by {self.register_earned_by}")
         flag_text = "; ".join(flags) if flags else "no extra interpretation"
         return (
             "Speak exactly the supplied text; do not add, omit, paraphrase, or rewrite. "
@@ -66,12 +139,28 @@ def build_line_performance_contracts(
     lines = parse_role_script(script)
     contracts: list[LinePerformanceContract] = []
     previous_role = ""
+    prior_register_by_role: dict[str, str] = {}
+    cue_indices_by_role: dict[str, int] = {}
     for index, line in enumerate(lines, 1):
-        cue = cues.get(line.role, {})
+        cue = _cue_for_line(line.role, cues, cue_indices_by_role)
         source_style = str(line.style or "").strip()
         style_and_cue = " ".join(
-            str(part or "") for part in (source_style, cue.get("emotion"), cue.get("delivery"), cue.get("timing"))
+            str(part or "")
+            for part in (
+                source_style,
+                cue.get("emotion"),
+                cue.get("delivery"),
+                cue.get("timing"),
+                cue.get("register"),
+                cue.get("performance_register"),
+                cue.get("announcer_register"),
+            )
         ).casefold()
+        register = _performance_register_for(line, cue, style_and_cue)
+        prior_register = prior_register_by_role.get(line.role)
+        transition = _register_transition_for(register, prior_register, cue)
+        scarcity_level = _register_scarcity_level(register)
+        earned_by = _register_earned_by(cue)
         contracts.append(
             LinePerformanceContract(
                 line_id=f"line-{index:04d}",
@@ -84,11 +173,22 @@ def build_line_performance_contracts(
                 internal_state=_internal_state_for(line, cue, style_and_cue),
                 must_not_soften=_must_not_soften(line.role, style_and_cue),
                 must_not_comedify=_must_not_comedify(line.role, style_and_cue),
-                reference_clip_id=references.get(line.role),
+                reference_clip_id=_reference_clip_id_for(
+                    role=line.role,
+                    performance_register=register,
+                    reference_clip_ids=references,
+                ),
                 source_style=source_style,
+                performance_register=register,
+                prior_register=prior_register,
+                register_transition=transition,
+                register_scarcity_level=scarcity_level,
+                register_earned_by=earned_by,
             )
         )
         previous_role = line.role
+        if register:
+            prior_register_by_role[line.role] = register
     return contracts
 
 
@@ -115,6 +215,10 @@ def summarize_contracts_by_role(
             f"{contract.line_id}: exact-text performance, pace {contract.pace}, "
             f"weight {contract.weight}, state {contract.internal_state}"
         )
+        if contract.performance_register:
+            role_summary += f", register {contract.performance_register}"
+        if contract.register_transition:
+            role_summary += f", transition {contract.register_transition}"
         if contract.must_not_soften:
             role_summary += ", do not soften"
         if contract.must_not_comedify:
@@ -139,13 +243,28 @@ def merge_performance_role_instructions(
     return merged
 
 
-def _cues_by_role(cues: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
-    by_role: dict[str, Mapping[str, Any]] = {}
+def _cues_by_role(cues: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
+    by_role: dict[str, list[Mapping[str, Any]]] = {}
     for cue in cues:
         role = str(cue.get("role") or "").upper()
-        if role and role not in by_role:
-            by_role[role] = cue
+        if role:
+            by_role.setdefault(role, []).append(cue)
     return by_role
+
+
+def _cue_for_line(
+    role: str,
+    cues_by_role: Mapping[str, Sequence[Mapping[str, Any]]],
+    cue_indices_by_role: dict[str, int],
+) -> Mapping[str, Any]:
+    cues = list(cues_by_role.get(role) or [])
+    if not cues:
+        return {}
+    index = cue_indices_by_role.get(role, 0)
+    cue_indices_by_role[role] = index + 1
+    if index < len(cues):
+        return cues[index]
+    return cues[-1]
 
 
 def _pace_for(line: RoleLine, style_and_cue: str) -> str:
@@ -211,6 +330,88 @@ def _must_not_comedify(role: str, style_and_cue: str) -> bool:
     return role in ANNOUNCER_ROLES or any(
         word in style_and_cue for word in ("fear", "panic", "dread", "grief", "injury", "cost")
     )
+
+
+def _performance_register_for(
+    line: RoleLine,
+    cue: Mapping[str, Any],
+    style_and_cue: str,
+) -> str | None:
+    explicit = (
+        cue.get("announcer_register")
+        or cue.get("performance_register")
+        or cue.get("register")
+    )
+    if explicit:
+        return _normalize_register(str(explicit))
+    if line.role not in ANNOUNCER_ROLES:
+        return None
+    if "genuine awe" in style_and_cue or "genuine_awe" in style_and_cue:
+        return "genuine_awe"
+    if "stripped" in style_and_cue or "plain" in style_and_cue:
+        return "stripped_plain"
+    if "corporate panic" in style_and_cue or "forced calm" in style_and_cue:
+        return "corporate_panic"
+    if "alarm" in style_and_cue or "destabilized" in style_and_cue:
+        return "genuine_alarm"
+    if "pleasure" in style_and_cue or "enjoying" in style_and_cue:
+        return "hostile_pleasure"
+    return "bureaucratic_default"
+
+
+def _register_transition_for(
+    performance_register: str | None,
+    prior_register: str | None,
+    cue: Mapping[str, Any],
+) -> str | None:
+    if not performance_register:
+        return None
+    explicit = cue.get("register_transition") or cue.get("transition_type")
+    if explicit:
+        return str(explicit).strip().lower().replace(" ", "_")
+    if prior_register is None or prior_register == performance_register:
+        return None
+    rules = ANNOUNCER_REGISTER_UNLOCK_CONDITIONS.get(performance_register, {})
+    return str(rules.get("transition") or "shift")
+
+
+def _register_scarcity_level(performance_register: str | None) -> int:
+    if not performance_register:
+        return 0
+    rules = ANNOUNCER_REGISTER_UNLOCK_CONDITIONS.get(performance_register, {})
+    return int(rules.get("scarcity_level") or 1)
+
+
+def _register_earned_by(cue: Mapping[str, Any]) -> str:
+    return str(
+        cue.get("register_earned_by")
+        or cue.get("earned_by")
+        or cue.get("trigger")
+        or ""
+    ).strip()
+
+
+def _reference_clip_id_for(
+    *,
+    role: str,
+    performance_register: str | None,
+    reference_clip_ids: Mapping[str, str],
+) -> str | None:
+    role_key = role.upper()
+    if performance_register:
+        register_key = performance_register.upper()
+        for key in (
+            f"{role_key}:{register_key}",
+            f"{role_key}/{register_key}",
+            f"{role_key}.{register_key}",
+        ):
+            if key in reference_clip_ids:
+                return reference_clip_ids[key]
+    return reference_clip_ids.get(role_key)
+
+
+def _normalize_register(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def _safe_role(role: str) -> str:

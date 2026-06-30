@@ -288,6 +288,38 @@ def test_performance_contract_locks_system_line_interpretation():
     assert "do not add, omit, paraphrase, or rewrite" in system.style_instruction()
 
 
+def test_performance_contract_allows_controlled_announcer_register_shift():
+    contracts = build_line_performance_contracts(
+        "<SYSTEM>Standard violation notice.</SYSTEM>"
+        "<SYSTEM>That should not have been possible.</SYSTEM>",
+        director_cues=[
+            {"role": "SYSTEM"},
+            {
+                "role": "SYSTEM",
+                "announcer_register": "genuine_awe",
+                "register_transition": "collapse",
+                "register_earned_by": "Carl breaks a modeled impossible rule.",
+            },
+        ],
+        reference_clip_ids={
+            "SYSTEM": "system_ref_bureaucratic",
+            "SYSTEM:GENUINE_AWE": "system_ref_awe",
+        },
+    )
+
+    awe = contracts[1]
+
+    assert contracts[0].performance_register == "bureaucratic_default"
+    assert awe.performance_register == "genuine_awe"
+    assert awe.prior_register == "bureaucratic_default"
+    assert awe.register_transition == "collapse"
+    assert awe.register_scarcity_level == 5
+    assert awe.register_earned_by == "Carl breaks a modeled impossible rule."
+    assert awe.reference_clip_id == "system_ref_awe"
+    assert "performance register genuine_awe" in awe.style_instruction()
+    assert "register transition collapse" in awe.style_instruction()
+
+
 def test_audio_performance_qa_quarantines_transcript_and_voice_drift():
     contracts = build_line_performance_contracts(
         '<SYSTEM>Violation fee applied.</SYSTEM>',
@@ -311,6 +343,27 @@ def test_audio_performance_qa_quarantines_transcript_and_voice_drift():
     assert "voice_similarity_below_threshold" in codes
 
 
+def test_audio_performance_qa_quarantines_unearned_scarce_register():
+    contracts = build_line_performance_contracts(
+        '<SYSTEM style="genuine awe">Impossible.</SYSTEM>',
+        reference_clip_ids={"SYSTEM:GENUINE_AWE": "system_ref_awe"},
+    )
+
+    report = build_audio_performance_qa(
+        contracts,
+        transcript_lines={"line-0001": "Impossible."},
+        voice_similarity_scores={"SYSTEM:GENUINE_AWE": 0.93},
+        performance_context={"chapter_number": 4, "phase": "Setup"},
+    )
+
+    codes = {issue.code for issue in report.issues}
+
+    assert report.quarantine_required is True
+    assert "register_transition_unearned" in codes
+    assert "register_used_before_unlock" in codes
+    assert "register_requires_apex_beat" in codes
+
+
 def test_audio_performance_qa_passes_exact_transcript_and_reference_match():
     contracts = build_line_performance_contracts(
         '<SYSTEM>Violation fee applied.</SYSTEM>',
@@ -321,6 +374,31 @@ def test_audio_performance_qa_passes_exact_transcript_and_reference_match():
         contracts,
         transcript_lines={"line-0001": "Violation fee applied."},
         voice_similarity_scores={"SYSTEM": 0.91},
+    )
+
+    assert report.ready is True
+    assert report.quarantine_required is False
+    assert report.issues == []
+
+
+def test_audio_performance_qa_allows_earned_unlocked_scarce_register():
+    contracts = build_line_performance_contracts(
+        '<SYSTEM style="genuine awe">Impossible.</SYSTEM>',
+        director_cues=[
+            {
+                "role": "SYSTEM",
+                "announcer_register": "genuine_awe",
+                "register_earned_by": "Unprecedented apex exploit.",
+            }
+        ],
+        reference_clip_ids={"SYSTEM:GENUINE_AWE": "system_ref_awe"},
+    )
+
+    report = build_audio_performance_qa(
+        contracts,
+        transcript_lines={"line-0001": "Impossible."},
+        voice_similarity_scores={"SYSTEM:GENUINE_AWE": 0.93},
+        performance_context={"chapter_number": 60, "phase": "Apex"},
     )
 
     assert report.ready is True
@@ -460,3 +538,50 @@ def test_role_renderer_quarantines_audio_when_post_generation_qa_fails(tmp_path,
         "voice_similarity_below_threshold",
     }
     assert Path(metadata["audio_quarantine_path"]).exists()
+
+
+def test_role_renderer_quarantines_unauthorized_announcer_register(tmp_path, monkeypatch):
+    class RecordingTTS:
+        def convert_script_to_speech(self, script, output_file, voice_map, role_tags=None, role_instructions=None):
+            Path(output_file).write_bytes(b"audio")
+
+    monkeypatch.setattr(
+        "podcastfy.litrpg.renderer.mix_audio_locally",
+        lambda **kwargs: {"mixed": False, "reason": "unit test"},
+    )
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    renderer = RoleScriptRenderer(tts=RecordingTTS())
+
+    metadata = renderer.render_episode(
+        {
+            "script": "<SYSTEM>Impossible.</SYSTEM>",
+            "storage_metadata": {"bundle_path": str(bundle_path)},
+            "config": {
+                "voices": {
+                    "SYSTEM": {
+                        "voice": "voice-s",
+                        "reference_clip_id": "system_ref_bureaucratic",
+                    }
+                }
+            },
+            "role_tags": ["SYSTEM"],
+            "chapter_contract": {"chapter": 4, "phase": "Setup"},
+            "director_cues": [
+                {
+                    "role": "SYSTEM",
+                    "announcer_register": "genuine_awe",
+                    "register_transition": "collapse",
+                }
+            ],
+            "post_generation_transcript_lines": {"line-0001": "Impossible."},
+            "voice_similarity_scores": {"SYSTEM": 0.94},
+        }
+    )
+
+    codes = {issue["code"] for issue in metadata["audio_performance_qa"]["issues"]}
+
+    assert metadata["status"] == "quarantined"
+    assert "register_transition_unearned" in codes
+    assert "register_used_before_unlock" in codes
+    assert "register_requires_apex_beat" in codes

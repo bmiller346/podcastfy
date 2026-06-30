@@ -6,6 +6,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.performance import ANNOUNCER_REGISTER_UNLOCK_CONDITIONS
 from podcastfy.litrpg.performance import LinePerformanceContract
 
 
@@ -58,6 +59,7 @@ def build_audio_performance_qa(
     transcript_lines: Mapping[str, str] | Sequence[str] | None = None,
     voice_similarity_scores: Mapping[str, float] | None = None,
     voice_similarity_threshold: float = DEFAULT_VOICE_SIMILARITY_THRESHOLD,
+    performance_context: Mapping[str, Any] | None = None,
 ) -> AudioPerformanceQAReport:
     """Validate generated audio evidence against exact performance contracts.
 
@@ -96,6 +98,7 @@ def build_audio_performance_qa(
             threshold=float(voice_similarity_threshold),
         )
     )
+    issues.extend(_register_scarcity_issues(contract_list, performance_context or {}))
 
     return AudioPerformanceQAReport(
         ready=not issues,
@@ -107,6 +110,7 @@ def build_audio_performance_qa(
         metadata={
             "contract_count": len(contract_list),
             "voice_similarity_threshold": float(voice_similarity_threshold),
+            "performance_context": dict(performance_context or {}),
         },
     )
 
@@ -238,6 +242,94 @@ def _score_for_contract(
     if role_key in score_map:
         return score_map[role_key]
     return None
+
+
+def _register_scarcity_issues(
+    contracts: Sequence[LinePerformanceContract],
+    performance_context: Mapping[str, Any],
+) -> list[AudioPerformanceQAIssue]:
+    issues: list[AudioPerformanceQAIssue] = []
+    chapter_number = _int_or_none(
+        performance_context.get("chapter_number") or performance_context.get("chapter")
+    )
+    phase = str(performance_context.get("phase") or "").casefold()
+    usage_counts = _usage_counts(performance_context.get("register_usage_counts"))
+    current_counts: dict[str, int] = {}
+    for contract in contracts:
+        register = contract.performance_register
+        if not register:
+            continue
+        rules = ANNOUNCER_REGISTER_UNLOCK_CONDITIONS.get(register)
+        if not rules:
+            issues.append(
+                AudioPerformanceQAIssue(
+                    "unknown_performance_register",
+                    f"{contract.line_id} uses unknown performance register {register!r}.",
+                    line_id=contract.line_id,
+                    role=contract.role,
+                )
+            )
+            continue
+        if contract.register_scarcity_level >= 4 and not contract.register_earned_by:
+            issues.append(
+                AudioPerformanceQAIssue(
+                    "register_transition_unearned",
+                    f"{contract.line_id} uses scarce register {register!r} without register_earned_by.",
+                    line_id=contract.line_id,
+                    role=contract.role,
+                )
+            )
+        min_chapter = _int_or_none(rules.get("min_chapter"))
+        if chapter_number is not None and min_chapter is not None and chapter_number < min_chapter:
+            issues.append(
+                AudioPerformanceQAIssue(
+                    "register_used_before_unlock",
+                    f"{contract.line_id} uses register {register!r} before chapter {min_chapter}.",
+                    line_id=contract.line_id,
+                    role=contract.role,
+                )
+            )
+        if rules.get("requires_apex_beat") and "apex" not in phase:
+            issues.append(
+                AudioPerformanceQAIssue(
+                    "register_requires_apex_beat",
+                    f"{contract.line_id} uses register {register!r} outside an apex beat.",
+                    line_id=contract.line_id,
+                    role=contract.role,
+                )
+            )
+        max_uses = _int_or_none(rules.get("max_uses_per_book"))
+        if max_uses is not None:
+            current_counts[register] = current_counts.get(register, 0) + 1
+            total_uses = usage_counts.get(register, 0) + current_counts[register]
+            if total_uses > max_uses:
+                issues.append(
+                    AudioPerformanceQAIssue(
+                        "register_use_limit_exceeded",
+                        f"{contract.line_id} exceeds max uses for register {register!r}.",
+                        line_id=contract.line_id,
+                        role=contract.role,
+                    )
+                )
+    return issues
+
+
+def _usage_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    counts: dict[str, int] = {}
+    for key, count in value.items():
+        number = _int_or_none(count)
+        if number is not None:
+            counts[str(key).lower().replace(" ", "_").replace("-", "_")] = number
+    return counts
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _normalize_spoken_text(value: str) -> str:
