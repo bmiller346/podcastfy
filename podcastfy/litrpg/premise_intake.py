@@ -224,7 +224,38 @@ def run_premise_intake(
         power_curve=power_curve,
     )
     raw = llm.generate(prompt=prompt, stage="premise_intake")
-    payload = extract_premise_intake_json(str(raw))
+    try:
+        payload = extract_premise_intake_json(str(raw))
+    except ValueError as exc:
+        payload = repair_sparse_premise_intake_payload(
+            {},
+            premise=premise,
+            series_id=series_id,
+            target_books=target_books,
+            chapters_per_book=chapters_per_book,
+            book_length_mode=book_length_mode,
+            arc_style=arc_style,
+            series_title=series_title,
+            series_promise=series_promise,
+            endgame_direction=endgame_direction,
+            power_curve=power_curve,
+            fallback_reason=f"Skipped AI repair because intake JSON was malformed: {exc}",
+        )
+        validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+        return _save_premise_intake_result(
+            storage_dir=storage_dir,
+            series_id=series_id,
+            payload=payload,
+            merge_existing=merge_existing,
+            target_books=target_books,
+            chapters_per_book=chapters_per_book,
+            book_length_mode=book_length_mode,
+            arc_style=arc_style,
+            series_title=series_title,
+            series_promise=series_promise,
+            endgame_direction=endgame_direction,
+            power_curve=power_curve,
+        )
     try:
         validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     except ValueError as exc:
@@ -244,21 +275,19 @@ def run_premise_intake(
                 fallback_reason=f"Skipped AI repair for empty intake shell: {exc}",
             )
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
-            return save_premise_intake_payload(
+            return _save_premise_intake_result(
                 storage_dir=storage_dir,
                 series_id=series_id,
                 payload=payload,
                 merge_existing=merge_existing,
-                fallback_shape={
-                    "target_books": target_books,
-                    "book_length_mode": book_length_mode,
-                    "chapters_per_book": chapters_per_book,
-                    "arc_style": arc_style,
-                    "series_title": series_title,
-                    "series_promise": series_promise,
-                    "endgame_direction": endgame_direction,
-                    "power_curve": power_curve,
-                },
+                target_books=target_books,
+                chapters_per_book=chapters_per_book,
+                book_length_mode=book_length_mode,
+                arc_style=arc_style,
+                series_title=series_title,
+                series_promise=series_promise,
+                endgame_direction=endgame_direction,
+                power_curve=power_curve,
             )
         repair_prompt = build_premise_intake_repair_prompt(
             premise=premise,
@@ -268,7 +297,38 @@ def run_premise_intake(
             previous_payload=payload,
         )
         repaired_raw = llm.generate(prompt=repair_prompt, stage="premise_intake_repair")
-        payload = extract_premise_intake_json(str(repaired_raw))
+        try:
+            payload = extract_premise_intake_json(str(repaired_raw))
+        except ValueError as repair_exc:
+            payload = repair_sparse_premise_intake_payload(
+                payload,
+                premise=premise,
+                series_id=series_id,
+                target_books=target_books,
+                chapters_per_book=chapters_per_book,
+                book_length_mode=book_length_mode,
+                arc_style=arc_style,
+                series_title=series_title,
+                series_promise=series_promise,
+                endgame_direction=endgame_direction,
+                power_curve=power_curve,
+                fallback_reason=f"AI repair returned malformed JSON: {repair_exc}",
+            )
+            validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+            return _save_premise_intake_result(
+                storage_dir=storage_dir,
+                series_id=series_id,
+                payload=payload,
+                merge_existing=merge_existing,
+                target_books=target_books,
+                chapters_per_book=chapters_per_book,
+                book_length_mode=book_length_mode,
+                arc_style=arc_style,
+                series_title=series_title,
+                series_promise=series_promise,
+                endgame_direction=endgame_direction,
+                power_curve=power_curve,
+            )
         try:
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
         except ValueError:
@@ -287,6 +347,37 @@ def run_premise_intake(
                 fallback_reason="AI premise intake remained sparse after repair pass.",
             )
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+    return _save_premise_intake_result(
+        storage_dir=storage_dir,
+        series_id=series_id,
+        payload=payload,
+        merge_existing=merge_existing,
+        target_books=target_books,
+        chapters_per_book=chapters_per_book,
+        book_length_mode=book_length_mode,
+        arc_style=arc_style,
+        series_title=series_title,
+        series_promise=series_promise,
+        endgame_direction=endgame_direction,
+        power_curve=power_curve,
+    )
+
+
+def _save_premise_intake_result(
+    *,
+    storage_dir: str | Path,
+    series_id: str,
+    payload: Mapping[str, Any],
+    merge_existing: bool,
+    target_books: int,
+    chapters_per_book: int,
+    book_length_mode: str,
+    arc_style: str,
+    series_title: str,
+    series_promise: str,
+    endgame_direction: str,
+    power_curve: str,
+) -> PremiseIntakeResult:
     return save_premise_intake_payload(
         storage_dir=storage_dir,
         series_id=series_id,

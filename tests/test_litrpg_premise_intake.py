@@ -35,6 +35,16 @@ class SequencePremiseLLM:
         return "```json\n" + json.dumps(payload) + "\n```"
 
 
+class RawSequencePremiseLLM:
+    def __init__(self, outputs):
+        self.outputs = list(outputs)
+        self.calls = []
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        return self.outputs.pop(0)
+
+
 def test_extract_premise_intake_json_accepts_fenced_output():
     parsed = extract_premise_intake_json('Here:\n```json\n{"series_shape": {"target_books": 1}}\n```')
 
@@ -335,6 +345,65 @@ def test_run_premise_intake_salvages_sparse_output_after_repair_failure(tmp_path
     assert "Skipped AI repair" in result.payload["_intake_metadata"]["fallback_reason"]
 
 
+def test_run_premise_intake_salvages_malformed_initial_json(tmp_path):
+    llm = RawSequencePremiseLLM(['{"series_shape": {"series_title": "The Knotty Buoy",}}'])
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="the-knotty-buoy",
+        premise=_long_knotty_seed(),
+        llm=llm,
+        target_books=1,
+        chapters_per_book=30,
+        series_title="The Knotty Buoy",
+    )
+
+    assert [call["stage"] for call in llm.calls] == ["premise_intake"]
+    assert result.payload["_intake_metadata"]["fallback_used"] is True
+    assert "malformed" in result.payload["_intake_metadata"]["fallback_reason"]
+    assert load_story_bible(tmp_path, "the-knotty-buoy").characters["Edward Marsh"].name == "Edward Marsh"
+
+
+def test_run_premise_intake_salvages_malformed_repair_json(tmp_path):
+    sparse_but_not_empty = {
+        "series_shape": {"series_title": "The Knotty Buoy"},
+        "story_bible": {"characters": {}},
+        "world_register": {
+            "locations": [{"name": "Sophie II", "detail": "The boat."}],
+            "rules": [],
+            "entity_ecology": [],
+        },
+        "book_outlines": {
+            "1": [
+                {"chapter": 1, "title": "A", "premise": "A"},
+                {"chapter": 2, "title": "B", "premise": "B"},
+                {"chapter": 3, "title": "C", "premise": "C"},
+            ]
+        },
+    }
+    llm = RawSequencePremiseLLM(
+        [
+            "```json\n" + json.dumps(sparse_but_not_empty) + "\n```",
+            '{"world_register": {"locations": [{"name": "Sophie II"}]',
+        ]
+    )
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="the-knotty-buoy",
+        premise=_long_knotty_seed(),
+        llm=llm,
+        target_books=1,
+        chapters_per_book=30,
+        series_title="The Knotty Buoy",
+    )
+
+    assert [call["stage"] for call in llm.calls] == ["premise_intake", "premise_intake_repair"]
+    assert result.payload["_intake_metadata"]["fallback_used"] is True
+    assert "repair returned malformed JSON" in result.payload["_intake_metadata"]["fallback_reason"]
+    assert any(item.entity == "Gallowgate" for item in load_world_register(tmp_path, "the-knotty-buoy").entity_ecology)
+
+
 def test_litrpg_task_supports_premise_intake_mode(tmp_path):
     result = run_litrpg_task_data(
         {
@@ -374,6 +443,18 @@ def test_premise_intake_prefers_source_text_over_short_premise(tmp_path):
     prompt = llm.calls[0]["prompt"]
     assert "Full markdown source" in prompt
     assert "Short browser summary" not in prompt
+
+
+def _long_knotty_seed():
+    return (
+        "Target title: The Knotty Buoy\n"
+        "Edward Marsh and Kelli Marsh sail Sophie II with Pedro. Sophie II is named "
+        "after Sophie the cockatoo, who died when Kelli overheated pans. Gallowgate "
+        "and the Grand Dredger turn the dungeon into a maritime debt trap. Floor 1 "
+        "is The Drowned Scaffolding with Barnacle Scrip, OSHA Wraiths, Barnacle "
+        "Mimics, and Rebar Gargoyles. The kids are off the boat and become guilt pressure. "
+        * 18
+    )
 
 
 def _payload():
