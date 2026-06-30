@@ -1033,6 +1033,10 @@ def test_run_litrpg_task_injects_story_engine_storage_context(tmp_path, monkeypa
     assert "Short denial, then procedural panic" in context
     assert "Hero still thinks every promotion is a trap" in context
     assert "alphabetizes terror" in context
+    assert "Character arc pressure:" in context
+    assert "Relationship graph:" in context
+    assert "Hero -> System: mutual contempt" in context
+    assert "Hero: do not resolve wound" in context
     assert "Copy Room: toner-scented arena" in context
     assert "Staple Wraith: feeds on unsigned forms" in context
     assert "All forms bite back: paperwork becomes hostile" in context

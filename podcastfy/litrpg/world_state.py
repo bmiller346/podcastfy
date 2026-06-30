@@ -320,7 +320,10 @@ def build_scene_brief(
         artifact_ids=artifact_ids,
         beat_type=beat_type,
     )
-    forbidden = _forbidden_mysteries(state)
+    forbidden = [
+        *_forbidden_mysteries(state),
+        *_contract_forbidden_revelations(contract),
+    ]
     artifact_contracts = _active_artifact_entries(state, artifact_ids)
     for artifact in artifact_contracts:
         for alias in _string_list(artifact.get("aliases_forbidden")):
@@ -699,6 +702,16 @@ def _forbidden_mysteries(state: Mapping[str, Any]) -> list[str]:
         if status in {"DO_NOT_SPEND", "LOCKED", "HINT_ONLY"}:
             forbidden.append(f"{name}: {status}")
     return forbidden
+
+
+def _contract_forbidden_revelations(contract: Mapping[str, Any]) -> list[str]:
+    conspiracy = contract.get("conspiracy") if isinstance(contract.get("conspiracy"), Mapping) else {}
+    forbidden = _string_list(conspiracy.get("forbidden_revelations"))
+    reader = conspiracy.get("reader_position") if isinstance(conspiracy.get("reader_position"), Mapping) else {}
+    forbidden.extend(
+        f"reader must not confirm: {item}" for item in _string_list(reader.get("must_not_know_yet"))
+    )
+    return _dedupe(forbidden)
 
 
 def _must_establish(location: Mapping[str, Any], state: Mapping[str, Any], prior_tail: str) -> list[str]:

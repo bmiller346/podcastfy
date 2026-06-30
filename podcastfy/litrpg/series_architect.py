@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.conspiracy_engine import ConspiracyEngine
 from podcastfy.litrpg.models import chapter_contract_from_mapping, series_arc_beat_from_mapping
 from podcastfy.litrpg.showrunner import (
     ABSURDITY_DIRECTIVES,
@@ -352,7 +353,18 @@ class SeriesArchitect:
                 contract["beat_type"] = outline_values["beat_type"]
             if outline_values.get("scene_type"):
                 contract["scene_type"] = outline_values["scene_type"]
-        return chapter_contract_from_mapping(contract).to_dict()
+        validated = chapter_contract_from_mapping(contract).to_dict()
+        conspiracy_engine = ConspiracyEngine(self.storage_dir, self.series_id)
+        if conspiracy_engine.available():
+            validated.update(
+                {
+                    "conspiracy": conspiracy_engine.get_chapter_context(
+                        book_number=book_number,
+                        chapter_number=chapter_number,
+                    )
+                }
+            )
+        return validated
 
 
 def format_chapter_contract_context(contract: Mapping[str, Any]) -> str:
@@ -394,6 +406,34 @@ def format_chapter_contract_context(contract: Mapping[str, Any]) -> str:
         if values:
             lines.append(f"- {label}:")
             lines.extend(f"  - {value}" for value in values)
+    conspiracy = contract.get("conspiracy") if isinstance(contract.get("conspiracy"), Mapping) else {}
+    if conspiracy:
+        allowed_hints = conspiracy.get("allowed_conspiracy_hints")
+        if isinstance(allowed_hints, Sequence) and not isinstance(allowed_hints, (str, bytes, bytearray)):
+            hint_lines = []
+            for item in allowed_hints:
+                if isinstance(item, Mapping):
+                    hint_lines.append(
+                        _compact(
+                            f"{item.get('mystery_id')}: {item.get('hint_type')}; "
+                            f"reader={item.get('current_reader_knowledge')}"
+                        )
+                    )
+            if hint_lines:
+                lines.append("- Allowed conspiracy hints:")
+                lines.extend(f"  - {value}" for value in hint_lines)
+        forbidden = _string_list(conspiracy.get("forbidden_revelations"))
+        if forbidden:
+            lines.append("- Forbidden conspiracy revelations:")
+            lines.extend(f"  - {value}" for value in forbidden)
+        factions = conspiracy.get("faction_constraints")
+        if isinstance(factions, Mapping) and factions:
+            lines.append("- Faction mechanics to obey:")
+            for faction_id, payload in factions.items():
+                if not isinstance(payload, Mapping):
+                    continue
+                rules = "; ".join(_string_list(payload.get("operational_rules"))[:3])
+                lines.append(f"  - {faction_id}: {rules or payload.get('apparent_goal') or 'rules established'}")
     return "\n".join(lines)
 
 
@@ -651,3 +691,8 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, Sequence):
         return [str(item) for item in value if str(item).strip()]
     return [str(value)]
+
+
+def _compact(value: str, *, limit: int = 220) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "..."

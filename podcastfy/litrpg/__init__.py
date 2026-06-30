@@ -9,6 +9,9 @@ from podcastfy.litrpg.casting import build_role_tts_instructions
 from podcastfy.litrpg.casting import export_voices_for_litrpg_config
 from podcastfy.litrpg.casting import generate_audition_script, load_cast_plan_json
 from podcastfy.litrpg.casting import validate_cast_plan
+from podcastfy.litrpg.character_arc import CharacterArcEngine
+from podcastfy.litrpg.character_arc import build_character_arc_context
+from podcastfy.litrpg.character_arc import format_character_arc_context
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.continuity import ContinuityLedger, EmotionalArcRegistry
 from podcastfy.litrpg.continuity import WorldRegister, format_chapter_memory_context
@@ -22,6 +25,9 @@ from podcastfy.litrpg.continuity import merge_world_registers
 from podcastfy.litrpg.continuity import save_continuity_ledger
 from podcastfy.litrpg.continuity import save_emotional_arcs, save_world_register
 from podcastfy.litrpg.continuity import upsert_emotional_arc
+from podcastfy.litrpg.conspiracy_engine import ConspiracyEngine
+from podcastfy.litrpg.conspiracy_engine import build_conspiracy_chapter_context
+from podcastfy.litrpg.conspiracy_engine import load_conspiracy_engine, save_conspiracy_engine
 from podcastfy.litrpg.effect_log import EffectLogEntry
 from podcastfy.litrpg.effect_log import append_effect_log_entry, build_effect_log_entry
 from podcastfy.litrpg.effect_log import effect_log_path, find_committed_effect
@@ -144,6 +150,8 @@ __all__ = [
     "ChapterContract",
     "ChapterOutlineEntry",
     "CharacterState",
+    "CharacterArcEngine",
+    "ConspiracyEngine",
     "ContinuityLedger",
     "EffectLogEntry",
     "EmotionalArcRegistry",
@@ -195,6 +203,8 @@ __all__ = [
     "build_prose_rhythm_prompt",
     "build_default_cast_plan",
     "build_chapter_qa",
+    "build_character_arc_context",
+    "build_conspiracy_chapter_context",
     "build_hook_context",
     "build_hook_contract",
     "build_effect_log_entry",
@@ -235,6 +245,7 @@ __all__ = [
     "find_committed_effect",
     "format_story_bible_summary",
     "format_chapter_memory_context",
+    "format_character_arc_context",
     "format_series_package_summary",
     "format_chapter_contract_context",
     "format_continuity_context",
@@ -270,6 +281,7 @@ __all__ = [
     "load_cast_plan_json",
     "load_asset_manifest",
     "load_asset_manifest_file",
+    "load_conspiracy_engine",
     "load_continuity_ledger",
     "load_emotional_arcs",
     "load_foreshadow_ledger",
@@ -309,6 +321,7 @@ __all__ = [
     "roll_wandering_event",
     "save_asset_manifest_file",
     "save_agent_state",
+    "save_conspiracy_engine",
     "save_continuity_ledger",
     "save_emotional_arcs",
     "save_foreshadow_ledger",

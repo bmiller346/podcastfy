@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
+from podcastfy.litrpg.character_arc import CharacterArcEngine
+from podcastfy.litrpg.character_arc import format_character_arc_context
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
 from podcastfy.litrpg.continuity import format_chapter_memory_context
@@ -709,15 +711,23 @@ def _story_engine_context_from_storage(
     ]
     try:
         world_register = load_world_register(storage_dir, series_id)
+        emotional_arcs = load_emotional_arcs(storage_dir, series_id)
         memory_context = (
             format_chapter_memory_context(
                 ledger=load_continuity_ledger(storage_dir, series_id),
-                emotional_arcs=load_emotional_arcs(storage_dir, series_id),
+                emotional_arcs=emotional_arcs,
                 world_register=world_register,
                 chapter_contract=contract,
             )
         )
         blocks.append(memory_context)
+        blocks.append(
+            format_character_arc_context(
+                CharacterArcEngine(storage_dir, series_id).get_chapter_context(
+                    chapter_contract=contract,
+                )
+            )
+        )
         if "Locations:" not in memory_context and "Entity ecology:" not in memory_context:
             blocks.append(_broad_world_register_context(world_register))
     except Exception:
