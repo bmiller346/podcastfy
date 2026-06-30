@@ -8,6 +8,14 @@ const activeSeriesInput = document.querySelector("#active-series-id");
 const seriesSelect = document.querySelector("#series-select");
 const seriesStatus = document.querySelector("#series-status");
 const seriesArtifacts = document.querySelector("#series-artifacts");
+const robustBookNumberInput = document.querySelector("#robust-book-number");
+const robustStateSummary = document.querySelector("#robust-state-summary");
+const robustEffectHistory = document.querySelector("#robust-effect-history");
+const handoffPreview = document.querySelector("#handoff-preview");
+const refreshRobustStateButton = document.querySelector("#refresh-robust-state");
+const approveHarnessStageButton = document.querySelector("#approve-harness-stage");
+const rerunQuarantinedRewriteButton = document.querySelector("#rerun-quarantined-rewrite");
+const openHandoffButton = document.querySelector("#open-handoff");
 const useTaskSeriesButton = document.querySelector("#use-task-series");
 const loadActiveSeriesButton = document.querySelector("#load-active-series");
 const newSeriesPackageButton = document.querySelector("#new-series-package");
@@ -63,6 +71,7 @@ let latestTasks = null;
 let latestLibrary = null;
 let latestJob = null;
 let latestPackage = null;
+let latestRobustState = null;
 let activeSeriesId = "";
 let lastSyncedPackageSeriesId = "";
 let packageRevision = 0;
@@ -498,8 +507,28 @@ function buildTaskPayload() {
   if (Number.isInteger(chaptersPerBook) && chaptersPerBook > 0) {
     task.chapters_per_book = chaptersPerBook;
   }
+  for (const [field, key] of [
+    ["book_number", "book_number"],
+    ["chapter_number", "chapter_number"],
+    ["target_minutes", "target_minutes"],
+    ["max_rewrite_attempts", "max_rewrite_attempts"],
+  ]) {
+    const value = Number(cleanValue(formData.get(field)));
+    if (Number.isInteger(value) && value > 0) {
+      task[key] = value;
+    }
+  }
   if (mode === "premise_intake") {
     task.render_audio = false;
+  }
+  if (formData.get("harness_enabled") === "on") {
+    task.harness = { enabled: true };
+  }
+  if (formData.get("rewrite_quarantined") === "on") {
+    task.rewrite_quarantined = true;
+  }
+  if (formData.get("generate_handoff") === "on") {
+    task.generate_handoff = true;
   }
 
   maybeAssign(task, "book_length_mode", cleanValue(formData.get("book_length_mode")));
@@ -981,11 +1010,144 @@ async function submitTaskPayload(payload, { statusText = "Queueing generation...
     updateDiagnostics();
     taskOutput.textContent = JSON.stringify(job, null, 2);
     await refreshAll();
+    await loadRobustState({ quiet: true }).catch(() => {});
   } catch (error) {
     taskOutput.textContent = error.message;
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+async function loadRobustState({ quiet = false } = {}) {
+  if (!robustStateSummary) return null;
+  const seriesId = currentSeriesId();
+  const bookNumber = currentRobustBookNumber();
+  if (!quiet) {
+    taskOutput.textContent = `Loading robust state for ${seriesId} book ${bookNumber}...`;
+  }
+  const data = await api(
+    `/api/robust-state?series_id=${encodeURIComponent(seriesId)}&book_number=${encodeURIComponent(bookNumber)}`,
+  );
+  latestRobustState = data;
+  renderRobustState(data);
+  if (!quiet) {
+    taskOutput.textContent = `Robust state loaded for ${seriesId}.`;
+  }
+  return data;
+}
+
+function currentRobustBookNumber() {
+  const robustBook = Number(cleanValue(robustBookNumberInput && robustBookNumberInput.value));
+  if (Number.isInteger(robustBook) && robustBook > 0) return robustBook;
+  const taskBook = Number(cleanValue(taskForm.elements.book_number && taskForm.elements.book_number.value));
+  return Number.isInteger(taskBook) && taskBook > 0 ? taskBook : 1;
+}
+
+function renderRobustState(data) {
+  if (!robustStateSummary) return;
+  const latestQuarantine = data && data.quarantine ? data.quarantine.latest : null;
+  const handoff = data && data.handoff ? data.handoff : {};
+  const effectLog = data && data.effect_log ? data.effect_log : {};
+  const decision = latestHarnessDecision();
+  const blocked = (data && data.blocked) || [];
+  robustStateSummary.innerHTML = [
+    diagnosticsItem("Approval", decision ? decision.reason || decision.stage : "none pending"),
+    diagnosticsItem("Quarantine", latestQuarantine ? `${latestQuarantine.status || "unknown"} ch ${latestQuarantine.chapter_number || "?"}` : "none"),
+    diagnosticsItem("Blocked queue", String(blocked.length || 0)),
+    diagnosticsItem("Handoff", handoff.exists ? handoff.path : "missing"),
+    diagnosticsItem("Recent effects", String((effectLog.recent || []).length)),
+    diagnosticsItem("Committed cost", `$${Number(effectLog.committed_cost_usd || 0).toFixed(4)}`),
+  ].join("");
+  if (robustEffectHistory) {
+    robustEffectHistory.innerHTML = renderEffectHistory(effectLog.recent || []);
+  }
+  setButtonEnabled(approveHarnessStageButton, Boolean(decision && decision.allowed === false));
+  setButtonEnabled(rerunQuarantinedRewriteButton, Boolean(latestQuarantine));
+  setButtonEnabled(openHandoffButton, Boolean(handoff.exists));
+}
+
+function latestHarnessDecision() {
+  const result = latestJob && latestJob.result && typeof latestJob.result === "object" ? latestJob.result : {};
+  return result.harness_decision && typeof result.harness_decision === "object"
+    ? result.harness_decision
+    : null;
+}
+
+function renderEffectHistory(entries) {
+  if (!entries.length) {
+    return `<div class="quiet-box">No effect log entries for this series yet.</div>`;
+  }
+  return `<div class="effect-list">
+    ${entries.slice(-5).reverse().map((entry) => `<div class="effect-row">
+      <strong>${escapeHtml(entry.stage || "unknown")}</strong>
+      <span>${escapeHtml(entry.status || "")}</span>
+      <span>${escapeHtml([entry.provider, entry.model].filter(Boolean).join(" ") || "provider unknown")}</span>
+      <span>$${Number(entry.estimated_cost_usd || 0).toFixed(4)}</span>
+    </div>`).join("")}
+  </div>`;
+}
+
+function setButtonEnabled(button, enabled) {
+  if (button) button.disabled = !enabled;
+}
+
+async function approveLatestHarnessStage() {
+  const decision = latestHarnessDecision();
+  if (!decision || decision.allowed !== false) {
+    taskOutput.textContent = "No blocked harness stage is available to approve.";
+    return;
+  }
+  const payload = {
+    ...buildTaskPayload(),
+    approved_stages: uniqueStrings([...(buildTaskPayload().approved_stages || []), decision.stage]),
+  };
+  payload.harness = payload.harness || { enabled: true };
+  await submitTaskPayload(payload, {
+    statusText: `Queueing approved ${decision.stage} run...`,
+    button: approveHarnessStageButton,
+  });
+}
+
+async function rerunLatestQuarantineWithRewrite() {
+  const latest = latestRobustState && latestRobustState.quarantine
+    ? latestRobustState.quarantine.latest
+    : null;
+  if (!latest) {
+    taskOutput.textContent = "No quarantine record is available to rerun.";
+    return;
+  }
+  const payload = {
+    ...buildTaskPayload(),
+    mode: "chapter",
+    book_number: Number(latest.book_number || currentRobustBookNumber()),
+    chapter_number: Number(latest.chapter_number || buildTaskPayload().chapter_number || 1),
+    rewrite_quarantined: true,
+    generate_handoff: true,
+    max_rewrite_attempts: Number(latest.max_rewrite_attempts || buildTaskPayload().max_rewrite_attempts || 3),
+    approved_stages: uniqueStrings([...(buildTaskPayload().approved_stages || []), "chapter_generation"]),
+  };
+  payload.harness = payload.harness || { enabled: true };
+  await submitTaskPayload(payload, {
+    statusText: `Queueing rewrite for Chapter ${payload.chapter_number}...`,
+    button: rerunQuarantinedRewriteButton,
+  });
+}
+
+function openLatestHandoff() {
+  const handoff = latestRobustState && latestRobustState.handoff ? latestRobustState.handoff : {};
+  if (!handoff.exists) {
+    taskOutput.textContent = "No HANDOFF.md exists for the selected book.";
+    return;
+  }
+  if (handoffPreview) {
+    handoffPreview.textContent = handoff.text || `Handoff available at ${handoff.path}`;
+    handoffPreview.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  taskOutput.textContent = `Opened ${handoff.path}.`;
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => cleanValue(value)).filter(Boolean))];
 }
 
 function renderSeriesPackage(data) {
@@ -2004,6 +2166,7 @@ async function refreshAll() {
       });
     });
   }
+  await loadRobustState({ quiet: true }).catch(() => {});
 }
 
 settingsForm.addEventListener("submit", async (event) => {
@@ -2036,6 +2199,7 @@ if (activeSeriesInput) {
   activeSeriesInput.addEventListener("input", () => {
     setActiveSeriesId(activeSeriesInput.value, { syncTask: true, syncPackage: true });
     updateTaskPreview({ syncSeries: false });
+    loadRobustState({ quiet: true }).catch(() => {});
   });
 }
 
@@ -2074,6 +2238,44 @@ if (loadActiveSeriesButton) {
       taskOutput.textContent = error.message;
     }
   });
+}
+
+if (robustBookNumberInput) {
+  robustBookNumberInput.addEventListener("change", () => {
+    if (taskForm.elements.book_number && !cleanValue(taskForm.elements.book_number.value)) {
+      taskForm.elements.book_number.value = robustBookNumberInput.value;
+      updateTaskPreview({ syncSeries: false });
+    }
+    loadRobustState({ quiet: true }).catch(() => {});
+  });
+}
+
+if (refreshRobustStateButton) {
+  refreshRobustStateButton.addEventListener("click", () => {
+    loadRobustState().catch((error) => {
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+if (approveHarnessStageButton) {
+  approveHarnessStageButton.addEventListener("click", () => {
+    approveLatestHarnessStage().catch((error) => {
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+if (rerunQuarantinedRewriteButton) {
+  rerunQuarantinedRewriteButton.addEventListener("click", () => {
+    rerunLatestQuarantineWithRewrite().catch((error) => {
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+if (openHandoffButton) {
+  openHandoffButton.addEventListener("click", openLatestHandoff);
 }
 
 if (newSeriesPackageButton) {
