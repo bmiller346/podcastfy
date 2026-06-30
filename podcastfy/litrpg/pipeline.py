@@ -7,6 +7,9 @@ from dataclasses import asdict
 from typing import Any
 
 from podcastfy.litrpg.config import LitRPGConfig, load_litrpg_config
+from podcastfy.litrpg.effect_log import append_effect_log_entry
+from podcastfy.litrpg.effect_log import build_effect_log_entry
+from podcastfy.litrpg.effect_log import effect_log_path
 from podcastfy.litrpg.engine import LitRPGEngine
 from podcastfy.litrpg.episode_store import EpisodeStore
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
@@ -119,6 +122,21 @@ def generate_litrpg_audio_episode(
         )
         state.episode_number = max(state.episode_number, resolved_episode_number)
         save_series_state(series_dir, state)
+        if render_audio and result.get("audio_metadata"):
+            _append_audio_render_effect(
+                storage_path=storage_path,
+                series_id=series_id,
+                episode_number=resolved_episode_number,
+                provider=provider,
+                model=provider_model,
+                input_payload={
+                    "premise": premise,
+                    "episode_number": resolved_episode_number,
+                    "provider": provider,
+                    "model": provider_model,
+                },
+                output_payload=result.get("audio_metadata"),
+            )
 
     return result
 
@@ -214,3 +232,27 @@ def _conversation_config_with_tts_options(
     tts_config[provider] = provider_config
     config["text_to_speech"] = tts_config
     return config
+
+
+def _append_audio_render_effect(
+    *,
+    storage_path: Path,
+    series_id: str,
+    episode_number: int,
+    provider: str,
+    model: str,
+    input_payload: Any,
+    output_payload: Any,
+) -> None:
+    entry = build_effect_log_entry(
+        series_id=series_id,
+        book_number=1,
+        chapter_number=episode_number,
+        stage="audio_render",
+        input_payload=input_payload,
+        output_payload=output_payload,
+        provider=provider,
+        model=model,
+        status="committed",
+    )
+    append_effect_log_entry(effect_log_path(storage_path, series_id), entry)

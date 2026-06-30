@@ -22,6 +22,11 @@ from podcastfy.litrpg.continuity import merge_world_registers
 from podcastfy.litrpg.continuity import save_continuity_ledger
 from podcastfy.litrpg.continuity import save_emotional_arcs, save_world_register
 from podcastfy.litrpg.continuity import upsert_emotional_arc
+from podcastfy.litrpg.effect_log import EffectLogEntry
+from podcastfy.litrpg.effect_log import append_effect_log_entry, build_effect_log_entry
+from podcastfy.litrpg.effect_log import effect_log_path, find_committed_effect
+from podcastfy.litrpg.effect_log import make_idempotency_key, read_effect_log
+from podcastfy.litrpg.effect_log import should_skip_effect
 from podcastfy.litrpg.episode_store import EpisodeStore, find_bundle_by_cache_key
 from podcastfy.litrpg.episode_store import stable_cache_key
 from podcastfy.litrpg.foreshadowing import ForeshadowEntry, ForeshadowLedger
@@ -29,6 +34,16 @@ from podcastfy.litrpg.foreshadowing import add_plants, compute_ready_to_pay
 from podcastfy.litrpg.foreshadowing import format_foreshadow_context
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger, mark_paid
 from podcastfy.litrpg.foreshadowing import save_foreshadow_ledger
+from podcastfy.litrpg.agent_state import QueueItem
+from podcastfy.litrpg.agent_state import add_queue_item, agent_state_path
+from podcastfy.litrpg.agent_state import complete_queue_item, dedupe_queue
+from podcastfy.litrpg.agent_state import load_agent_state
+from podcastfy.litrpg.agent_state import record_next_chapter_action
+from podcastfy.litrpg.agent_state import record_quarantine_blocker, save_agent_state
+from podcastfy.litrpg.handoff import generate_book_handoff
+from podcastfy.litrpg.harness import HarnessDecision, HarnessStageGate
+from podcastfy.litrpg.harness import check_harness_gate, default_harness_config
+from podcastfy.litrpg.harness import estimate_stage_cost, load_harness_config
 from podcastfy.litrpg.hooks import HookContract, MysteryLock
 from podcastfy.litrpg.hooks import build_hook_context, build_hook_contract
 from podcastfy.litrpg.hooks import format_ending_hook_obligations
@@ -56,6 +71,13 @@ from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
 from podcastfy.litrpg.premise_intake import extract_premise_intake_json
 from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
+from podcastfy.litrpg.prompts import build_series_anchor_block
+from podcastfy.litrpg.quarantine import QuarantineRecord
+from podcastfy.litrpg.quarantine import build_rewrite_instruction
+from podcastfy.litrpg.quarantine import chapter_quarantine_dir
+from podcastfy.litrpg.quarantine import next_quarantine_attempt_path
+from podcastfy.litrpg.quarantine import quarantine_record_to_dict
+from podcastfy.litrpg.quarantine import write_quarantine_record
 from podcastfy.litrpg.qa import build_chapter_qa, parse_part_qa_artifacts
 from podcastfy.litrpg.models import CharacterState, EpisodeBundle, EpisodeConfig
 from podcastfy.litrpg.models import ChapterContract
@@ -67,6 +89,7 @@ from podcastfy.litrpg.rhythm import build_prose_rhythm_prompt
 from podcastfy.litrpg.rhythm import build_reader_proxy_prompt
 from podcastfy.litrpg.rhythm import classify_target_rhythm
 from podcastfy.litrpg.rhythm import parse_verdict_and_scores
+from podcastfy.litrpg.scarcity import ScarcityDecision, ScarcityItem, ScarcityRegistry
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
 from podcastfy.litrpg.series_architect import BookPlan, ChapterBeat
 from podcastfy.litrpg.series_architect import ChapterOutlineEntry, SeriesArchitect
@@ -111,6 +134,7 @@ __all__ = [
     "ChapterOutlineEntry",
     "CharacterState",
     "ContinuityLedger",
+    "EffectLogEntry",
     "EmotionalArcRegistry",
     "EpisodeBundle",
     "EpisodeConfig",
@@ -123,9 +147,14 @@ __all__ = [
     "OllamaGenerator",
     "PremiseIntakeResult",
     "QuestState",
+    "QueueItem",
+    "QuarantineRecord",
     "RoleScriptRenderer",
     "ScriptLine",
     "SchemaValidationError",
+    "ScarcityDecision",
+    "ScarcityItem",
+    "ScarcityRegistry",
     "SeriesArcBeat",
     "SeriesState",
     "SeriesArchitect",
@@ -143,34 +172,48 @@ __all__ = [
     "WorldRegister",
     "WorldRegisterEntry",
     "add_or_promote_asset",
+    "add_queue_item",
     "add_plants",
+    "agent_state_path",
     "apply_delta_to_state",
+    "append_effect_log_entry",
     "build_prose_rhythm_prompt",
     "build_default_cast_plan",
     "build_chapter_qa",
     "build_hook_context",
     "build_hook_contract",
+    "build_effect_log_entry",
     "build_local_sfx_prompt",
     "build_mix_plan",
     "build_premise_intake_prompt",
     "build_reader_proxy_prompt",
     "build_role_tts_instructions",
     "build_series_package_prompt",
+    "build_series_anchor_block",
     "build_series_arc_prompt",
+    "build_rewrite_instruction",
     "build_showrunner_payload",
     "bootstrap_series",
     "cast_plan_from_mapping",
+    "check_harness_gate",
     "classify_target_rhythm",
+    "chapter_quarantine_dir",
     "coerce_series_package",
+    "complete_queue_item",
     "compute_ready_to_pay",
     "create_generation_request",
     "delete_episode",
+    "dedupe_queue",
+    "default_harness_config",
+    "effect_log_path",
+    "estimate_stage_cost",
     "export_voices_for_litrpg_config",
     "extract_mechanics_events",
     "extract_premise_intake_json",
     "extract_state_delta",
     "extract_series_package_json",
     "find_bundle_by_cache_key",
+    "find_committed_effect",
     "format_story_bible_summary",
     "format_chapter_memory_context",
     "format_series_package_summary",
@@ -190,7 +233,10 @@ __all__ = [
     "generate_sfx_candidate",
     "generate_litrpg_audio_episode",
     "generate_litrpg_chapter",
+    "generate_book_handoff",
     "GeminiGenerator",
+    "HarnessDecision",
+    "HarnessStageGate",
     "IntentRoutingGemini",
     "IntentRoutingOpenAI",
     "get_audio_path",
@@ -200,12 +246,14 @@ __all__ = [
     "list_episodes",
     "list_regenerable_parts",
     "list_series",
+    "load_agent_state",
     "load_cast_plan_json",
     "load_asset_manifest",
     "load_asset_manifest_file",
     "load_continuity_ledger",
     "load_emotional_arcs",
     "load_foreshadow_ledger",
+    "load_harness_config",
     "load_litrpg_task",
     "load_litrpg_settings",
     "load_series_state",
@@ -218,20 +266,27 @@ __all__ = [
     "mark_paid",
     "map_assets_for_cue",
     "map_assets_for_cue_sheet",
+    "make_idempotency_key",
     "merge_story_bible_updates",
     "merge_continuity_ledgers",
     "merge_voice_cards",
     "merge_world_registers",
     "next_episode_number",
+    "next_quarantine_attempt_path",
     "normalize_mix_plan_defaults",
     "parse_part_qa_artifacts",
     "parse_cue_sheet",
     "parse_verdict_and_scores",
     "promote_generated_asset_request",
+    "quarantine_record_to_dict",
+    "read_effect_log",
+    "record_next_chapter_action",
+    "record_quarantine_blocker",
     "run_litrpg_task",
     "run_premise_intake",
     "roll_wandering_event",
     "save_asset_manifest_file",
+    "save_agent_state",
     "save_continuity_ledger",
     "save_emotional_arcs",
     "save_foreshadow_ledger",
@@ -243,6 +298,7 @@ __all__ = [
     "save_voice_cards",
     "save_world_register",
     "scan_asset_directory",
+    "should_skip_effect",
     "sfx_cache_path",
     "stable_cache_key",
     "select_asset_candidates",
@@ -252,6 +308,7 @@ __all__ = [
     "validate_mix_plan",
     "validate_series_package",
     "validate_cast_plan",
+    "write_quarantine_record",
 ]
 
 

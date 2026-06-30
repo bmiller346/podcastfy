@@ -46,6 +46,12 @@ class FakeChapterLLM:
                 '"implied_cost":"the clerk has to touch it again",'
                 '"next_chapter_obligation":"Open on the stapler grin."}'
             )
+        if stage == "scarcity_audit":
+            return (
+                '{"passed":true,"violations":[],"warnings":[],'
+                '"safe_hints":["HR System origin can be hinted"],'
+                '"spent_mysteries":[],"quarantine_required":false}'
+            )
         if stage == "rhythm":
             return '{"verdict":"pass","scores":{"tempo_match":9}}'
         if stage == "reader_proxy":
@@ -82,6 +88,11 @@ class AllRolesChapterLLM:
         self.calls.append({"prompt": prompt, "stage": stage})
         if stage.startswith("part:") or stage.startswith("revise:"):
             return self.script
+        if stage == "scarcity_audit":
+            return (
+                '{"passed":true,"violations":[],"warnings":[],'
+                '"safe_hints":[],"spent_mysteries":[],"quarantine_required":false}'
+            )
         return f"{stage} ok"
 
 
@@ -136,6 +147,46 @@ class DirectorCueLLM(AllRolesChapterLLM):
         return super().generate(prompt=prompt, stage=stage)
 
 
+class FailingScarcityAuditLLM(AllRolesChapterLLM):
+    def generate(self, *, prompt, stage):
+        if stage == "scarcity_audit":
+            self.calls.append({"prompt": prompt, "stage": stage})
+            return (
+                '{"passed":false,"violations":["Sponsor identity revealed early"],'
+                '"warnings":["Token count increased without trade"],'
+                '"safe_hints":["Sponsor logo may appear"],'
+                '"spent_mysteries":["Sponsor identity"],'
+                '"quarantine_required":true}'
+            )
+        return super().generate(prompt=prompt, stage=stage)
+
+
+class RewriteScarcityAuditLLM(AllRolesChapterLLM):
+    def __init__(self):
+        super().__init__()
+        self.audit_count = 0
+
+    def generate(self, *, prompt, stage):
+        if stage == "scarcity_audit":
+            self.calls.append({"prompt": prompt, "stage": stage})
+            self.audit_count += 1
+            if self.audit_count == 1:
+                return (
+                    '{"passed":false,"violations":["Sponsor identity revealed early"],'
+                    '"warnings":[],"safe_hints":[],"spent_mysteries":["Sponsor identity"],'
+                    '"quarantine_required":true}'
+                )
+            return (
+                '{"passed":true,"violations":[],"warnings":[],'
+                '"safe_hints":["Sponsor logo may appear"],"spent_mysteries":[],'
+                '"quarantine_required":false}'
+            )
+        if stage.startswith("rewrite:scarcity:"):
+            self.calls.append({"prompt": prompt, "stage": stage})
+            return "<NARRATOR>Rewritten chapter keeps only a sponsor logo hint.</NARRATOR>"
+        return super().generate(prompt=prompt, stage=stage)
+
+
 def _chapter_task(**overrides):
     task = {
         "mode": "chapter",
@@ -155,7 +206,28 @@ def _chapter_task(**overrides):
 def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order():
     llm = FakeChapterLLM()
 
-    result = generate_litrpg_chapter(_chapter_task(), llm=llm)
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            series_plan={
+                "series_title": "Paper Cuts",
+                "series_mysteries": ["HR System origin"],
+            },
+            book_plan={
+                "book": 1,
+                "role": "Origin and first floor survival",
+                "power_ceiling": "level 10",
+                "must_preserve": ["HR System origin"],
+            },
+            chapter_contract={
+                "book": 1,
+                "chapter": 2,
+                "phase": "The Apex",
+                "tension": 9,
+                "must_not_spend": ["HR System origin"],
+            },
+        ),
+        llm=llm,
+    )
 
     assert [call["stage"] for call in llm.calls] == [
         "part:cold-open",
@@ -201,6 +273,7 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
         "chapter_review",
         "visual_state_update",
         "hook",
+        "scarcity_audit",
         "rhythm",
         "reader_proxy",
     ]
@@ -221,6 +294,9 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     assert result["qa"]["parts"][0]["verdicts"]["description"] == "pass"
     assert result["visual_state_update"].startswith('{"characters"')
     assert result["hook_review"].startswith('{"verdict"')
+    assert result["scarcity_audit"]["passed"] is True
+    assert result["scarcity_audit"]["safe_hints"] == ["HR System origin can be hinted"]
+    assert result["render"]["metadata"]["scarcity_audit"]["passed"] is True
     assert result["render"]["metadata"]["hook_review"].startswith('{"verdict"')
     assert result["rhythm_review"].startswith('{"verdict"')
     assert result["reader_proxy_review"].startswith('{"verdict"')
@@ -238,6 +314,10 @@ def test_generate_litrpg_chapter_calls_parts_reviews_and_chapter_review_in_order
     assert result["render"]["metadata"]["audio_readiness"]["cue_count"] == 0
     assert "SYSTEM" in result["render"]["metadata"]["audio_readiness"]["role_tags"]
     assert "Hook Engine:" in llm.calls[0]["prompt"]
+    assert "Series Anchor Block:" in llm.calls[0]["prompt"]
+    assert "HR System origin" in result["chapter"]["series_anchor_block"]
+    assert result["render"]["metadata"]["series_anchor_block"] == result["chapter"]["series_anchor_block"]
+    assert result["chapter"]["scarcity_registry"]["items"]
     assert result["qa"]["parts"][0]["revision_targets"][0]["audit"] == "mechanics"
     assert "NARRATOR logs XP and loot" in result["combined_script"]
     assert result["render"]["ready"] is True
@@ -458,6 +538,57 @@ def test_generate_litrpg_chapter_description_block_verdict_makes_render_not_read
     assert result["qa"]["parts"][0]["verdicts"]["description"] == "block"
     assert result["qa"]["parts"][0]["scores"]["description"]["score"] == 3
     assert any("ruined left leg" in issue for issue in result["qa"]["blocking_issues"])
+
+
+def test_scarcity_failure_quarantines_and_blocks_render_without_rewrite():
+    llm = FailingScarcityAuditLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            chapter_contract={
+                "book": 1,
+                "chapter": 2,
+                "phase": "The Apex",
+                "must_not_spend": ["Sponsor identity"],
+            },
+            series_plan={"series_mysteries": ["Sponsor identity"]},
+        ),
+        llm=llm,
+    )
+
+    assert result["scarcity_audit"]["passed"] is False
+    assert result["qa"]["ready"] is False
+    assert result["render"]["ready"] is False
+    assert result["quarantine"]["status"] == "quarantined"
+    assert result["quarantine"]["reason"] == "scarcity_audit_failed"
+    assert "Sponsor identity revealed early" in result["rewrite_instruction"]
+    assert not any(call["stage"].startswith("rewrite:scarcity:") for call in llm.calls)
+
+
+def test_scarcity_rewrite_flag_reaudits_and_can_clear_quarantine():
+    llm = RewriteScarcityAuditLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            rewrite_quarantined=True,
+            max_rewrite_attempts=2,
+            chapter_contract={
+                "book": 1,
+                "chapter": 2,
+                "phase": "The Apex",
+                "must_not_spend": ["Sponsor identity"],
+            },
+            series_plan={"series_mysteries": ["Sponsor identity"]},
+        ),
+        llm=llm,
+    )
+
+    assert result["scarcity_audit"]["passed"] is True
+    assert result["quarantine"]["status"] == "passed"
+    assert result["render"]["script"].startswith("<NARRATOR>Rewritten chapter")
+    assert [call["stage"] for call in llm.calls if call["stage"].startswith("rewrite:scarcity:")] == [
+        "rewrite:scarcity:2:1"
+    ]
 
 
 def test_generate_litrpg_chapter_injects_story_bible_summary_into_prompts():

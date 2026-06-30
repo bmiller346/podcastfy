@@ -276,6 +276,7 @@ def test_stage_routing_documents_hybrid_stage_backends():
         "chapter_review",
         "visual_state_update",
         "hook",
+        "scarcity_audit",
         "rhythm",
         "reader_proxy",
         "story_seed_revision",

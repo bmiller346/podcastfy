@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "stages": {
+    "premise_intake": {
+      "requires_human_approval": false
+    },
+    "book_plan": {
+      "requires_human_approval": true
+    },
+    "chapter_generation": {
+      "requires_human_approval": true
+    },
+    "chapter_result_write": {
+      "requires_human_approval": false
+    },
+    "audio_render": {
+      "cost_per_minute_usd": 0.015,
+      "requires_human_approval": true
+    }
+  }
+}

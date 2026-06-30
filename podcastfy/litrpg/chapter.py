@@ -12,6 +12,7 @@ from podcastfy.litrpg.casting import build_role_tts_instructions
 from podcastfy.litrpg.casting import cast_plan_from_mapping
 from podcastfy.litrpg.mechanics import validate_mechanics
 from podcastfy.litrpg.part_reuse import select_reusable_part_scripts
+from podcastfy.litrpg.prompts import build_series_anchor_block
 from podcastfy.litrpg.qa import build_chapter_qa
 from podcastfy.litrpg.hooks import build_hook_context
 from podcastfy.litrpg.production import ChapterPart
@@ -24,11 +25,14 @@ from podcastfy.litrpg.production import build_hook_engine_prompt
 from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt
 from podcastfy.litrpg.production import build_part_revision_prompt
+from podcastfy.litrpg.production import build_scarcity_audit_prompt
 from podcastfy.litrpg.production import build_showmanship_audit_prompt
 from podcastfy.litrpg.production import build_tonal_audit_prompt
 from podcastfy.litrpg.production import build_visual_state_extraction_prompt
+from podcastfy.litrpg.quarantine import build_rewrite_instruction
 from podcastfy.litrpg.rhythm import build_prose_rhythm_prompt
 from podcastfy.litrpg.rhythm import build_reader_proxy_prompt
+from podcastfy.litrpg.scarcity import ScarcityRegistry
 from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
 from podcastfy.litrpg.sfx import parse_cue_sheet
@@ -98,6 +102,28 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     if not showrunner_context and showrunner_payload:
         showrunner_context = format_showrunner_context(showrunner_payload)
     chapter_contract = _mapping_or_none(task.get("chapter_contract")) or {}
+    series_plan = _mapping_or_none(task.get("series_plan") or task.get("series_shape")) or {}
+    book_plan = _mapping_or_none(task.get("book_plan")) or {}
+    current_book = _int_or_default(
+        task.get("book_number") or chapter_contract.get("book") or book_plan.get("book"),
+        1,
+    )
+    scarcity_registry = ScarcityRegistry.from_task(task)
+    scarcity_anchor_payload = scarcity_registry.to_anchor_payload(book=current_book)
+    series_anchor_block = build_series_anchor_block(
+        series_plan=series_plan,
+        book_plan=book_plan,
+        chapter_contract=chapter_contract or showrunner_payload,
+        power_ceiling=str(
+            task.get("power_ceiling")
+            or chapter_contract.get("power_ceiling")
+            or book_plan.get("power_ceiling")
+            or ""
+        ),
+        current_phase=str(chapter_contract.get("phase") or showrunner_payload.get("phase") or ""),
+        current_tension=chapter_contract.get("tension") or showrunner_payload.get("tension"),
+        scarcity_registry=scarcity_anchor_payload,
+    )
     hook_context = str(task.get("hook_context") or task.get("previous_hook_context") or "").strip()
     hook_context = build_hook_context(
         contract=chapter_contract or showrunner_payload,
@@ -106,6 +132,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     story_engine_context = str(task.get("story_engine_context") or "").strip()
     mechanics_context = _mapping_or_none(task.get("mechanics_context")) or {}
     retry_options = _retry_options(task)
+    max_rewrite_attempts = max(1, int(task.get("max_rewrite_attempts") or 3))
+    rewrite_quarantined = bool(task.get("rewrite_quarantined"))
     checkpoint_dir = _checkpoint_dir(task)
     generated_parts: list[dict[str, Any]] = []
     part_scripts: list[str] = []
@@ -120,6 +148,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             showrunner_context=showrunner_context,
             hook_context=hook_context,
             story_engine_context=story_engine_context,
+            series_anchor_block=series_anchor_block,
             genre=genre,
         )
         locked_script = locked_part_scripts.get(part.part_id)
@@ -158,6 +187,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 part_script=script,
                 required_roles=part.required_roles,
                 series_package_summary=series_package_summary,
+                series_anchor_block=series_anchor_block,
                 genre=genre,
             )
             review = _generate_with_retry(
@@ -184,6 +214,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 prior_parts_summary=_prior_parts_summary(generated_parts),
                 story_bible_summary=story_bible_summary,
                 series_package_summary=series_package_summary,
+                series_anchor_block=series_anchor_block,
                 genre=genre,
             )
             mechanics_audit = _generate_with_retry(
@@ -234,6 +265,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                     required_roles=part.required_roles,
                     description_audit=description_audit,
                     series_package_summary=series_package_summary,
+                    series_anchor_block=series_anchor_block,
                     genre=genre,
                 )
                 revised_script = _generate_with_retry(
@@ -297,6 +329,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             part_scripts=part_scripts,
             cast_roles=plan.cast_roles,
             series_package_summary=series_package_summary,
+            series_anchor_block=series_anchor_block,
             genre=genre,
         )
         chapter_review = _generate_with_retry(
@@ -311,10 +344,22 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     visual_state_update = ""
     hook_prompt = ""
     hook_review = ""
+    scarcity_audit_prompt = ""
+    scarcity_audit_raw = ""
+    scarcity_audit = {
+        "passed": True,
+        "violations": [],
+        "warnings": [],
+        "safe_hints": [],
+        "spent_mysteries": [],
+        "quarantine_required": False,
+        "raw": "",
+    }
     rhythm_prompt = ""
     rhythm_review = ""
     reader_proxy_prompt = ""
     reader_proxy_review = ""
+    rewrite_attempts: list[dict[str, Any]] = []
     if reviews_enabled:
         visual_state_update_prompt = build_visual_state_extraction_prompt(
             final_script=combined_script,
@@ -332,6 +377,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             chapter_title=title,
             hook_context=hook_context,
             chapter_contract=chapter_contract or showrunner_payload,
+            series_anchor_block=series_anchor_block,
             genre=genre,
         )
         hook_review = _generate_with_retry(
@@ -340,6 +386,69 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             stage="hook",
             retry_options=retry_options,
         )
+        scarcity_audit_prompt = build_scarcity_audit_prompt(
+            final_script=combined_script,
+            series_anchor_block=series_anchor_block,
+            scarcity_registry=scarcity_registry.to_dict(),
+            chapter_contract=chapter_contract or showrunner_payload,
+            genre=genre,
+        )
+        scarcity_audit_raw = _generate_with_retry(
+            llm,
+            prompt=scarcity_audit_prompt,
+            stage="scarcity_audit",
+            retry_options=retry_options,
+        )
+        scarcity_audit = _parse_scarcity_audit(scarcity_audit_raw)
+        if rewrite_quarantined:
+            for attempt in range(1, max_rewrite_attempts + 1):
+                if not _scarcity_requires_quarantine(scarcity_audit):
+                    break
+                rewrite_instruction = build_rewrite_instruction(
+                    scarcity_audit,
+                    chapter_contract or showrunner_payload,
+                    scarcity_registry.to_dict(),
+                )
+                rewrite_prompt = _build_scarcity_rewrite_prompt(
+                    combined_script=combined_script,
+                    scarcity_audit=scarcity_audit,
+                    scarcity_anchor_payload=scarcity_anchor_payload,
+                    rewrite_instruction=rewrite_instruction,
+                )
+                rewritten_script = _generate_with_retry(
+                    llm,
+                    prompt=rewrite_prompt,
+                    stage=f"rewrite:scarcity:{chapter_number}:{attempt}",
+                    retry_options=retry_options,
+                )
+                rewrite_audit_prompt = build_scarcity_audit_prompt(
+                    final_script=rewritten_script,
+                    series_anchor_block=series_anchor_block,
+                    scarcity_registry=scarcity_registry.to_dict(),
+                    chapter_contract=chapter_contract or showrunner_payload,
+                    genre=genre,
+                )
+                rewrite_audit_raw = _generate_with_retry(
+                    llm,
+                    prompt=rewrite_audit_prompt,
+                    stage="scarcity_audit",
+                    retry_options=retry_options,
+                )
+                rewrite_audit = _parse_scarcity_audit(rewrite_audit_raw)
+                rewrite_attempts.append(
+                    {
+                        "attempt": attempt,
+                        "stage": f"rewrite:scarcity:{chapter_number}:{attempt}",
+                        "prompt": rewrite_prompt,
+                        "audit_prompt": rewrite_audit_prompt,
+                        "scarcity_audit": rewrite_audit,
+                        "combined_script": rewritten_script,
+                    }
+                )
+                combined_script = rewritten_script
+                scarcity_audit_prompt = rewrite_audit_prompt
+                scarcity_audit_raw = rewrite_audit_raw
+                scarcity_audit = rewrite_audit
         rhythm_prompt = build_prose_rhythm_prompt(
             combined_script,
             chapter_contract or showrunner_payload,
@@ -366,6 +475,45 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     asset_mappings = map_assets_for_cue_sheet(cue_sheet)
     mix_plan = build_mix_plan(cue_sheet, asset_mappings=asset_mappings)
     qa = build_chapter_qa(generated_parts)
+    quarantine_required = _scarcity_requires_quarantine(scarcity_audit)
+    rewrite_instruction = (
+        build_rewrite_instruction(
+            scarcity_audit,
+            chapter_contract or showrunner_payload,
+            scarcity_registry.to_dict(),
+        )
+        if quarantine_required
+        else ""
+    )
+    quarantine = _build_quarantine_summary(
+        status="quarantined" if quarantine_required else "passed",
+        series_id=str(task.get("series_id") or "default-series"),
+        book_number=current_book,
+        chapter_number=chapter_number,
+        scarcity_audit=scarcity_audit,
+        chapter={
+            "number": chapter_number,
+            "title": title,
+            "premise": premise,
+            "chapter_contract": dict(chapter_contract),
+        },
+        parts=generated_parts,
+        combined_script=combined_script,
+        rewrite_instruction=rewrite_instruction,
+        rewrite_attempts=len(rewrite_attempts),
+        max_rewrite_attempts=max_rewrite_attempts,
+    )
+    if quarantine_required:
+        qa = dict(qa)
+        blocking_issues = list(qa.get("blocking_issues") or [])
+        blocking_issues.extend(
+            f"Scarcity audit violation: {issue}"
+            for issue in scarcity_audit.get("violations", [])
+        )
+        if not scarcity_audit.get("violations"):
+            blocking_issues.append("Scarcity audit failed.")
+        qa["ready"] = False
+        qa["blocking_issues"] = blocking_issues
     render_ready = bool(qa["ready"])
     role_instructions = _build_render_role_instructions(
         task=task,
@@ -387,6 +535,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "showrunner": dict(showrunner_payload),
             "showrunner_context": showrunner_context,
             "chapter_contract": dict(chapter_contract),
+            "series_anchor_block": series_anchor_block,
+            "scarcity_registry": scarcity_registry.to_dict(),
             "hook_context": hook_context,
             "story_engine_context": story_engine_context,
             "mechanics_context": dict(mechanics_context),
@@ -394,6 +544,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "generation": dict(task.get("generation") or {}),
             "reviews_enabled": reviews_enabled,
             "revision_enabled": revision_enabled,
+            "rewrite_quarantined": rewrite_quarantined,
+            "rewrite_attempts": rewrite_attempts,
             "part_reuse": list(reuse_decisions.values()),
         },
         "parts": generated_parts,
@@ -403,6 +555,10 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "visual_state_update": visual_state_update,
         "hook_prompt": hook_prompt,
         "hook_review": hook_review,
+        "scarcity_audit_prompt": scarcity_audit_prompt,
+        "scarcity_audit": scarcity_audit,
+        "rewrite_instruction": rewrite_instruction,
+        "quarantine": quarantine,
         "rhythm_prompt": rhythm_prompt,
         "rhythm_review": rhythm_review,
         "reader_proxy_prompt": reader_proxy_prompt,
@@ -429,8 +585,13 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 "chapter_review": chapter_review,
                 "visual_state_update": visual_state_update,
                 "hook_review": hook_review,
+                "scarcity_audit": scarcity_audit,
+                "quarantine": quarantine,
+                "rewrite_attempts": rewrite_attempts,
                 "rhythm_review": rhythm_review,
                 "reader_proxy_review": reader_proxy_review,
+                "series_anchor_block": series_anchor_block,
+                "scarcity_registry": scarcity_registry.to_dict(),
                 "audio_readiness": {
                     "render_ready": render_ready,
                     "cue_count": cue_sheet.to_dict()["metadata"]["cue_count"],
@@ -738,6 +899,106 @@ def _combine_part_scripts(parts: Sequence[Mapping[str, Any]]) -> str:
     return "\n\n".join(sections).strip()
 
 
+def _parse_scarcity_audit(raw: str) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "passed": False,
+        "violations": [],
+        "warnings": [],
+        "safe_hints": [],
+        "spent_mysteries": [],
+        "quarantine_required": True,
+        "raw": raw,
+    }
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        defaults["violations"] = ["Scarcity audit did not return valid JSON."]
+        return defaults
+    if not isinstance(parsed, Mapping):
+        defaults["violations"] = ["Scarcity audit JSON must be an object."]
+        return defaults
+    return {
+        "passed": bool(parsed.get("passed")),
+        "violations": _string_list(parsed.get("violations")),
+        "warnings": _string_list(parsed.get("warnings")),
+        "safe_hints": _string_list(parsed.get("safe_hints")),
+        "spent_mysteries": _string_list(parsed.get("spent_mysteries")),
+        "quarantine_required": bool(parsed.get("quarantine_required")),
+        "raw": raw,
+    }
+
+
+def _scarcity_requires_quarantine(scarcity_audit: Mapping[str, Any]) -> bool:
+    return (not bool(scarcity_audit.get("passed"))) or bool(
+        scarcity_audit.get("quarantine_required")
+    )
+
+
+def _build_scarcity_rewrite_prompt(
+    *,
+    combined_script: str,
+    scarcity_audit: Mapping[str, Any],
+    scarcity_anchor_payload: Mapping[str, Any],
+    rewrite_instruction: str,
+) -> str:
+    return f"""Rewrite this chapter to satisfy scarcity locks.
+
+Rewrite instruction:
+{rewrite_instruction}
+
+Violation notes:
+{_bullet_lines(_string_list(scarcity_audit.get("violations")))}
+
+Forbidden now:
+{_bullet_lines(_string_list(scarcity_anchor_payload.get("forbidden_now") or scarcity_anchor_payload.get("forbidden_mysteries")))}
+
+Allowed hints:
+{_bullet_lines(_string_list(scarcity_anchor_payload.get("allowed_hints")))}
+
+Original combined script:
+{combined_script}
+
+Return only the rewritten combined script. Do not include markdown, notes, or JSON.
+"""
+
+
+def _build_quarantine_summary(
+    *,
+    status: str,
+    series_id: str,
+    book_number: int,
+    chapter_number: int,
+    scarcity_audit: Mapping[str, Any],
+    chapter: Mapping[str, Any],
+    parts: Sequence[Mapping[str, Any]],
+    combined_script: str,
+    rewrite_instruction: str,
+    rewrite_attempts: int,
+    max_rewrite_attempts: int,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "series_id": series_id,
+        "book_number": int(book_number),
+        "chapter_number": int(chapter_number),
+        "attempt": 0,
+        "reason": "scarcity_audit_failed" if status == "quarantined" else "",
+        "violation_notes": _string_list(scarcity_audit.get("violations")),
+        "warnings": _string_list(scarcity_audit.get("warnings")),
+        "rewrite_instruction": rewrite_instruction,
+        "rewrite_attempts": int(rewrite_attempts),
+        "max_rewrite_attempts": int(max_rewrite_attempts),
+        "scarcity_audit": dict(scarcity_audit),
+        "chapter": dict(chapter),
+        "parts": [dict(part) for part in parts],
+        "combined_script": combined_script,
+    }
+
+
+def _bullet_lines(values: Sequence[str]) -> str:
+    return "\n".join(f"- {value}" for value in values) if values else "- None"
+
+
 def _series_package_summary_from_task(task: Mapping[str, Any]) -> str:
     summary = str(task.get("series_package_summary") or "").strip()
     if summary:
@@ -829,3 +1090,10 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, Sequence):
         raise ValueError("Expected a JSON array")
     return [str(item) for item in value]
+
+
+def _int_or_default(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default

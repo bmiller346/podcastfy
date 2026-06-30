@@ -66,6 +66,11 @@ def test_pipeline_generates_bundle_audio_and_state(tmp_path):
     assert state["character"]["stats"]["xp"] == 25
     assert state["character"]["skills"] == ["Spark"]
     assert state["character"]["inventory"] == []
+    effect_log = (tmp_path / "series" / "paper-cuts" / "effect_log.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert '"stage": "audio_render"' in effect_log
+    assert '"status": "committed"' in effect_log
 
 
 def test_pipeline_replays_existing_bundle_without_llm_or_tts(tmp_path):

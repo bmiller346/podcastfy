@@ -65,6 +65,11 @@ class SmokeChapterLLM:
         self.calls.append({"prompt": prompt, "stage": stage})
         if stage.startswith("part:") or stage.startswith("revise:"):
             return self.script
+        if stage == "scarcity_audit":
+            return (
+                '{"passed":true,"violations":[],"warnings":[],'
+                '"safe_hints":[],"spent_mysteries":[],"quarantine_required":false}'
+            )
         return f"{stage} ok"
 
 
@@ -528,6 +533,241 @@ def test_run_litrpg_task_persists_validated_mechanics_deltas_for_chapters(tmp_pa
     assert "Chapter 3: The Break Room Bites Back" in state["memory"]
 
 
+def test_run_litrpg_task_writes_quarantine_record_for_scarcity_failure(tmp_path, monkeypatch):
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "book_number": 1,
+                "chapter_number": 12,
+                "storage_dir": "library",
+                "result_path": "result.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_generate(task, *, llm):
+        return {
+            "mode": "chapter",
+            "series_id": "paper-cuts",
+            "chapter": {"number": 12, "title": "Bad Reveal"},
+            "parts": [{"part_id": "cold-open"}],
+            "combined_script": "<SYSTEM>Sponsor named.</SYSTEM>",
+            "quarantine": {
+                "status": "quarantined",
+                "book_number": 1,
+                "chapter_number": 12,
+                "violation_notes": ["Sponsor identity revealed early"],
+                "warnings": [],
+                "rewrite_instruction": "Remove sponsor identity.",
+                "rewrite_attempts": 0,
+                "max_rewrite_attempts": 3,
+                "scarcity_audit": {"passed": False},
+            },
+        }
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    result = run_litrpg_task(task_path, llm=object())
+
+    quarantine_path = (
+        tmp_path
+        / "library"
+        / "series"
+        / "paper-cuts"
+        / "book_1"
+        / "quarantine"
+        / "chapter_012_attempt_001.json"
+    )
+    record = json.loads(quarantine_path.read_text(encoding="utf-8"))
+    assert result["quarantine"]["status"] == "quarantined"
+    assert result["quarantine"]["path"] == str(quarantine_path)
+    assert record["violation_notes"] == ["Sponsor identity revealed early"]
+    assert record["combined_script"] == "<SYSTEM>Sponsor named.</SYSTEM>"
+    assert not (tmp_path / "library" / "series" / "paper-cuts" / "series_state.json").exists()
+
+
+def test_run_litrpg_task_marks_quarantine_blocked_after_max_attempts(tmp_path, monkeypatch):
+    quarantine_dir = tmp_path / "library" / "series" / "paper-cuts" / "book_1" / "quarantine"
+    quarantine_dir.mkdir(parents=True)
+    for attempt in (1, 2, 3):
+        (quarantine_dir / f"chapter_012_attempt_{attempt:03d}.json").write_text(
+            json.dumps({"attempt": attempt}),
+            encoding="utf-8",
+        )
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "book_number": 1,
+                "chapter_number": 12,
+                "storage_dir": "library",
+                "max_rewrite_attempts": 3,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_generate(task, *, llm):
+        return {
+            "mode": "chapter",
+            "series_id": "paper-cuts",
+            "chapter": {"number": 12},
+            "parts": [],
+            "combined_script": "",
+            "quarantine": {
+                "status": "quarantined",
+                "book_number": 1,
+                "chapter_number": 12,
+                "violation_notes": ["Still failed"],
+                "max_rewrite_attempts": 3,
+                "scarcity_audit": {"passed": False},
+            },
+        }
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    result = run_litrpg_task(task_path, llm=object())
+
+    assert result["quarantine"]["status"] == "blocked"
+    assert result["quarantine"]["attempt"] == 4
+    assert result["blocked"]["reason"] == "max_rewrite_attempts_exceeded"
+    agent_state = json.loads(
+        (
+            tmp_path / "library" / "series" / "paper-cuts" / "agent_state.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert agent_state["blocked"][0]["kind"] == "quarantine_blocker"
+    assert agent_state["blocked"][0]["metadata"]["chapter_number"] == 12
+
+
+def test_run_litrpg_task_success_does_not_write_quarantine_and_logs_effects(tmp_path, monkeypatch):
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "book_number": 1,
+                "chapter_number": 2,
+                "storage_dir": "library",
+                "result_path": "result.json",
+                "generation": {"provider": "fake", "model": "unit"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_generate(task, *, llm):
+        return {
+            "mode": "chapter",
+            "series_id": "paper-cuts",
+            "chapter": {"number": 2, "title": "Good Chapter"},
+            "parts": [],
+            "combined_script": "<NARRATOR>ok</NARRATOR>",
+            "quarantine": {"status": "passed"},
+        }
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    run_litrpg_task(task_path, llm=object())
+
+    assert not (
+        tmp_path / "library" / "series" / "paper-cuts" / "book_1" / "quarantine"
+    ).exists()
+    effect_log = (
+        tmp_path / "library" / "series" / "paper-cuts" / "effect_log.jsonl"
+    ).read_text(encoding="utf-8").splitlines()
+    stages = [json.loads(line)["stage"] for line in effect_log]
+    assert stages == ["chapter_generation", "chapter_result_write"]
+    agent_state = json.loads(
+        (
+            tmp_path / "library" / "series" / "paper-cuts" / "agent_state.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert agent_state["next"][0]["id"] == "next:chapter:3"
+    assert agent_state["next"][0]["metadata"]["chapter_number"] == 3
+
+
+def test_harness_blocks_chapter_generation_until_approved(tmp_path, monkeypatch):
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "storage_dir": "library",
+                "harness": {"enabled": True},
+                "result_path": "blocked.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def should_not_generate(task, *, llm):
+        raise AssertionError("chapter generation should be gated")
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", should_not_generate)
+
+    result = run_litrpg_task(task_path, llm=object())
+
+    assert result["status"] == "approval_required"
+    assert result["harness_decision"]["stage"] == "chapter_generation"
+    assert result["harness_decision"]["allowed"] is False
+    assert result["harness_decision"]["estimated_cost_usd"] > 0
+    assert json.loads((tmp_path / "blocked.json").read_text(encoding="utf-8"))["status"] == "approval_required"
+
+
+def test_harness_approved_chapter_generation_proceeds(tmp_path, monkeypatch):
+    task_path = tmp_path / "chapter_task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "mode": "chapter",
+                "series_id": "paper-cuts",
+                "storage_dir": "library",
+                "harness": {"enabled": True},
+                "approved_stages": ["chapter_generation"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_generate(task, *, llm):
+        return {"mode": "chapter", "series_id": "paper-cuts", "quarantine": {"status": "passed"}}
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_chapter", fake_generate)
+
+    result = run_litrpg_task(task_path, llm=object())
+
+    assert result == {"mode": "chapter", "series_id": "paper-cuts", "quarantine": {"status": "passed"}}
+
+
+def test_harness_blocks_audio_render_until_approved(tmp_path, monkeypatch):
+    task_path = _write_task(
+        tmp_path,
+        harness={"enabled": True},
+        outline="Outline",
+        script="<NARRATOR>Begin.</NARRATOR>",
+    )
+
+    def should_not_generate(**kwargs):
+        raise AssertionError("episode pipeline should be gated before audio render")
+
+    monkeypatch.setattr("podcastfy.litrpg.task.generate_litrpg_audio_episode", should_not_generate)
+
+    result = run_litrpg_task(task_path, tts=FakeTTS())
+
+    assert result["status"] == "approval_required"
+    assert result["harness_decision"]["stage"] == "audio_render"
+    assert result["harness_decision"]["estimated_cost_usd"] > 0
+
+
 def test_run_litrpg_task_injects_series_architect_chapter_contract(tmp_path, monkeypatch):
     storage_dir = tmp_path / "library"
     bootstrap_series(
@@ -568,6 +808,22 @@ def test_run_litrpg_task_injects_series_architect_chapter_contract(tmp_path, mon
             )
         ],
     )
+    save_foreshadow_ledger(
+        storage_dir,
+        ForeshadowLedger(
+            series_id="paper-cuts",
+            planted=[
+                ForeshadowEntry(
+                    detail="The HR seal appears in old dungeon stone.",
+                    planted_chapter=1,
+                    intended_payoff_start=6,
+                    intended_payoff_end=8,
+                    mystery="HR System origin",
+                    payoff_book=1,
+                )
+            ],
+        ),
+    )
     task_path = tmp_path / "chapter_task.json"
     task_path.write_text(
         json.dumps(
@@ -595,6 +851,10 @@ def test_run_litrpg_task_injects_series_architect_chapter_contract(tmp_path, mon
     assert captured["premise"] == "The copier room becomes a tutorial arena."
     assert captured["chapter_contract"]["book_role"] == "Origin and first floor survival"
     assert "HR System origin" in captured["chapter_contract"]["must_not_spend"]
+    assert captured["series_plan"]["series_title"] == "Paper Cuts"
+    assert captured["series_mysteries"] == ["HR System origin"]
+    assert captured["book_plan"]["power_ceiling"] == "level 10"
+    assert captured["foreshadow_ledger"]["planted"][0]["mystery"] == "HR System origin"
     assert "Chapter Contract:" in captured["showrunner_context"]
     assert captured["showrunner"]["contract_source"] == "series_architect"
 
@@ -724,6 +984,7 @@ def test_run_litrpg_task_injects_story_engine_storage_context(tmp_path, monkeypa
     assert "Toner Scrip: accepted by vending machines" in context
     assert "The toner cartridge clicks" in context
     assert "ready_to_pay" in context
+    assert captured["foreshadow_ledger"]["planted"][0]["mystery"] == "What lives inside office supplies."
 
 
 def test_checked_in_episode_example_replays_with_fake_tts(tmp_path):

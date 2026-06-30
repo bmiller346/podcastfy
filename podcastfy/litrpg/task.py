@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -15,8 +16,21 @@ from podcastfy.litrpg.continuity import format_chapter_memory_context
 from podcastfy.litrpg.continuity import load_continuity_ledger
 from podcastfy.litrpg.continuity import load_emotional_arcs
 from podcastfy.litrpg.continuity import load_world_register
+from podcastfy.litrpg.effect_log import append_effect_log_entry
+from podcastfy.litrpg.effect_log import build_effect_log_entry
+from podcastfy.litrpg.effect_log import effect_log_path
 from podcastfy.litrpg.foreshadowing import format_foreshadow_context
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger
+from podcastfy.litrpg.harness import approved_for_stage
+from podcastfy.litrpg.harness import check_harness_gate
+from podcastfy.litrpg.harness import harness_enabled
+from podcastfy.litrpg.harness import load_harness_config
+from podcastfy.litrpg.harness import normalize_harness_config
+from podcastfy.litrpg.agent_state import load_agent_state
+from podcastfy.litrpg.agent_state import record_next_chapter_action
+from podcastfy.litrpg.agent_state import record_quarantine_blocker
+from podcastfy.litrpg.agent_state import save_agent_state
+from podcastfy.litrpg.handoff import generate_book_handoff
 from podcastfy.litrpg.llm import (
     GeminiGenerator,
     IntentRoutingGemini,
@@ -32,8 +46,12 @@ from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import list_reusable_parts, locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.premise_intake import run_premise_intake
+from podcastfy.litrpg.quarantine import next_quarantine_attempt_path
+from podcastfy.litrpg.quarantine import quarantine_record_to_dict
+from podcastfy.litrpg.quarantine import write_quarantine_record
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
 from podcastfy.litrpg.series_architect import SeriesArchitect, format_chapter_contract_context
+from podcastfy.litrpg.series_architect import load_book_plan, load_series_shape
 from podcastfy.litrpg.showrunner import build_showrunner_payload, format_showrunner_context
 from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, save_series_state
@@ -111,12 +129,60 @@ def run_litrpg_task_data(
 
     if mode == "chapter":
         chapter_task = _chapter_task_with_paths(resolved_base_dir, task)
+        harness_decision = _check_task_harness_gate(
+            resolved_base_dir,
+            chapter_task,
+            stage="chapter_generation",
+        )
+        if harness_decision is not None and not harness_decision["allowed"]:
+            result = {
+                "mode": "chapter",
+                "status": "approval_required",
+                "series_id": str(task.get("series_id") or "default-series"),
+                "harness_decision": harness_decision,
+            }
+            _write_result_if_requested(resolved_base_dir, task, result)
+            return result
         result = generate_litrpg_chapter(chapter_task, llm=resolved_llm)
+        _write_quarantine_if_needed(resolved_base_dir, chapter_task, result)
+        _append_chapter_effect_if_possible(
+            resolved_base_dir,
+            chapter_task,
+            input_payload=chapter_task,
+            output_payload=result,
+            stage="chapter_generation",
+            status="committed",
+        )
         _save_chapter_state_if_requested(resolved_base_dir, chapter_task, result)
+        _update_agent_state_after_chapter(resolved_base_dir, chapter_task, result)
+        _generate_handoff_if_requested(resolved_base_dir, chapter_task, result)
         _write_result_if_requested(resolved_base_dir, task, result)
+        _append_chapter_effect_if_possible(
+            resolved_base_dir,
+            chapter_task,
+            input_payload={"result_path": task.get("result_path"), "result": result},
+            output_payload={"result_path": task.get("result_path")},
+            stage="chapter_result_write",
+            status="committed" if task.get("result_path") else "skipped",
+        )
         return result
 
     config = _config_from_task(task)
+    if bool(task.get("render_audio", True)):
+        harness_decision = _check_task_harness_gate(
+            resolved_base_dir,
+            task,
+            stage="audio_render",
+        )
+        if harness_decision is not None and not harness_decision["allowed"]:
+            result = {
+                "mode": mode,
+                "status": "approval_required",
+                "series_id": str(task.get("series_id") or "default-series"),
+                "harness_decision": harness_decision,
+            }
+            _write_result_if_requested(resolved_base_dir, task, result)
+            return result
 
     result = generate_litrpg_audio_episode(
         premise=str(task.get("premise") or ""),
@@ -496,6 +562,7 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         if summary:
             chapter_task["series_package_summary"] = summary
     chapter_contract = None
+    book_number = int(task.get("book_number") or task.get("book") or 1)
     if (
         storage_dir is not None
         and task.get("showrunner") is not False
@@ -503,7 +570,6 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
     ):
         architect = SeriesArchitect(storage_dir, series_id)
         if architect.available():
-            book_number = int(task.get("book_number") or task.get("book") or 1)
             chapter_number = int(task.get("chapter_number") or task.get("episode_number") or 1)
             chapter_contract = architect.get_chapter_contract(
                 book_number=book_number,
@@ -530,6 +596,13 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
                 "directives": list(chapter_contract.get("directives") or []),
                 "contract_source": "series_architect",
             }
+    if storage_dir is not None:
+        _inject_stored_scarcity_sources(
+            chapter_task,
+            storage_dir=storage_dir,
+            series_id=series_id,
+            book_number=book_number,
+        )
     if task.get("showrunner") is not False:
         showrunner_settings = task.get("showrunner")
         if showrunner_settings is not None and not isinstance(showrunner_settings, Mapping):
@@ -639,6 +712,32 @@ def _story_engine_context_from_storage(
     except Exception:
         pass
     return "\n\n".join(block for block in blocks if block)
+
+
+def _inject_stored_scarcity_sources(
+    chapter_task: dict[str, Any],
+    *,
+    storage_dir: Path,
+    series_id: str,
+    book_number: int,
+) -> None:
+    if not chapter_task.get("series_plan"):
+        try:
+            series_plan = load_series_shape(storage_dir, series_id).to_dict()
+            chapter_task["series_plan"] = series_plan
+            chapter_task.setdefault("series_mysteries", list(series_plan.get("series_mysteries") or []))
+        except Exception:
+            pass
+    if not chapter_task.get("book_plan"):
+        try:
+            chapter_task["book_plan"] = load_book_plan(storage_dir, series_id, book_number).to_dict()
+        except Exception:
+            pass
+    if not chapter_task.get("foreshadow_ledger"):
+        try:
+            chapter_task["foreshadow_ledger"] = asdict(load_foreshadow_ledger(storage_dir, series_id))
+        except Exception:
+            pass
 
 
 def _broad_world_register_context(world_register: Any) -> str:
@@ -753,6 +852,9 @@ def _save_chapter_state_if_requested(
     result: Mapping[str, Any],
 ) -> None:
     if task.get("persist_state") is False:
+        return
+    quarantine = result.get("quarantine") if isinstance(result.get("quarantine"), Mapping) else {}
+    if quarantine.get("status") in {"quarantined", "blocked"}:
         return
     if not task.get("storage_dir"):
         return
@@ -878,6 +980,188 @@ def _write_result_if_requested(
     with path.open("w", encoding="utf-8") as result_file:
         json.dump(result, result_file, ensure_ascii=True, indent=2, sort_keys=True)
         result_file.write("\n")
+
+
+def _write_quarantine_if_needed(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    result: dict[str, Any],
+) -> None:
+    quarantine = result.get("quarantine")
+    if not isinstance(quarantine, Mapping):
+        return
+    if quarantine.get("status") != "quarantined":
+        return
+    if not task.get("storage_dir"):
+        return
+    storage_dir = _resolve_task_path(base_dir, task["storage_dir"])
+    series_id = str(result.get("series_id") or task.get("series_id") or "default-series")
+    chapter = result.get("chapter") if isinstance(result.get("chapter"), Mapping) else {}
+    book_number = int(quarantine.get("book_number") or task.get("book_number") or chapter.get("book") or 1)
+    chapter_number = int(
+        quarantine.get("chapter_number")
+        or chapter.get("number")
+        or task.get("chapter_number")
+        or 1
+    )
+    path = next_quarantine_attempt_path(storage_dir, series_id, book_number, chapter_number)
+    attempt = _attempt_from_quarantine_path(path)
+    max_attempts = int(quarantine.get("max_rewrite_attempts") or task.get("max_rewrite_attempts") or 3)
+    status = "blocked" if attempt > max_attempts else "quarantined"
+    payload = quarantine_record_to_dict(
+        {
+            **dict(quarantine),
+            "status": status,
+            "series_id": series_id,
+            "book_number": book_number,
+            "chapter_number": chapter_number,
+            "attempt": attempt,
+            "max_rewrite_attempts": max_attempts,
+            "chapter": dict(chapter),
+            "parts": list(result.get("parts") or []),
+            "combined_script": str(result.get("combined_script") or ""),
+        }
+    )
+    write_quarantine_record(path, payload)
+    result["quarantine"] = payload
+    result["quarantine"]["path"] = str(path)
+    if status == "blocked":
+        result["blocked"] = {
+            "status": "blocked",
+            "reason": "max_rewrite_attempts_exceeded",
+            "quarantine_path": str(path),
+        }
+
+
+def _append_chapter_effect_if_possible(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    *,
+    input_payload: Any,
+    output_payload: Any,
+    stage: str,
+    status: str,
+) -> None:
+    if not task.get("storage_dir"):
+        return
+    storage_dir = _resolve_task_path(base_dir, task["storage_dir"])
+    series_id = str(task.get("series_id") or "default-series")
+    generation = task.get("generation") if isinstance(task.get("generation"), Mapping) else {}
+    chapter_contract = task.get("chapter_contract") if isinstance(task.get("chapter_contract"), Mapping) else {}
+    entry = build_effect_log_entry(
+        series_id=series_id,
+        book_number=int(task.get("book_number") or chapter_contract.get("book") or 1),
+        chapter_number=int(task.get("chapter_number") or chapter_contract.get("chapter") or task.get("episode_number") or 1),
+        stage=stage,
+        input_payload=input_payload,
+        output_payload=output_payload,
+        provider=str(generation.get("provider") or ""),
+        model=str(
+            generation.get("model")
+            or generation.get("commercial_model")
+            or generation.get("local_model")
+            or generation.get("ollama_model")
+            or ""
+        ),
+        status=status,
+    )
+    append_effect_log_entry(effect_log_path(storage_dir, series_id), entry)
+
+
+def _attempt_from_quarantine_path(path: Path) -> int:
+    try:
+        return int(path.stem.rsplit("_attempt_", 1)[1])
+    except (IndexError, ValueError):
+        return 1
+
+
+def _update_agent_state_after_chapter(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    if not task.get("storage_dir"):
+        return
+    storage_dir = _resolve_task_path(base_dir, task["storage_dir"])
+    series_id = str(result.get("series_id") or task.get("series_id") or "default-series")
+    state = load_agent_state(storage_dir, series_id)
+    chapter = result.get("chapter") if isinstance(result.get("chapter"), Mapping) else {}
+    chapter_number = int(chapter.get("number") or task.get("chapter_number") or 0)
+    book_number = int(task.get("book_number") or chapter.get("book") or 1)
+    quarantine = result.get("quarantine") if isinstance(result.get("quarantine"), Mapping) else {}
+    if quarantine.get("status") == "blocked":
+        state = record_quarantine_blocker(
+            state,
+            series_id=series_id,
+            chapter_number=chapter_number or int(quarantine.get("chapter_number") or 0),
+            quarantine_path=str(quarantine.get("path") or ""),
+            reason=str(result.get("blocked", {}).get("reason") if isinstance(result.get("blocked"), Mapping) else quarantine.get("reason") or ""),
+        )
+    elif quarantine.get("status") not in {"quarantined", "blocked"} and chapter_number:
+        hook = result.get("hook_review") or quarantine.get("rewrite_instruction") or ""
+        state = record_next_chapter_action(
+            state,
+            series_id=series_id,
+            book_number=book_number,
+            chapter_number=chapter_number,
+            opener=str(hook),
+        )
+    save_agent_state(storage_dir, state)
+
+
+def _generate_handoff_if_requested(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    if not task.get("storage_dir"):
+        return
+    if not (task.get("generate_handoff") or task.get("book_complete")):
+        return
+    storage_dir = _resolve_task_path(base_dir, task["storage_dir"])
+    series_id = str(result.get("series_id") or task.get("series_id") or "default-series")
+    chapter = result.get("chapter") if isinstance(result.get("chapter"), Mapping) else {}
+    book_number = int(task.get("book_number") or chapter.get("book") or 1)
+    generate_book_handoff(storage_dir, series_id, book_number)
+
+
+def _check_task_harness_gate(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    *,
+    stage: str,
+) -> dict[str, Any] | None:
+    if not harness_enabled(task):
+        return None
+    config = _harness_config_for_task(base_dir, task)
+    decision = check_harness_gate(
+        stage,
+        task,
+        config,
+        approved=approved_for_stage(task, stage),
+    )
+    return decision.to_dict()
+
+
+def _harness_config_for_task(base_dir: Path, task: Mapping[str, Any]) -> Mapping[str, Any]:
+    inline = task.get("harness")
+    if isinstance(inline, Mapping) and inline.get("stages"):
+        return normalize_harness_config(inline)
+    if task.get("harness_path"):
+        path = _resolve_task_path(base_dir, task["harness_path"])
+        with path.open("r", encoding="utf-8") as config_file:
+            payload = json.load(config_file)
+        if not isinstance(payload, Mapping):
+            raise ValueError("harness_path must point to a JSON object")
+        return normalize_harness_config(payload)
+    storage_dir = (
+        _resolve_task_path(base_dir, task["storage_dir"])
+        if task.get("storage_dir")
+        else base_dir
+    )
+    series_id = str(task.get("series_id") or "default-series")
+    book_number = _optional_int(task.get("book_number") or task.get("book"))
+    return load_harness_config(storage_dir, series_id, book_number=book_number)
 
 
 def main() -> None:
