@@ -1,5 +1,9 @@
+from pathlib import Path
+
 import pytest
 
+from podcastfy.litrpg.performance import build_line_performance_contracts
+from podcastfy.litrpg.performance_qa import build_audio_performance_qa
 from podcastfy.litrpg.renderer import RoleScriptRenderer
 from podcastfy.litrpg.script_parser import (
     RoleScriptParseError,
@@ -255,6 +259,75 @@ def test_audio_readiness_gate_blocks_expensive_tts_failures():
     }.issubset(codes)
 
 
+def test_performance_contract_locks_system_line_interpretation():
+    contracts = build_line_performance_contracts(
+        '<SYSTEM style="hostile crisp">Violation fee applied.</SYSTEM>'
+        "<HERO>That is not a fee, that is a mugging.</HERO>",
+        director_cues=[
+            {
+                "role": "SYSTEM",
+                "emotion": "dry contempt",
+                "delivery": "clipped",
+                "timing": "hard stop",
+            }
+        ],
+        reference_clip_ids={"SYSTEM": "system_ref_001"},
+    )
+
+    system = contracts[0]
+
+    assert system.role == "SYSTEM"
+    assert system.text == "Violation fee applied."
+    assert system.pace == "clipped"
+    assert system.weight == "heavy"
+    assert system.internal_state == "dry_contempt"
+    assert system.must_not_soften is True
+    assert system.must_not_comedify is True
+    assert system.reference_clip_id == "system_ref_001"
+    assert "Speak exactly the supplied text" in system.style_instruction()
+    assert "do not add, omit, paraphrase, or rewrite" in system.style_instruction()
+
+
+def test_audio_performance_qa_quarantines_transcript_and_voice_drift():
+    contracts = build_line_performance_contracts(
+        '<SYSTEM>Violation fee applied.</SYSTEM>',
+        reference_clip_ids={"SYSTEM": "system_ref_001"},
+    )
+
+    report = build_audio_performance_qa(
+        contracts,
+        transcript_lines={"line-0001": "A friendly quest fee was applied."},
+        voice_similarity_scores={"SYSTEM": 0.61},
+        voice_similarity_threshold=0.82,
+    )
+
+    codes = {issue.code for issue in report.issues}
+
+    assert report.ready is False
+    assert report.quarantine_required is True
+    assert report.transcript_checked is True
+    assert report.voice_similarity_checked is True
+    assert "transcript_text_mismatch" in codes
+    assert "voice_similarity_below_threshold" in codes
+
+
+def test_audio_performance_qa_passes_exact_transcript_and_reference_match():
+    contracts = build_line_performance_contracts(
+        '<SYSTEM>Violation fee applied.</SYSTEM>',
+        reference_clip_ids={"SYSTEM": "system_ref_001"},
+    )
+
+    report = build_audio_performance_qa(
+        contracts,
+        transcript_lines={"line-0001": "Violation fee applied."},
+        voice_similarity_scores={"SYSTEM": 0.91},
+    )
+
+    assert report.ready is True
+    assert report.quarantine_required is False
+    assert report.issues == []
+
+
 def test_role_renderer_runs_readiness_before_tts_money(tmp_path):
     class RecordingTTS:
         def __init__(self):
@@ -279,3 +352,111 @@ def test_role_renderer_runs_readiness_before_tts_money(tmp_path):
         )
 
     assert tts.calls == []
+
+
+def test_role_renderer_passes_contracted_script_and_metadata(tmp_path, monkeypatch):
+    class RecordingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def convert_script_to_speech(self, script, output_file, voice_map, role_tags=None, role_instructions=None):
+            self.calls.append(
+                {
+                    "script": script,
+                    "output_file": output_file,
+                    "voice_map": voice_map,
+                    "role_tags": role_tags,
+                    "role_instructions": role_instructions,
+                }
+            )
+            Path(output_file).write_bytes(b"audio")
+
+    monkeypatch.setattr(
+        "podcastfy.litrpg.renderer.mix_audio_locally",
+        lambda **kwargs: {"mixed": False, "reason": "unit test"},
+    )
+    tts = RecordingTTS()
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    renderer = RoleScriptRenderer(tts=tts)
+
+    metadata = renderer.render_episode(
+        {
+            "script": '<SYSTEM>Quest updated: pay the violation fee.</SYSTEM>',
+            "storage_metadata": {"bundle_path": str(bundle_path)},
+            "config": {
+                "voices": {
+                    "SYSTEM": {
+                        "voice": "voice-s",
+                        "instructions": "Crisp bureaucratic hostility.",
+                        "reference_clip_id": "system_ref_001",
+                    }
+                }
+            },
+            "role_tags": ["SYSTEM"],
+            "director_cues": [
+                {
+                    "role": "SYSTEM",
+                    "emotion": "dry contempt",
+                    "delivery": "clipped",
+                    "timing": "hard stop",
+                }
+            ],
+        }
+    )
+
+    call = tts.calls[0]
+    instruction = call["role_instructions"]["SYSTEM"]
+
+    assert 'style="' in call["script"]
+    assert "Speak exactly the supplied text" in call["script"]
+    assert "do not add, omit, paraphrase, or rewrite" in call["script"]
+    assert "Quest updated: pay the violation fee." in call["script"]
+    assert "Performance contract discipline" in instruction
+    assert "do not soften" in instruction
+    assert metadata["performance_contracts"][0]["reference_clip_id"] == "system_ref_001"
+    assert metadata["performance_contracts"][0]["must_not_comedify"] is True
+
+
+def test_role_renderer_quarantines_audio_when_post_generation_qa_fails(tmp_path, monkeypatch):
+    class RecordingTTS:
+        def convert_script_to_speech(self, script, output_file, voice_map, role_tags=None, role_instructions=None):
+            Path(output_file).write_bytes(b"audio")
+
+    monkeypatch.setattr(
+        "podcastfy.litrpg.renderer.mix_audio_locally",
+        lambda **kwargs: {"mixed": False, "reason": "unit test"},
+    )
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    renderer = RoleScriptRenderer(tts=RecordingTTS())
+
+    metadata = renderer.render_episode(
+        {
+            "script": '<SYSTEM>Quest updated: pay the violation fee.</SYSTEM>',
+            "storage_metadata": {"bundle_path": str(bundle_path)},
+            "config": {
+                "voices": {
+                    "SYSTEM": {
+                        "voice": "voice-s",
+                        "reference_clip_id": "system_ref_001",
+                    }
+                }
+            },
+            "role_tags": ["SYSTEM"],
+            "post_generation_transcript_lines": {
+                "line-0001": "Quest updated. Ignore the violation fee."
+            },
+            "voice_similarity_scores": {"SYSTEM": 0.42},
+        }
+    )
+
+    qa = metadata["audio_performance_qa"]
+
+    assert metadata["status"] == "quarantined"
+    assert qa["quarantine_required"] is True
+    assert {issue["code"] for issue in qa["issues"]} == {
+        "transcript_text_mismatch",
+        "voice_similarity_below_threshold",
+    }
+    assert Path(metadata["audio_quarantine_path"]).exists()

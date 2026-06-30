@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.prompts import build_series_anchor_block
 from podcastfy.litrpg.prompts import format_announcer_system_tone
 from podcastfy.litrpg.prompts import format_bureaucratic_sadism_rules
 from podcastfy.litrpg.prompts import format_character_voice_separation
@@ -244,6 +245,7 @@ def build_chapter_part_prompt(
     showrunner_context: str = "",
     hook_context: str = "",
     story_engine_context: str = "",
+    series_anchor_block: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -288,6 +290,9 @@ Hook continuity and binge-read context:
 Story engine continuity context:
 {story_engine_context or "No additional continuity, voice, foreshadowing, or world-register context is available yet."}
 
+Series anchor:
+{series_anchor_block or build_series_anchor_block()}
+
 Reusable prompt policy:
 {format_tts_role_block_constraints(part.required_roles)}
 {format_character_voice_separation()}
@@ -311,6 +316,7 @@ def build_hook_engine_prompt(
     chapter_title: str,
     hook_context: str = "",
     chapter_contract: Mapping[str, Any] | None = None,
+    series_anchor_block: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -327,6 +333,9 @@ Hook context:
 
 Chapter contract:
 {contract or "No chapter contract supplied."}
+
+Series anchor:
+{series_anchor_block or build_series_anchor_block(chapter_contract=contract)}
 
 Reusable prompt policy:
 {format_mystery_lock_discipline()}
@@ -364,11 +373,58 @@ Final script:
 """
 
 
+def build_scarcity_audit_prompt(
+    *,
+    final_script: str,
+    series_anchor_block: str = "",
+    scarcity_registry: Mapping[str, Any] | None = None,
+    chapter_contract: Mapping[str, Any] | None = None,
+    genre: str = "",
+) -> str:
+    """Build a story-economy audit prompt for locked mysteries and scarce resources."""
+
+    profile = story_profile(genre)
+    return f"""Audit story-economy scarcity for this finalized {profile.script_label}.
+
+This is not prose QA. Check only resource spending, locked mysteries, reveal timing, and payoff discipline.
+
+Series anchor:
+{series_anchor_block or build_series_anchor_block(chapter_contract=chapter_contract)}
+
+Scarcity registry:
+{dict(scarcity_registry or {}) or "No structured scarcity registry supplied."}
+
+Chapter contract:
+{dict(chapter_contract or {}) or "No chapter contract supplied."}
+
+Evaluate:
+- Are hints limited to allowed hint windows?
+- Are reveals and explanations blocked until reveal_allowed_at_book?
+- Are payoffs, answers, power upgrades, resources, alliances, and shortcuts blocked until payoff_allowed_at_book?
+- Are scarce resources, consumed items, damage, debts, access, and repairs treated as hard constraints?
+- Did the chapter spend any mystery, resource, or power ceiling that the anchor says to preserve?
+
+Return only compact JSON:
+{{
+  "passed": true,
+  "violations": [],
+  "warnings": [],
+  "safe_hints": [],
+  "spent_mysteries": [],
+  "quarantine_required": false
+}}
+
+Final script:
+{final_script}
+"""
+
+
 def build_part_review_prompt(
     *,
     part_script: str,
     required_roles: Sequence[str],
     series_package_summary: str = "",
+    series_anchor_block: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -379,6 +435,9 @@ Required roles: {roles}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Series anchor:
+{series_anchor_block or build_series_anchor_block()}
 
 Reusable prompt policy:
 {format_character_voice_separation()}
@@ -447,6 +506,7 @@ def build_mechanics_audit_prompt(
     prior_parts_summary: str = "",
     story_bible_summary: str = "",
     series_package_summary: str = "",
+    series_anchor_block: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -467,6 +527,9 @@ Story bible continuity:
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Series anchor:
+{series_anchor_block or build_series_anchor_block()}
 
 Reusable prompt policy:
 {format_scarcity_lock_language()}
@@ -630,6 +693,7 @@ def build_part_revision_prompt(
     required_roles: Sequence[str],
     description_audit: str = "",
     series_package_summary: str = "",
+    series_anchor_block: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -640,6 +704,9 @@ Allowed role tags: {roles}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Series anchor:
+{series_anchor_block or build_series_anchor_block()}
 
 Reusable prompt policy:
 {format_tts_role_block_constraints(required_roles)}
@@ -678,6 +745,7 @@ def build_chapter_review_prompt(
     part_scripts: Sequence[str],
     cast_roles: Mapping[str, str],
     series_package_summary: str = "",
+    series_anchor_block: str = "",
     genre: str = "",
 ) -> str:
     profile = story_profile(genre)
@@ -695,6 +763,9 @@ Genre/style: {profile.genre}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Series anchor:
+{series_anchor_block or build_series_anchor_block()}
 
 Reusable prompt policy:
 {format_character_voice_separation()}

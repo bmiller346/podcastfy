@@ -6,6 +6,7 @@ from podcastfy.litrpg.production import build_hook_engine_prompt
 from podcastfy.litrpg.production import build_mechanics_audit_prompt
 from podcastfy.litrpg.production import build_part_review_prompt, default_cast_roles
 from podcastfy.litrpg.production import build_part_revision_prompt
+from podcastfy.litrpg.production import build_scarcity_audit_prompt
 from podcastfy.litrpg.production import build_showmanship_audit_prompt
 from podcastfy.litrpg.production import build_tonal_audit_prompt
 from podcastfy.litrpg.production import build_visual_state_extraction_prompt
@@ -80,11 +81,13 @@ def test_part_prompt_requires_roles_and_review_before_render():
         series_package_summary="System announcer: hostile office PA.",
         showrunner_context="Director's Console: PACING: SLOW.",
         story_engine_context="Continuity Ledger: Pedro invoices every insult.",
+        series_anchor_block="Series Anchor Block:\n- Forbidden mysteries: Grand Dredger patron",
     )
     review = build_part_review_prompt(
         part_script="<HERO>We move.</HERO>",
         required_roles=part.required_roles,
         series_package_summary="System announcer: hostile office PA.",
+        series_anchor_block="Series Anchor Block:\n- Forbidden mysteries: Grand Dredger patron",
     )
 
     for role in part.required_roles:
@@ -95,6 +98,8 @@ def test_part_prompt_requires_roles_and_review_before_render():
     assert "System announcer: hostile office PA." in prompt
     assert "PACING: SLOW" in prompt
     assert "Pedro invoices every insult" in prompt
+    assert "Grand Dredger patron" in prompt
+    assert "Grand Dredger patron" in review
     assert "System announcer: hostile office PA." in review
     assert "TTS-friendly role block constraints" in prompt
     assert "Allowed role tags: " in prompt
@@ -155,6 +160,7 @@ def test_review_loop_prompts_cover_director_audits_and_revision():
         chapter_title="The Stapler Hungers",
         hook_context="Prior chapter ended on the elevator opening by itself.",
         chapter_contract={"phase": "The Apex", "tension": 9},
+        series_anchor_block="Series Anchor Block:\n- Reveal locks: Sponsor name: book 3",
         genre="LitRPG",
     )
 
@@ -175,9 +181,38 @@ def test_review_loop_prompts_cover_director_audits_and_revision():
     assert "first two paragraphs" in hook
     assert "elevator opening by itself" in hook
     assert "forbidden payoffs" in hook
+    assert "Sponsor name: book 3" in hook
     assert "Allowed role tags: HERO, SYSTEM" in revision
     assert "Description and character audit" in revision
     assert "Do not include markdown" in revision
     assert "Hero voice: dry union pragmatist." in director
     assert "Hero voice: dry union pragmatist." in mechanics
     assert "Hero voice: dry union pragmatist." in revision
+
+
+def test_scarcity_audit_prompt_returns_story_economy_schema():
+    prompt = build_scarcity_audit_prompt(
+        final_script="<SYSTEM>QUEST COMPLETE: Sponsor identity revealed.</SYSTEM>",
+        series_anchor_block=(
+            "Series Anchor Block:\n"
+            "- Forbidden now: Sponsor identity\n"
+            "- Reveal locks: Sponsor identity: reveal book 3, payoff book 4"
+        ),
+        scarcity_registry={
+            "items": [
+                {
+                    "name": "Sponsor identity",
+                    "reveal_allowed_at_book": 3,
+                    "payoff_allowed_at_book": 4,
+                }
+            ]
+        },
+        chapter_contract={"book": 1, "chapter": 2},
+    )
+
+    assert "Audit story-economy scarcity" in prompt
+    assert "not prose QA" in prompt
+    assert "Sponsor identity: reveal book 3" in prompt
+    assert '"passed": true' in prompt
+    assert '"quarantine_required": false' in prompt
+    assert "spent_mysteries" in prompt

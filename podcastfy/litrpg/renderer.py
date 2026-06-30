@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
+from podcastfy.litrpg.performance import build_line_performance_contracts
+from podcastfy.litrpg.performance import format_contract_script
+from podcastfy.litrpg.performance import merge_performance_role_instructions
+from podcastfy.litrpg.performance_qa import build_audio_performance_qa
+from podcastfy.litrpg.performance_qa import quarantine_record_from_audio_qa
 from podcastfy.litrpg.script_parser import validate_audio_readiness
 from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
@@ -24,9 +29,11 @@ class RoleScriptRenderer:
         *,
         tts: "TextToSpeech",
         output_filename: str = "final.mp3",
+        audio_qa_probe: Any | None = None,
     ) -> None:
         self.tts = tts
         self.output_filename = output_filename
+        self.audio_qa_probe = audio_qa_probe
 
     def render_episode(self, bundle: Mapping[str, Any]) -> dict[str, Any]:
         source_script = str(bundle.get("script_with_cues") or bundle.get("script") or "")
@@ -59,8 +66,30 @@ class RoleScriptRenderer:
             }
         )
         role_tags = _role_tags_from_bundle(bundle, voice_map, role_instructions)
-        readiness = validate_audio_readiness(
+        raw_readiness = validate_audio_readiness(
             script,
+            allowed_roles=role_tags,
+            voice_map=voice_map,
+            role_instructions=role_instructions,
+            max_line_chars=int(bundle.get("max_tts_line_chars") or 900),
+        )
+        if not raw_readiness.ready:
+            issue_text = "; ".join(issue.message for issue in raw_readiness.issues)
+            raise ValueError(f"LitRPG audio readiness failed: {issue_text}")
+
+        director_cues = _director_cues_from_bundle(bundle)
+        performance_contracts = build_line_performance_contracts(
+            script,
+            director_cues=director_cues,
+            reference_clip_ids=_reference_clip_ids_from_bundle(bundle),
+        )
+        contracted_script = format_contract_script(performance_contracts)
+        role_instructions = merge_performance_role_instructions(
+            role_instructions,
+            performance_contracts,
+        )
+        readiness = validate_audio_readiness(
+            contracted_script,
             allowed_roles=role_tags,
             voice_map=voice_map,
             role_instructions=role_instructions,
@@ -71,7 +100,7 @@ class RoleScriptRenderer:
             raise ValueError(f"LitRPG audio readiness failed: {issue_text}")
 
         self.tts.convert_script_to_speech(
-            script,
+            contracted_script,
             str(output_path),
             voice_map,
             role_tags=role_tags or None,
@@ -92,15 +121,40 @@ class RoleScriptRenderer:
             mix_plan=mix_plan,
             asset_mappings=asset_mappings,
         )
+        transcript_lines = _transcript_lines_from_bundle(bundle)
+        voice_similarity_scores = _voice_similarity_scores_from_bundle(bundle)
+        probe_result = _run_audio_qa_probe(
+            self.audio_qa_probe,
+            audio_path=output_path,
+            contracts=performance_contracts,
+        )
+        if transcript_lines is None:
+            transcript_lines = probe_result.get("transcript_lines")
+        if not voice_similarity_scores:
+            voice_similarity_scores = probe_result.get("voice_similarity_scores") or {}
+        audio_performance_qa = build_audio_performance_qa(
+            performance_contracts,
+            transcript_lines=transcript_lines,
+            voice_similarity_scores=voice_similarity_scores,
+            voice_similarity_threshold=float(
+                bundle.get("voice_similarity_threshold") or 0.82
+            ),
+        )
 
         metadata = {
+            "status": "quarantined" if audio_performance_qa.quarantine_required else "rendered",
             "audio_path": str(output_path),
             "format": output_path.suffix.lstrip("."),
             "role_instructions": role_instructions,
             "voice_map": voice_map,
             "role_tags": role_tags,
             "audio_readiness": readiness.to_dict(),
-            "director_cues": _director_cues_from_bundle(bundle),
+            "director_cues": director_cues,
+            "performance_contracts": [
+                contract.to_dict() for contract in performance_contracts
+            ],
+            "audio_performance_qa": audio_performance_qa.to_dict(),
+            "contracted_script": contracted_script,
             "cue_sheet": cue_sheet if isinstance(cue_sheet, Mapping) else cue_sheet.to_dict(),
             "asset_mappings": asset_mappings,
             "mix_plan": mix_plan,
@@ -108,6 +162,22 @@ class RoleScriptRenderer:
         }
         if mix_result.get("mixed"):
             metadata["mixed_audio_path"] = mix_result["output_path"]
+        if audio_performance_qa.quarantine_required:
+            quarantine_path = Path(bundle_path) / "audio_quarantine.json"
+            with quarantine_path.open("w", encoding="utf-8") as quarantine_file:
+                json.dump(
+                    quarantine_record_from_audio_qa(
+                        audio_performance_qa,
+                        audio_path=str(output_path),
+                        contracts=performance_contracts,
+                    ),
+                    quarantine_file,
+                    ensure_ascii=True,
+                    indent=2,
+                    sort_keys=True,
+                )
+                quarantine_file.write("\n")
+            metadata["audio_quarantine_path"] = str(quarantine_path)
         metadata_path = Path(bundle_path) / "audio_metadata.json"
         with metadata_path.open("w", encoding="utf-8") as metadata_file:
             json.dump(metadata, metadata_file, ensure_ascii=True, indent=2, sort_keys=True)
@@ -179,3 +249,80 @@ def _director_cues_from_bundle(bundle: Mapping[str, Any]) -> list[dict[str, Any]
         if isinstance(raw_cues, list):
             extracted.extend(dict(cue) for cue in raw_cues if isinstance(cue, Mapping))
     return extracted
+
+
+def _reference_clip_ids_from_bundle(bundle: Mapping[str, Any]) -> dict[str, str]:
+    references = bundle.get("reference_clip_ids") or bundle.get("voice_reference_clip_ids")
+    if not isinstance(references, Mapping):
+        references = {}
+    normalized = {
+        str(role).upper(): str(value)
+        for role, value in dict(references).items()
+        if str(value).strip()
+    }
+    config = bundle.get("config")
+    voices = config.get("voices") if isinstance(config, Mapping) else None
+    if isinstance(voices, Mapping):
+        for role, voice_config in voices.items():
+            if not isinstance(voice_config, Mapping):
+                continue
+            clip_id = voice_config.get("reference_clip_id")
+            if clip_id and str(role).upper() not in normalized:
+                normalized[str(role).upper()] = str(clip_id)
+    return normalized
+
+
+def _transcript_lines_from_bundle(bundle: Mapping[str, Any]) -> Any | None:
+    for key in (
+        "post_generation_transcript_lines",
+        "generated_audio_transcript_lines",
+        "audio_transcript_lines",
+    ):
+        value = bundle.get(key)
+        if isinstance(value, Mapping):
+            return {str(line_id): str(text) for line_id, text in value.items()}
+        if isinstance(value, list):
+            return [str(text) for text in value]
+    return None
+
+
+def _voice_similarity_scores_from_bundle(bundle: Mapping[str, Any]) -> dict[str, float]:
+    value = (
+        bundle.get("voice_similarity_scores")
+        or bundle.get("post_generation_voice_similarity_scores")
+    )
+    if not isinstance(value, Mapping):
+        return {}
+    scores: dict[str, float] = {}
+    for key, score in value.items():
+        try:
+            scores[str(key)] = float(score)
+        except (TypeError, ValueError):
+            continue
+    return scores
+
+
+def _run_audio_qa_probe(
+    probe: Any,
+    *,
+    audio_path: Path,
+    contracts: Sequence[Any],
+) -> dict[str, Any]:
+    if probe is None:
+        return {}
+    result: dict[str, Any] = {}
+    if hasattr(probe, "transcribe_lines"):
+        transcript = probe.transcribe_lines(
+            audio_path=str(audio_path),
+            contracts=list(contracts),
+        )
+        if transcript is not None:
+            result["transcript_lines"] = transcript
+    if hasattr(probe, "voice_similarity_scores"):
+        scores = probe.voice_similarity_scores(
+            audio_path=str(audio_path),
+            contracts=list(contracts),
+        )
+        if scores is not None:
+            result["voice_similarity_scores"] = scores
+    return result

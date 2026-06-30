@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping, Sequence
 
 
@@ -148,6 +149,83 @@ def format_tts_role_block_constraints(allowed_roles: Sequence[str] | str | None 
     return _format_policy_block("TTS-friendly role block constraints", lines)
 
 
+def build_series_anchor_block(
+    *,
+    series_plan: Mapping[str, Any] | None = None,
+    book_plan: Mapping[str, Any] | None = None,
+    chapter_contract: Mapping[str, Any] | None = None,
+    forbidden_mysteries: Sequence[Any] | None = None,
+    allowed_hints: Sequence[Any] | None = None,
+    reveal_locks: Sequence[Any] | None = None,
+    power_ceiling: str = "",
+    current_phase: str = "",
+    current_tension: int | str | None = None,
+    scarcity_constraints: Sequence[Any] | None = None,
+    scarcity_registry: Mapping[str, Any] | None = None,
+) -> str:
+    """Build a compact deterministic anchor block for chapter prompts."""
+
+    contract = dict(chapter_contract or {})
+    book = dict(book_plan or {})
+    series = dict(series_plan or {})
+    registry = dict(scarcity_registry or {})
+
+    phase = _first_text(current_phase, contract.get("phase"))
+    tension = _first_text(current_tension, contract.get("tension"))
+    ceiling = _first_text(power_ceiling, contract.get("power_ceiling"), book.get("power_ceiling"))
+    forbidden = _dedupe_texts(
+        [
+            *_as_sequence(forbidden_mysteries),
+            *_as_sequence(contract.get("must_not_spend")),
+            *_as_sequence(registry.get("forbidden_mysteries")),
+            *_as_sequence(registry.get("forbidden_now")),
+        ]
+    )
+    series_mysteries = _dedupe_texts(
+        [
+            *_as_sequence(series.get("series_mysteries")),
+            *_as_sequence(book.get("must_preserve")),
+            *_as_sequence(contract.get("must_preserve")),
+        ]
+    )
+    constraints = _dedupe_texts(
+        [
+            *_as_sequence(scarcity_constraints),
+            *_as_sequence(contract.get("scarcity_constraints")),
+            *_as_sequence(book.get("scarcity_constraints")),
+            *_as_sequence(registry.get("scarcity_constraints")),
+        ]
+    )
+    hints = _dedupe_texts([*_as_sequence(allowed_hints), *_as_sequence(registry.get("allowed_hints"))])
+    locks = _dedupe_texts([*_as_sequence(reveal_locks), *_as_sequence(registry.get("reveal_locks"))])
+    payoff_locks = _dedupe_texts(registry.get("payoff_locks") or [])
+
+    lines = ["Series Anchor Block:"]
+    lines.append(f"- Series plan: {_summarize_plan(series, ('series_title', 'title', 'logline', 'premise', 'core_loop', 'series_mysteries'))}")
+    lines.append(f"- Book plan / arc: {_summarize_plan(book, ('book', 'role', 'major_change', 'arc_style', 'must_resolve', 'must_preserve', 'floor_range'))}")
+    lines.append(f"- Chapter contract: {_summarize_plan(contract, ('book', 'chapter', 'title', 'phase', 'tension', 'creativity', 'absurdity', 'directives', 'must_resolve', 'must_not_spend'))}")
+    lines.append(f"- Current phase/tension: {phase or 'unspecified'} / {tension or 'unspecified'}")
+    lines.append(f"- Power ceiling: {ceiling or 'unspecified; do not escalate powers beyond earned state'}")
+    lines.append(f"- Series mysteries: {_join_or_none(series_mysteries)}")
+    lines.append(f"- Forbidden now: {_join_or_none(forbidden)}")
+    lines.append(f"- Allowed hints: {_join_or_none(hints)}")
+    lines.append(f"- Reveal locks: {_join_or_none(locks)}")
+    lines.append(f"- Payoff locks: {_join_or_none(payoff_locks)}")
+    lines.append(f"- Scarcity/resource constraints: {_join_or_none(constraints)}")
+    if registry:
+        for key in (
+            "hint_allowed_at_book",
+            "reveal_allowed_at_book",
+            "payoff_allowed_at_book",
+        ):
+            values = _dedupe_texts(registry.get(key) or [])
+            lines.append(f"- {key}: {_join_or_none(values)}")
+    lines.append(
+        "- Anchor rule: hints may foreshadow locked material, but reveals, explanations, upgrades, resources, and payoffs must stay inside their allowed windows."
+    )
+    return "\n".join(lines)
+
+
 def build_episode_outline_prompt(
     *,
     premise: str,
@@ -206,6 +284,7 @@ def build_audio_script_prompt(
     cast_roles: Mapping[str, str] | None = None,
     voice_effects: Mapping[str, Any] | None = None,
     prior_state: Mapping[str, Any] | None = None,
+    series_anchor_block: str = "",
 ) -> str:
     """Build a prompt for the final audio-first LitRPG script."""
     roles = ", ".join(ROLE_TAGS)
@@ -231,6 +310,21 @@ Prior state:
 
 Approved outline:
 {outline}
+
+Series anchor:
+{series_anchor_block or build_series_anchor_block(
+    chapter_contract=prior_state if isinstance(prior_state, Mapping) else None,
+    scarcity_constraints=SCARCITY_LOCK_LANGUAGE,
+)}
+
+Reusable prompt policy:
+{format_tts_role_block_constraints(ROLE_TAGS)}
+{format_character_voice_separation()}
+{format_scarcity_lock_language()}
+{format_announcer_system_tone()}
+{format_bureaucratic_sadism_rules()}
+{format_physical_continuity_degradation()}
+{format_mystery_lock_discipline()}
 
 Script requirements:
 - Format every spoken line as an XML-style role block, using only the allowed cast role tags.
@@ -258,3 +352,66 @@ def _format_mapping(values: Mapping[str, Any] | None) -> str:
     if not values:
         return "- Use default voice/effects metadata."
     return "\n".join(f"- {key}: {value}" for key, value in values.items())
+
+
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _join_or_none(values: Sequence[str]) -> str:
+    return "; ".join(values) if values else "None"
+
+
+def _dedupe_texts(values: Sequence[Any]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if isinstance(value, Mapping):
+            text = _compact_json(value)
+        else:
+            text = str(value or "").strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        deduped.append(text)
+        seen.add(key)
+    return deduped
+
+
+def _as_sequence(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes)):
+        return [str(value)]
+    if isinstance(value, Sequence):
+        return list(value)
+    return [value]
+
+
+def _summarize_plan(data: Mapping[str, Any], keys: Sequence[str]) -> str:
+    pieces = []
+    for key in keys:
+        if key not in data:
+            continue
+        value = data.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, Mapping):
+            rendered = _compact_json(value)
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            rendered = ", ".join(str(item) for item in value if str(item).strip())
+        else:
+            rendered = str(value)
+        if rendered:
+            pieces.append(f"{key}: {rendered}")
+    return "; ".join(pieces) if pieces else "Not supplied"
+
+
+def _compact_json(value: Mapping[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
