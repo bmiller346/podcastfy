@@ -556,6 +556,28 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
         json.dumps({"series_id": "the-knotty-buoy", "planted": [], "ready_to_pay": []}),
         encoding="utf-8",
     )
+    (series_root / "conspiracy_engine.json").write_text(
+        json.dumps(
+            {
+                "reader_position": {"must_not_know_yet": ["who registered Sophie II"]},
+                "revelation_ladder": {"guild_hall": {"full_reveal": "book_2"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (series_root / "world_state.json").write_text(
+        json.dumps(
+            {
+                "artifacts": {
+                    "permit_hook": {
+                        "locked_name": "Permit Hook",
+                        "aliases_forbidden": ["boat spear"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
     status, data = request_json(
         ui_server,
@@ -572,6 +594,10 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
     assert data["package"]["world_register"]["entity_ecology"][0]["entity"] == "OSHA Wraiths"
     assert data["package"]["voice_cards"]["cards"]["Pedro"]["sample_lines"] == ["WHERE'S THE PERMIT?"]
     assert data["package"]["foreshadow_ledger"]["planted"]
+    assert data["package"]["conspiracy_engine"]["reader_position"]["must_not_know_yet"] == [
+        "who registered Sophie II"
+    ]
+    assert data["package"]["world_state"]["artifacts"]["permit_hook"]["locked_name"] == "Permit Hook"
     assert [item["name"] for item in data["package"]["characters"]] == [
         "Edward Marsh",
         "Kelli Marsh",

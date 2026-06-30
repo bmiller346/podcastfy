@@ -611,6 +611,8 @@ def load_intake_artifact_workspace(series_id: str) -> dict[str, Any] | None:
         "emotional_arcs": _read_json_if_object(series_root / "emotional_arcs.json"),
         "world_register": _read_json_if_object(series_root / "world_register.json"),
         "foreshadow_ledger": _read_json_if_object(series_root / "foreshadow_ledger.json"),
+        "conspiracy_engine": _read_json_if_object(series_root / "conspiracy_engine.json"),
+        "world_state": _read_json_if_object(series_root / "world_state.json"),
     }
     present = {key: value for key, value in artifacts.items() if value not in (None, {}, [])}
     if not present:

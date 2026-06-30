@@ -30,6 +30,7 @@ Given `storage_dir` and `series_id`, intake can seed:
 - `emotional_arcs.json`
 - `world_register.json`
 - `foreshadow_ledger.json`
+- `conspiracy_engine.json`, only when the intake payload includes `conspiracy_engine`
 - `world_state.json`, only when the intake payload includes `world_state`
 
 ## World State
@@ -43,6 +44,24 @@ Useful `world_state` sections include `characters`, `locations`, `artifacts`,
 `sensory_hooks`. Use it for stable visual, sound, smell, touch, artifact, and
 mystery rendering contracts that downstream chapter generation can consume
 deterministically.
+
+`world_state.artifacts` is the artifact registry source of truth. Each durable
+artifact should include a locked name, forbidden aliases, physical signature,
+power ceiling with things it cannot do, and scarce state such as ammo, charges,
+condition, owner, and location. Early artifacts can echo source objects or
+personal history, but later loot should also come through dungeon environments,
+loot-box distortions, biome contamination, sponsor meddling, and suspicious
+System reinterpretations.
+
+## Conspiracy Engine
+
+`conspiracy_engine.json` is optional but recommended for long-series mysteries.
+Use it when the premise includes hidden architects, sponsor motives, true
+endgame mechanics, faction rules, or reader/character knowledge gaps. It should
+contain `truth_document`, `revelation_ladder`, `reader_position`, and `factions`.
+The truth document is never injected into prose generation; chapter generation
+only receives safe hints, forbidden revelations, reader position, and faction
+constraints.
 
 ## Task Mode
 

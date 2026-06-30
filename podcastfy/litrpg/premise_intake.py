@@ -27,6 +27,7 @@ from podcastfy.litrpg.continuity import (
     load_world_register,
     world_register_from_dict,
 )
+from podcastfy.litrpg.conspiracy_engine import save_conspiracy_engine
 from podcastfy.litrpg.foreshadowing import (
     add_plants,
     foreshadow_ledger_from_dict,
@@ -111,6 +112,9 @@ Return ONLY a JSON object with these top-level keys:
 - emotional_arcs: object compatible with EmotionalArcRegistry.
 - world_register: object compatible with WorldRegister.
 - foreshadow_ledger: object compatible with ForeshadowLedger.
+- conspiracy_engine: optional object with truth_document, revelation_ladder,
+  reader_position, and factions for long-series mysteries. The truth document is
+  EYES_ONLY and must never be phrased as prose-facing context.
 - world_state: optional object for sensory/rendering state. Include characters,
   locations, artifacts, system_items, magic_signatures, active_mysteries,
   established_rules, and sensory_hooks when the source supports them.
@@ -121,7 +125,9 @@ Extraction rules:
   schema: use ends_on for the final image, open question, reversal, or emotional
   cost that should pull the reader into the next chapter.
 - Put long-term mysteries in series_shape.series_mysteries, early book must_preserve,
-  and foreshadow_ledger plants.
+  foreshadow_ledger plants, and conspiracy_engine.revelation_ladder. Use
+  conspiracy_engine.reader_position to separate what characters know, what the
+  reader suspects, and what must not be confirmed yet.
 - Character sheets should become both story_bible character facts and voice_cards.
 - Physical anchors, gear state, wounds, running jokes, and marriage/family pressure go in
   story_bible and emotional_arcs.
@@ -134,6 +140,14 @@ Extraction rules:
   stable visual/sound/smell/touch anchors, artifact signatures, locked artifact
   names, forbidden aliases, current resource state, magic signatures, active
   mystery locks, established rendering rules, and recurring sensory hooks.
+- world_state.artifacts is the artifact registry source of truth. Early artifacts
+  may echo source objects, repairs, boat gear, or personal history, but avoid
+  simply granting expected keepsakes. Prefer odd system reinterpretations,
+  environmental loot, biome-contaminated tools, loot-box distortions, sponsor
+  meddling, and artifacts whose usefulness carries mystery, cost, or suspicion.
+  Every artifact should include locked_name, aliases_forbidden,
+  physical_signature, power_ceiling with cannot_do, and state fields such as
+  charges/ammo/condition/location/owner when relevant.
 - Put recurring bits, memorable system achievements, and callback-ready jokes in continuity_ledger.
 - Plant 3-8 foreshadow entries for long-term mysteries and later book payoffs.
 - Keep all strings concise. Prefer usable production constraints over literary commentary.
@@ -181,6 +195,7 @@ Return ONLY the full corrected JSON object, using the same top-level schema:
 - emotional_arcs
 - world_register
 - foreshadow_ledger
+- conspiracy_engine
 - world_state
 
 Repair rules:
@@ -193,6 +208,14 @@ Repair rules:
 - world_state, when present, must remain an additional sensory/rendering state
   with characters, locations, artifacts, system_items, magic_signatures,
   active_mysteries, established_rules, and sensory_hooks.
+- conspiracy_engine, when present, must include truth_document,
+  revelation_ladder, reader_position, and factions without leaking the truth
+  document into prose-facing sections.
+- world_state.artifacts must use locked names, forbidden aliases, physical
+  signatures, power ceilings with cannot_do, and scarce state fields. Do not make
+  all artifacts obvious personal-history wish fulfillment; mix source echoes with
+  environmental loot, dungeon mutations, loot-box weirdness, and suspicious
+  system reinterpretations.
 - The book_outlines for book 1 should include as many chapter entries as the source gives;
   target {chapters_per_book} if the source has a 30-chapter outline.
 - Preserve source names and anchors such as Edward, Kelli, Pedro, Sophie II, Sophie the cockatoo,
@@ -813,6 +836,11 @@ def save_premise_intake_payload(
             )
         save_foreshadow_ledger(storage, ledger)
         written.append(str(architect.root / "foreshadow_ledger.json"))
+
+    conspiracy_payload = _mapping(data.get("conspiracy_engine"))
+    if conspiracy_payload:
+        save_conspiracy_engine(storage, series_key, conspiracy_payload)
+        written.append(str(architect.root / "conspiracy_engine.json"))
 
     world_state_payload = _mapping(data.get("world_state"))
     if world_state_payload:

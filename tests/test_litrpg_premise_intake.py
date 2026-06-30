@@ -1,6 +1,7 @@
 import json
 
 from podcastfy.litrpg.bible import load_story_bible
+from podcastfy.litrpg.conspiracy_engine import load_conspiracy_engine
 from podcastfy.litrpg.continuity import load_continuity_ledger, load_world_register
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger
 from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
@@ -86,9 +87,16 @@ def test_build_premise_intake_prompt_requires_story_architecture_artifacts():
     assert "dynamic degradation" in prompt
     assert "use ends_on for the final image" in prompt
     assert "foreshadow_ledger plants" in prompt
+    assert "conspiracy_engine: optional object" in prompt
+    assert "truth_document" in prompt
+    assert "reader_position" in prompt
     assert "world_state: optional object for sensory/rendering state" in prompt
     assert "artifacts, system_items, magic_signatures" in prompt
     assert "world_state is an additional sensory/rendering layer" in prompt
+    assert "world_state.artifacts is the artifact registry source of truth" in prompt
+    assert "environmental loot" in prompt
+    assert "loot-box distortions" in prompt
+    assert "cannot_do" in prompt
     assert "payoff windows" in prompt
     assert "faction agendas" in prompt
     assert "currencies, trade goods, costs, scarcity" in prompt
@@ -115,6 +123,8 @@ def test_build_premise_intake_repair_prompt_targets_failed_sections():
     assert "Sophie II" in prompt
     assert "vehicle/base mechanics" in prompt
     assert "world_state, when present" in prompt
+    assert "conspiracy_engine, when present" in prompt
+    assert "Do not make" in prompt
     assert "Character voice separation" in prompt
     assert "Scarcity lock" in prompt
     assert "Mystery lock discipline" in prompt
@@ -237,6 +247,59 @@ def test_save_premise_intake_payload_writes_world_state_when_present(tmp_path):
     assert stored["active_mysteries"]["system_leverage"]["status"] == "DO_NOT_SPEND"
 
 
+def test_save_premise_intake_payload_writes_conspiracy_engine_when_present(tmp_path):
+    result = save_premise_intake_payload(
+        storage_dir=tmp_path,
+        series_id="conspiracy-series",
+        payload={
+            "series_shape": {
+                "series_title": "Conspiracy Series",
+                "chapters_per_book": 1,
+                "series_mysteries": ["System architects"],
+            },
+            "conspiracy_engine": {
+                "truth_document": {
+                    "classification": "EYES_ONLY",
+                    "actual_reality": {
+                        "system_true_architect": "escaped crawlers",
+                        "who_knows_what": {
+                            "reader": ["suspects: system is not neutral"]
+                        },
+                    },
+                },
+                "revelation_ladder": {
+                    "system_architects": {
+                        "truth": "escaped crawlers built the system",
+                        "current_reader_knowledge": "something is wrong",
+                        "next_hint_window": "ch_2_to_4",
+                        "full_reveal": "book_3",
+                        "DO_NOT_ACCELERATE": True,
+                    }
+                },
+                "reader_position": {
+                    "confirmed_knows": [],
+                    "strongly_suspects": ["system is not neutral"],
+                    "must_not_know_yet": ["who built the system"],
+                },
+                "factions": {
+                    "sponsor": {
+                        "name": "Sponsor",
+                        "apparent_goal": "broadcast profit",
+                        "operational_rules": ["cannot directly intervene"],
+                    }
+                },
+            },
+        },
+    )
+
+    stored = load_conspiracy_engine(tmp_path, "conspiracy-series")
+
+    assert any(path.endswith("conspiracy_engine.json") for path in result.written_files)
+    assert stored["truth_document"]["classification"] == "EYES_ONLY"
+    assert stored["reader_position"]["must_not_know_yet"] == ["who built the system"]
+    assert stored["factions"]["sponsor"]["operational_rules"] == ["cannot directly intervene"]
+
+
 def test_save_premise_intake_payload_skips_world_state_when_missing(tmp_path):
     result = save_premise_intake_payload(
         storage_dir=tmp_path,
@@ -298,6 +361,7 @@ def test_run_premise_intake_writes_story_engine_artifacts(tmp_path):
     assert any(path.endswith("story_bible.json") for path in result.written_files)
     assert any(path.endswith("chapter_outline.json") for path in result.written_files)
     assert any(path.endswith("world_state.json") for path in result.written_files)
+    assert any(path.endswith("conspiracy_engine.json") for path in result.written_files)
 
     contract = SeriesArchitect(tmp_path, "knotty-buoy").get_chapter_contract(
         book_number=1,
@@ -325,9 +389,11 @@ def test_run_premise_intake_writes_story_engine_artifacts(tmp_path):
     assert world.entity_ecology[0].entity == "Barnacle Mimics"
 
     world_state = load_world_state(tmp_path, "knotty-buoy")
+    conspiracy = load_conspiracy_engine(tmp_path, "knotty-buoy")
     assert world_state["locations"]["knotty_buoy"]["sensory"]["smell"] == "salt, diesel, wet rope"
     assert world_state["artifacts"]["rusted_crowbar"]["locked_name"] == "Rusted Crowbar"
     assert world_state["active_mysteries"]["system_architects_grievance"]["status"] == "DO_NOT_SPEND"
+    assert conspiracy["reader_position"]["must_not_know_yet"] == ["who classified Sophie II"]
 
     foreshadow = load_foreshadow_ledger(tmp_path, "knotty-buoy")
     assert foreshadow.planted[0].mystery == "System Architects grievance"
@@ -830,6 +896,40 @@ def _payload():
                     "mystery": "System Architects grievance",
                 }
             ],
+        },
+        "conspiracy_engine": {
+            "truth_document": {
+                "classification": "EYES_ONLY",
+                "actual_reality": {
+                    "dungeon_true_purpose": "The System is stress-testing mobile guild halls.",
+                    "who_knows_what": {
+                        "Edward Marsh": ["knows: Sophie II has legal protection"],
+                        "reader": ["suspects: the classification was not accidental"],
+                    },
+                },
+            },
+            "revelation_ladder": {
+                "guild_hall_registration": {
+                    "truth": "Sophie II was classified by an old crawler loophole.",
+                    "current_reader_knowledge": "the boat has impossible legal protection",
+                    "next_hint_window": "ch_2_to_3",
+                    "hint_type_next": "bureaucratic anomaly",
+                    "full_reveal": "book_2",
+                    "DO_NOT_ACCELERATE": True,
+                }
+            },
+            "reader_position": {
+                "confirmed_knows": ["Sophie II is protected as a guild hall"],
+                "strongly_suspects": ["the System classification is not neutral"],
+                "must_not_know_yet": ["who classified Sophie II"],
+            },
+            "factions": {
+                "gallowgate": {
+                    "name": "Gallowgate",
+                    "apparent_goal": "collect maritime dungeon fees",
+                    "operational_rules": ["cannot enter guild hall interiors without cause"],
+                }
+            },
         },
         "world_state": {
             "characters": {
