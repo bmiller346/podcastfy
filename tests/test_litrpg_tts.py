@@ -5,6 +5,7 @@ import pytest
 from podcastfy.litrpg.audio_provider import ElevenLabsPerformanceProvider
 from podcastfy.litrpg.audio_provider import GeminiAudioProvider
 from podcastfy.litrpg.audio_provider import OpenAIAudioProvider
+from podcastfy.litrpg.audio_provider import gemini_generate_content_config
 from podcastfy.litrpg.audio_provider import provider_name_for_contract
 from podcastfy.litrpg.performance import build_line_performance_contracts
 from podcastfy.litrpg.performance_qa import build_audio_performance_qa
@@ -347,7 +348,11 @@ def test_audio_performance_provider_requests_map_contract_by_provider():
     eleven_request = eleven.build_request(contract, reference_clips)
     openai_request = openai.build_request(contract, reference_clips)
 
+    gemini_config = gemini_request.generation_config["google_genai_generate_content_config"]
     assert gemini_request.generation_config["performance_contract"]["performance_register"] == "genuine_awe"
+    assert gemini_config["system_instruction"] == contract.style_instruction()
+    assert gemini_config["response_modalities"] == ["AUDIO"]
+    assert gemini_config["speech_config"]["voice_config"]["prebuilt_voice_config"]["voice_name"] == "Kore"
     assert gemini_request.reference_clip_ids == ["system_ref_awe"]
     assert "style_instruction" in eleven_request.generation_config
     assert eleven_request.reference_clip_ids == ["system_ref_awe"]
@@ -371,6 +376,55 @@ def test_provider_name_for_contract_prefers_register_override():
     )
 
     assert provider_name == "gemini"
+
+
+def test_gemini_generate_content_config_uses_speech_config_shape():
+    contract = build_line_performance_contracts("<SYSTEM>Notice.</SYSTEM>")[0]
+
+    config = gemini_generate_content_config(contract, "Kore")
+
+    assert config["system_instruction"] == contract.style_instruction()
+    assert config["response_modalities"] == ["AUDIO"]
+    assert config["speech_config"]["voice_config"]["prebuilt_voice_config"] == {
+        "voice_name": "Kore"
+    }
+
+
+def test_openai_audio_provider_calls_speech_client_with_instruction_and_speed():
+    class FakeSpeech:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **params):
+            self.calls.append(params)
+            return type("Response", (), {"content": b"audio"})()
+
+    class FakeClient:
+        def __init__(self):
+            self.audio = type("Audio", (), {"speech": FakeSpeech()})()
+
+    class FakeProvider:
+        def __init__(self):
+            self.client = FakeClient()
+
+    contract = build_line_performance_contracts(
+        '<SYSTEM style="urgent">Warning!</SYSTEM>'
+    )[0]
+    provider = FakeProvider()
+    adapter = OpenAIAudioProvider(
+        provider=provider,
+        voice="alloy",
+        model="gpt-4o-mini-tts",
+    )
+
+    audio = adapter.render_line(contract, {})
+    call = provider.client.audio.speech.calls[0]
+
+    assert audio == b"audio"
+    assert call["model"] == "gpt-4o-mini-tts"
+    assert call["input"] == "Warning!"
+    assert call["instructions"] == contract.style_instruction()
+    assert call["speed"] > 1.0
 
 
 def test_audio_performance_qa_quarantines_transcript_and_voice_drift():

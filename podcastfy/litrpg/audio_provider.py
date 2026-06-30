@@ -64,6 +64,7 @@ class GeminiAudioProvider:
         reference_clips: Mapping[str, bytes],
     ) -> AudioPerformanceRequest:
         reference_ids = _matching_reference_ids(contract, reference_clips)
+        genai_config = gemini_generate_content_config(contract, self.voice)
         return AudioPerformanceRequest(
             provider=self.provider_name,
             text=contract.text,
@@ -73,9 +74,9 @@ class GeminiAudioProvider:
             contract=contract.to_dict(),
             reference_clip_ids=reference_ids,
             generation_config={
-                "performance_contract": contract.to_dict(),
+                "google_genai_generate_content_config": genai_config,
                 "reference_clip_ids": reference_ids,
-                "speech_config": {"voice": self.voice},
+                "performance_contract": contract.to_dict(),
             },
         )
 
@@ -89,11 +90,18 @@ class GeminiAudioProvider:
             return _encoded_placeholder(request)
         if hasattr(self.provider, "render_line"):
             return self.provider.render_line(contract, reference_clips)
+        if hasattr(self.provider, "models") and hasattr(self.provider.models, "generate_content"):
+            response = self.provider.models.generate_content(
+                model=self.model,
+                contents=contract.text,
+                config=_google_genai_config_object(contract, self.voice),
+            )
+            return _extract_gemini_audio_bytes(response)
         return self.provider.generate_audio(
             contract.text,
             self.voice,
             self.model,
-            instructions=json.dumps(request.contract, sort_keys=True),
+            instructions=contract.style_instruction(),
             response_format=self.response_format,
         )
 
@@ -206,6 +214,12 @@ class OpenAIAudioProvider:
             return _encoded_placeholder(request)
         if hasattr(self.provider, "render_line"):
             return self.provider.render_line(contract, reference_clips)
+        if hasattr(self.provider, "client") and hasattr(self.provider.client, "audio"):
+            return _render_openai_speech_client(
+                self.provider.client,
+                request,
+                response_format=self.response_format,
+            )
         return self.provider.generate_audio(
             contract.text,
             self.voice,
@@ -278,6 +292,25 @@ def provider_name_for_contract(
     return str(values.get("default_provider") or values.get("provider") or "fallback")
 
 
+def gemini_generate_content_config(
+    contract: LinePerformanceContract,
+    voice: str,
+) -> dict[str, Any]:
+    """Return the Google GenAI config shape for Gemini speech generation."""
+
+    return {
+        "system_instruction": contract.style_instruction(),
+        "response_modalities": ["AUDIO"],
+        "speech_config": {
+            "voice_config": {
+                "prebuilt_voice_config": {
+                    "voice_name": voice,
+                }
+            }
+        },
+    }
+
+
 def load_reference_clips(
     references: Mapping[str, Any] | None,
     *,
@@ -325,6 +358,68 @@ def _pace_parameter(pace: str) -> float:
         "clipped": 1.08,
         "urgent": 1.18,
     }.get(str(pace), 1.0)
+
+
+def _google_genai_config_object(contract: LinePerformanceContract, voice: str) -> Any:
+    config = gemini_generate_content_config(contract, voice)
+    try:
+        from google.genai import types
+    except ModuleNotFoundError:
+        return config
+    return types.GenerateContentConfig(
+        system_instruction=config["system_instruction"],
+        response_modalities=config["response_modalities"],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name=voice,
+                )
+            )
+        ),
+    )
+
+
+def _extract_gemini_audio_bytes(response: Any) -> bytes:
+    candidates = [
+        lambda value: value.candidates[0].content.parts[0].inline_data.data,
+        lambda value: value.candidates[0].content.parts[0].inlineData.data,
+    ]
+    for getter in candidates:
+        try:
+            data = getter(response)
+        except (AttributeError, IndexError, TypeError):
+            continue
+        if isinstance(data, bytes):
+            return data
+        if isinstance(data, str):
+            import base64
+
+            return base64.b64decode(data)
+    raise RuntimeError("Gemini audio response did not include inline audio data")
+
+
+def _render_openai_speech_client(
+    client: Any,
+    request: AudioPerformanceRequest,
+    *,
+    response_format: str,
+) -> bytes:
+    params = {
+        "model": request.model,
+        "voice": request.voice,
+        "input": request.text,
+        "instructions": request.instructions,
+        "response_format": response_format,
+        "speed": request.generation_config.get("voice_parameters", {}).get("pace", 1.0),
+    }
+    response = client.audio.speech.create(**params)
+    if hasattr(response, "content"):
+        return response.content
+    if hasattr(response, "read"):
+        return response.read()
+    if isinstance(response, bytes):
+        return response
+    raise RuntimeError("OpenAI speech response did not include audio bytes")
 
 
 def _encoded_placeholder(request: AudioPerformanceRequest) -> bytes:
