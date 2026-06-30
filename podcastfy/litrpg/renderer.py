@@ -230,16 +230,17 @@ def _write_skipped_audio_metadata(
     prose_gate: Mapping[str, Any],
 ) -> dict[str, Any]:
     metadata = {
-        "status": "quarantined",
-        "reason": "prose_qa_not_ready",
+        "status": "skipped",
+        "reason": str(prose_gate.get("reason") or "prose_qa_not_ready"),
         "audio_render_skipped": True,
-        "audio_path": str(output_path),
+        "audio_path": None,
+        "planned_audio_path": str(output_path),
         "format": output_path.suffix.lstrip("."),
         "prose_qa_gate": dict(prose_gate),
         "audio_provider_routes": [],
         "voice_processing": {
             "processed": False,
-            "reason": "prose_qa_not_ready",
+            "reason": str(prose_gate.get("reason") or "prose_qa_not_ready"),
         },
     }
     metadata_path = bundle_path / "audio_metadata.json"

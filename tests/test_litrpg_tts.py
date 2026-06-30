@@ -599,7 +599,7 @@ def test_role_renderer_skips_audio_when_prose_qa_not_ready(tmp_path):
 
     metadata = renderer.render_episode(
         {
-            "script": "<SYSTEM>Quest updated.</SYSTEM>",
+            "script": '<SYSTEM emotion="hostile">Quest updated.</SYSTEM>',
             "storage_metadata": {"bundle_path": str(bundle_path)},
             "qa": {"ready": False},
             "config": {"voices": {"SYSTEM": {"voice": "onyx"}}},
@@ -607,9 +607,11 @@ def test_role_renderer_skips_audio_when_prose_qa_not_ready(tmp_path):
         }
     )
 
-    assert metadata["status"] == "quarantined"
+    assert metadata["status"] == "skipped"
     assert metadata["reason"] == "prose_qa_not_ready"
     assert metadata["audio_render_skipped"] is True
+    assert metadata["audio_path"] is None
+    assert metadata["planned_audio_path"].endswith("final.mp3")
     assert metadata["prose_qa_gate"]["blocked_by"] == ["qa.ready"]
     assert metadata["audio_provider_routes"] == []
     assert Path(metadata["audio_metadata_path"]).exists()

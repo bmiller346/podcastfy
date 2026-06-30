@@ -79,6 +79,29 @@ let packageRevision = 0;
 let pendingRevisionProposal = null;
 
 const CUSTOM_OPTION = "__custom__";
+const QUICK_ACTION_TOOLTIPS = {
+  "focus-premise": "Fill the short premise from loaded markdown/workspace when possible, otherwise jump to the field.",
+  "new-package": "Create a manual package draft. Usually skip this after premise intake has produced artifacts.",
+  "generate-package": "Generate a reusable package from the current premise/baseline text.",
+  "add-role": "Open the role editor path so you can add cast or voice scaffolding.",
+  "open-package-json": "Open package JSON for manual bestiary, encounter, or role edits.",
+  "queue-text": "Queue the current task with audio disabled for a faster smoke test.",
+  "queue-current": "Queue the task exactly as currently previewed.",
+  "copy-diagnostics": "Copy the current local diagnostics report for troubleshooting.",
+};
+
+const DIAGNOSTIC_TOOLTIPS = {
+  "Active series": "The series id currently loaded in the workspace.",
+  "Package": "ready means a saved package or intake artifact workspace is loaded.",
+  "Episodes": "Saved/generated episode records for this series.",
+  "Roles": "Reusable cast/voice role records available for generation.",
+  "Bestiary": "Reusable threat or creature records from intake/package data.",
+  "Generated Encounters": "Downstream chapter/episode encounter records. Zero is normal before chapter generation.",
+  "Series package": "Whether reusable context is available for generation.",
+  "Role packages": "Reusable cast/voice role records available for generation.",
+  "Library episodes": "Saved audio/text episode outputs available for replay.",
+};
+
 const GENERATION_MODEL_OPTIONS = {
   hybrid: [
     ["gemini-2.5-flash", "Gemini 2.5 Flash"],
@@ -112,8 +135,7 @@ const TTS_MODEL_OPTIONS = {
   edge: [["edge", "Edge default voice"]],
   openai: [
     ["gpt-4o-mini-tts", "GPT-4o Mini TTS"],
-    ["tts-1", "tts-1"],
-    ["tts-1-hd", "tts-1-hd"],
+    ["gpt-4o-mini-tts-2025-12-15", "GPT-4o Mini TTS 2025-12-15"],
   ],
   elevenlabs: [
     ["eleven_multilingual_v2", "Eleven Multilingual v2"],
@@ -1565,8 +1587,19 @@ function renderDiagnosticsSummary(report) {
   ].join("");
 }
 
-function diagnosticsItem(label, value) {
-  return `<div class="diagnostic-item"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`;
+function tooltipAttrs(text) {
+  const value = cleanValue(text);
+  if (!value) return "";
+  return ` data-tooltip="${escapeHtml(value)}" title="${escapeHtml(value)}"`;
+}
+
+function tooltipClass(text) {
+  return cleanValue(text) ? " has-tooltip" : "";
+}
+
+function diagnosticsItem(label, value, tip = "") {
+  const tooltip = tip || DIAGNOSTIC_TOOLTIPS[label] || "";
+  return `<div class="diagnostic-item${tooltipClass(tooltip)}"${tooltipAttrs(tooltip)}><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`;
 }
 
 function renderCommandCenter(report) {
@@ -1640,7 +1673,8 @@ function buildFlowSteps(report) {
 
 function renderFlowStep(step) {
   const stateClass = step.done ? "done" : "todo";
-  return `<div class="flow-step ${stateClass}">
+  const tooltip = step.tip || step.detail;
+  return `<div class="flow-step ${stateClass}${tooltipClass(tooltip)}"${tooltipAttrs(tooltip)}>
     <div class="flow-dot" aria-hidden="true"></div>
     <div>
       <strong>${escapeHtml(step.label)}</strong>
@@ -1686,7 +1720,8 @@ function buildNextActions(report) {
 }
 
 function renderActionButton(action) {
-  return `<button type="button" class="quick-action ${escapeClass(action.tone || "secondary")}" data-action="${escapeHtml(action.action)}">${escapeHtml(action.label)}</button>`;
+  const tip = action.tip || QUICK_ACTION_TOOLTIPS[action.action] || "";
+  return `<button type="button" class="quick-action ${escapeClass(action.tone || "secondary")} has-tooltip" data-action="${escapeHtml(action.action)}" data-tooltip="${escapeHtml(tip)}" title="${escapeHtml(tip)}">${escapeHtml(action.label)}</button>`;
 }
 
 function renderJobConsole(job) {

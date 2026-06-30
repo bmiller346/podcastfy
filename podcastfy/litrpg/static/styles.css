@@ -35,6 +35,48 @@ button:disabled {
   opacity: 0.65;
 }
 
+.has-tooltip {
+  position: relative;
+}
+
+.has-tooltip[data-tooltip] {
+  cursor: help;
+}
+
+button.has-tooltip[data-tooltip] {
+  cursor: pointer;
+}
+
+.has-tooltip[data-tooltip]::after {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: min(320px, 80vw);
+  padding: 8px 10px;
+  border: 1px solid #293847;
+  border-radius: 6px;
+  background: #1f2b37;
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(16, 24, 40, 0.2);
+  content: attr(data-tooltip);
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: normal;
+}
+
+.has-tooltip[data-tooltip]:hover::after,
+.has-tooltip[data-tooltip]:focus-within::after,
+.has-tooltip[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 input,
 select,
 textarea {
