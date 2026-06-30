@@ -30,6 +30,19 @@ Given `storage_dir` and `series_id`, intake can seed:
 - `emotional_arcs.json`
 - `world_register.json`
 - `foreshadow_ledger.json`
+- `world_state.json`, only when the intake payload includes `world_state`
+
+## World State
+
+`world_state.json` is an optional sensory/rendering layer for scene briefs. It
+does not replace `story_bible.json`, `continuity_ledger.json`,
+`world_register.json`, voice cards, emotional arcs, or foreshadowing.
+
+Useful `world_state` sections include `characters`, `locations`, `artifacts`,
+`system_items`, `magic_signatures`, `active_mysteries`, `established_rules`, and
+`sensory_hooks`. Use it for stable visual, sound, smell, touch, artifact, and
+mystery rendering contracts that downstream chapter generation can consume
+deterministically.
 
 ## Task Mode
 
@@ -131,8 +144,8 @@ Available tools:
 Run intake once when starting a series, review the generated JSON, then generate
 chapters through normal chapter mode. Chapter generation reads the saved series
 plan, book plans, chapter outlines, story bible, voice cards, continuity ledger,
-world register, emotional arcs, and foreshadow ledger from the same
-`storage_dir/series/{series_id}` tree.
+world register, emotional arcs, foreshadow ledger, and optional world state from
+the same `storage_dir/series/{series_id}` tree.
 
 Re-run intake with `merge_existing: true` when you add a large new outline or
 author notes bundle. Use `merge_existing: false` only when you want the generated

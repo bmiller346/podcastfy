@@ -12,6 +12,7 @@ from podcastfy.litrpg.premise_intake import validate_premise_intake_payload
 from podcastfy.litrpg.series_architect import SeriesArchitect, load_chapter_outline
 from podcastfy.litrpg.task import run_litrpg_task_data
 from podcastfy.litrpg.voice_cards import load_voice_cards
+from podcastfy.litrpg.world_state import load_world_state
 
 
 class FakePremiseLLM:
@@ -85,6 +86,9 @@ def test_build_premise_intake_prompt_requires_story_architecture_artifacts():
     assert "dynamic degradation" in prompt
     assert "use ends_on for the final image" in prompt
     assert "foreshadow_ledger plants" in prompt
+    assert "world_state: optional object for sensory/rendering state" in prompt
+    assert "artifacts, system_items, magic_signatures" in prompt
+    assert "world_state is an additional sensory/rendering layer" in prompt
     assert "payoff windows" in prompt
     assert "faction agendas" in prompt
     assert "currencies, trade goods, costs, scarcity" in prompt
@@ -110,6 +114,7 @@ def test_build_premise_intake_repair_prompt_targets_failed_sections():
     assert "full corrected JSON object" in prompt
     assert "Sophie II" in prompt
     assert "vehicle/base mechanics" in prompt
+    assert "world_state, when present" in prompt
     assert "Character voice separation" in prompt
     assert "Scarcity lock" in prompt
     assert "Mystery lock discipline" in prompt
@@ -161,6 +166,88 @@ def test_save_premise_intake_payload_allows_missing_optional_ledgers(tmp_path):
     assert any(path.endswith("series_plan.json") for path in result.written_files)
 
 
+def test_save_premise_intake_payload_writes_world_state_when_present(tmp_path):
+    result = save_premise_intake_payload(
+        storage_dir=tmp_path,
+        series_id="sensory-series",
+        payload={
+            "series_shape": {
+                "series_title": "Sensory Series",
+                "chapters_per_book": 1,
+            },
+            "world_state": {
+                "characters": {
+                    "hero": {
+                        "appearance": ["salt-stiff coat"],
+                        "signature_behaviors": ["checks the mast shadow first"],
+                    }
+                },
+                "locations": {
+                    "sophie_ii": {
+                        "name": "Sophie II",
+                        "sensory": {
+                            "visual": "green bilge light",
+                            "audio": "rigging ticks like teeth",
+                            "smell": "diesel, salt, hot epoxy",
+                        },
+                    }
+                },
+                "artifacts": {
+                    "permit_hook": {
+                        "locked_name": "Permit Hook",
+                        "aliases_forbidden": ["boat spear"],
+                        "physical_signature": {"sound_fire": "wet clank"},
+                        "state": {"condition": "rusty", "charges": 1},
+                    }
+                },
+                "system_items": {
+                    "gallowgate_notice": {
+                        "display_name": "Notice of Maritime Noncompliance",
+                        "system_description": "A warning.",
+                        "actual_behavior": "Starts a timer.",
+                        "irony_flag": True,
+                        "carl_commentary": "Paperwork with teeth.",
+                    }
+                },
+                "magic_signatures": {
+                    "permit_magic": {
+                        "signature": "green permit glow",
+                        "primary_sense": "visual",
+                    }
+                },
+                "active_mysteries": {
+                    "system_leverage": {"status": "DO_NOT_SPEND"}
+                },
+                "established_rules": ["Boat classifications have combat consequences"],
+                "sensory_hooks": {
+                    "sophie_ii": ["hot epoxy means hull damage"]
+                },
+            },
+        },
+    )
+
+    stored = load_world_state(tmp_path, "sensory-series")
+
+    assert any(path.endswith("world_state.json") for path in result.written_files)
+    assert stored["characters"]["hero"]["appearance"] == ["salt-stiff coat"]
+    assert stored["locations"]["sophie_ii"]["sensory"]["smell"] == "diesel, salt, hot epoxy"
+    assert stored["artifacts"]["permit_hook"]["locked_name"] == "Permit Hook"
+    assert stored["system_items"]["gallowgate_notice"]["irony_flag"] is True
+    assert stored["magic_signatures"]["permit_magic"]["signature"] == "green permit glow"
+    assert stored["active_mysteries"]["system_leverage"]["status"] == "DO_NOT_SPEND"
+
+
+def test_save_premise_intake_payload_skips_world_state_when_missing(tmp_path):
+    result = save_premise_intake_payload(
+        storage_dir=tmp_path,
+        series_id="no-world-state",
+        payload={"series_shape": {"series_title": "No World State", "chapters_per_book": 1}},
+    )
+
+    assert not any(path.endswith("world_state.json") for path in result.written_files)
+    assert not (tmp_path / "series" / "no-world-state" / "world_state.json").exists()
+
+
 def test_save_premise_intake_payload_reports_bad_outline_shape(tmp_path):
     try:
         save_premise_intake_payload(
@@ -210,6 +297,7 @@ def test_run_premise_intake_writes_story_engine_artifacts(tmp_path):
     assert "Series Architect intake tool" in llm.calls[0]["prompt"]
     assert any(path.endswith("story_bible.json") for path in result.written_files)
     assert any(path.endswith("chapter_outline.json") for path in result.written_files)
+    assert any(path.endswith("world_state.json") for path in result.written_files)
 
     contract = SeriesArchitect(tmp_path, "knotty-buoy").get_chapter_contract(
         book_number=1,
@@ -235,6 +323,11 @@ def test_run_premise_intake_writes_story_engine_artifacts(tmp_path):
     world = load_world_register(tmp_path, "knotty-buoy")
     assert world.locations[0].name == "The Knotty Buoy"
     assert world.entity_ecology[0].entity == "Barnacle Mimics"
+
+    world_state = load_world_state(tmp_path, "knotty-buoy")
+    assert world_state["locations"]["knotty_buoy"]["sensory"]["smell"] == "salt, diesel, wet rope"
+    assert world_state["artifacts"]["rusted_crowbar"]["locked_name"] == "Rusted Crowbar"
+    assert world_state["active_mysteries"]["system_architects_grievance"]["status"] == "DO_NOT_SPEND"
 
     foreshadow = load_foreshadow_ledger(tmp_path, "knotty-buoy")
     assert foreshadow.planted[0].mystery == "System Architects grievance"
@@ -737,5 +830,69 @@ def _payload():
                     "mystery": "System Architects grievance",
                 }
             ],
+        },
+        "world_state": {
+            "characters": {
+                "Edward Marsh": {
+                    "appearance": ["sunburned neck", "salt-stiff work shirt"],
+                    "signature_behaviors": ["checks load-bearing points first"],
+                    "emotional_tells": {"fear": "complains about code compliance"},
+                }
+            },
+            "locations": {
+                "knotty_buoy": {
+                    "name": "The Knotty Buoy",
+                    "sensory": {
+                        "visual": "green bilge light under white fiberglass",
+                        "audio": "halyards ticking like impatient fingers",
+                        "smell": "salt, diesel, wet rope",
+                        "spatial": "two narrow hulls, open aft deck, mast shadow bisecting the cockpit",
+                    },
+                    "threat_geometry": "low railings, slick deck, water threats can climb either hull",
+                }
+            },
+            "artifacts": {
+                "rusted_crowbar": {
+                    "type": "tool",
+                    "owner": "Edward Marsh",
+                    "locked_name": "Rusted Crowbar",
+                    "aliases_forbidden": ["magic prybar"],
+                    "physical_signature": {
+                        "appearance": "orange rust over old black steel",
+                        "weight": "awkward and familiar",
+                        "sound_fire": "metal scrape",
+                        "primary_sense": "sound",
+                    },
+                    "power_ceiling": {
+                        "can_do": ["lever stuck hatches"],
+                        "cannot_do": ["solve boss fights"],
+                        "narrative_cost": "bends under repeated abuse",
+                        "DO_NOT_ESCALATE_BEYOND": "mundane leverage plus system comedy",
+                    },
+                    "state": {"condition": "rusty", "charges": None, "ammo": None},
+                }
+            },
+            "system_items": {
+                "guild_hall_notice": {
+                    "display_name": "Mobile Guild Hall Registration",
+                    "system_description": "Temporary asset classification.",
+                    "actual_behavior": "Makes the boat valuable and legally vulnerable.",
+                    "irony_flag": True,
+                    "carl_commentary": "That is how zoning gets you killed.",
+                }
+            },
+            "magic_signatures": {
+                "pedro_phrase_magic": {
+                    "signature": "pressure-drop silence before Pedro speaks",
+                    "primary_sense": "audio",
+                }
+            },
+            "active_mysteries": {
+                "system_architects_grievance": {"status": "DO_NOT_SPEND"}
+            },
+            "established_rules": ["The System can classify vehicles as assets"],
+            "sensory_hooks": {
+                "knotty_buoy": ["halyards ticking means the boat is listening"]
+            },
         },
     }

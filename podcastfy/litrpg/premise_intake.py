@@ -49,6 +49,7 @@ from podcastfy.litrpg.voice_cards import (
     merge_voice_cards,
     save_voice_cards,
 )
+from podcastfy.litrpg.world_state import save_world_state
 
 
 @dataclass(slots=True)
@@ -110,6 +111,9 @@ Return ONLY a JSON object with these top-level keys:
 - emotional_arcs: object compatible with EmotionalArcRegistry.
 - world_register: object compatible with WorldRegister.
 - foreshadow_ledger: object compatible with ForeshadowLedger.
+- world_state: optional object for sensory/rendering state. Include characters,
+  locations, artifacts, system_items, magic_signatures, active_mysteries,
+  established_rules, and sensory_hooks when the source supports them.
 
 Extraction rules:
 - If the premise gives a chapter outline, preserve its chapter count and chapter titles.
@@ -125,6 +129,11 @@ Extraction rules:
   Separate registers for faction agendas, social rank, currencies, trade goods, costs, scarcity,
   dungeon floor rules, entity ecology, home-base systems, and
   institutional voices. Preserve invented names and local idioms.
+- world_state is an additional sensory/rendering layer, not a replacement for
+  world_register, continuity_ledger, story_bible, or emotional_arcs. Use it for
+  stable visual/sound/smell/touch anchors, artifact signatures, locked artifact
+  names, forbidden aliases, current resource state, magic signatures, active
+  mystery locks, established rendering rules, and recurring sensory hooks.
 - Put recurring bits, memorable system achievements, and callback-ready jokes in continuity_ledger.
 - Plant 3-8 foreshadow entries for long-term mysteries and later book payoffs.
 - Keep all strings concise. Prefer usable production constraints over literary commentary.
@@ -172,6 +181,7 @@ Return ONLY the full corrected JSON object, using the same top-level schema:
 - emotional_arcs
 - world_register
 - foreshadow_ledger
+- world_state
 
 Repair rules:
 - Preserve any useful valid sections from the previous payload, but replace generic/TBD material.
@@ -180,6 +190,9 @@ Repair rules:
 - The voice_cards must include distinct character voice constraints.
 - The world_register must include concrete locations, floor rules, faction agendas,
   entities/mobs, economy/currencies/trade goods, scarcity/costs, and vehicle/base mechanics.
+- world_state, when present, must remain an additional sensory/rendering state
+  with characters, locations, artifacts, system_items, magic_signatures,
+  active_mysteries, established_rules, and sensory_hooks.
 - The book_outlines for book 1 should include as many chapter entries as the source gives;
   target {chapters_per_book} if the source has a 30-chapter outline.
 - Preserve source names and anchors such as Edward, Kelli, Pedro, Sophie II, Sophie the cockatoo,
@@ -800,6 +813,11 @@ def save_premise_intake_payload(
             )
         save_foreshadow_ledger(storage, ledger)
         written.append(str(architect.root / "foreshadow_ledger.json"))
+
+    world_state_payload = _mapping(data.get("world_state"))
+    if world_state_payload:
+        save_world_state(storage, series_key, world_state_payload)
+        written.append(str(architect.root / "world_state.json"))
 
     return PremiseIntakeResult(
         series_id=series_key,
