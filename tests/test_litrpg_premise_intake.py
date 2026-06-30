@@ -45,6 +45,19 @@ class RawSequencePremiseLLM:
         return self.outputs.pop(0)
 
 
+class FailingPremiseLLM:
+    def __init__(self, *, fail_stages, outputs=None):
+        self.fail_stages = set(fail_stages)
+        self.outputs = list(outputs or [])
+        self.calls = []
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        if stage in self.fail_stages:
+            raise RuntimeError(f"{stage} provider unavailable")
+        return self.outputs.pop(0)
+
+
 def test_extract_premise_intake_json_accepts_fenced_output():
     parsed = extract_premise_intake_json('Here:\n```json\n{"series_shape": {"target_books": 1}}\n```')
 
@@ -364,6 +377,26 @@ def test_run_premise_intake_salvages_malformed_initial_json(tmp_path):
     assert load_story_bible(tmp_path, "the-knotty-buoy").characters["Edward Marsh"].name == "Edward Marsh"
 
 
+def test_run_premise_intake_salvages_initial_generation_failure(tmp_path):
+    llm = FailingPremiseLLM(fail_stages={"premise_intake"})
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="the-knotty-buoy",
+        premise=_long_knotty_seed(),
+        llm=llm,
+        target_books=1,
+        chapters_per_book=30,
+        series_title="The Knotty Buoy",
+    )
+
+    assert [call["stage"] for call in llm.calls] == ["premise_intake"]
+    assert result.payload["_intake_metadata"]["fallback_used"] is True
+    assert "generation failed" in result.payload["_intake_metadata"]["fallback_reason"]
+    assert load_story_bible(tmp_path, "the-knotty-buoy").characters["Kelli Marsh"].name == "Kelli Marsh"
+    assert any(item.entity == "Grand Dredger" for item in load_world_register(tmp_path, "the-knotty-buoy").entity_ecology)
+
+
 def test_run_premise_intake_salvages_malformed_repair_json(tmp_path):
     sparse_but_not_empty = {
         "series_shape": {"series_title": "The Knotty Buoy"},
@@ -402,6 +435,45 @@ def test_run_premise_intake_salvages_malformed_repair_json(tmp_path):
     assert result.payload["_intake_metadata"]["fallback_used"] is True
     assert "repair returned malformed JSON" in result.payload["_intake_metadata"]["fallback_reason"]
     assert any(item.entity == "Gallowgate" for item in load_world_register(tmp_path, "the-knotty-buoy").entity_ecology)
+
+
+def test_run_premise_intake_salvages_repair_generation_failure(tmp_path):
+    sparse_but_not_empty = {
+        "series_shape": {"series_title": "The Knotty Buoy"},
+        "story_bible": {"characters": {}},
+        "world_register": {
+            "locations": [{"name": "Sophie II", "detail": "The boat."}],
+            "rules": [],
+            "entity_ecology": [],
+        },
+        "book_outlines": {
+            "1": [
+                {"chapter": 1, "title": "A", "premise": "A"},
+                {"chapter": 2, "title": "B", "premise": "B"},
+                {"chapter": 3, "title": "C", "premise": "C"},
+            ]
+        },
+    }
+    llm = FailingPremiseLLM(
+        fail_stages={"premise_intake_repair"},
+        outputs=["```json\n" + json.dumps(sparse_but_not_empty) + "\n```"],
+    )
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="the-knotty-buoy",
+        premise=_long_knotty_seed(),
+        llm=llm,
+        target_books=1,
+        chapters_per_book=30,
+        series_title="The Knotty Buoy",
+    )
+
+    assert [call["stage"] for call in llm.calls] == ["premise_intake", "premise_intake_repair"]
+    assert result.payload["_intake_metadata"]["fallback_used"] is True
+    assert "repair generation failed" in result.payload["_intake_metadata"]["fallback_reason"]
+    assert load_story_bible(tmp_path, "the-knotty-buoy").characters["Pedro"].name == "Pedro"
+    assert any(location.name == "The Drowned Scaffolding" for location in load_world_register(tmp_path, "the-knotty-buoy").locations)
 
 
 def test_litrpg_task_supports_premise_intake_mode(tmp_path):

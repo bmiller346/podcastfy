@@ -63,6 +63,16 @@ def request_bytes(server, path):
         connection.close()
 
 
+def request_bytes_with_headers(server, path):
+    connection = http.client.HTTPConnection(server.server_address[0], server.server_address[1])
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        return response.status, response.read(), dict(response.getheaders())
+    finally:
+        connection.close()
+
+
 def test_index_page_exposes_task_creation_form(ui_server):
     status, body, content_type = request_bytes(ui_server, "/")
     html = body.decode("utf-8")
@@ -177,6 +187,16 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="add-role"' in html
     assert 'id="rebuild-roles"' in html
     assert 'id="save-roles"' in html
+
+
+def test_ui_static_assets_are_not_cached_during_local_dev(ui_server):
+    index_status, _, index_headers = request_bytes_with_headers(ui_server, "/")
+    app_status, _, app_headers = request_bytes_with_headers(ui_server, "/static/app.js")
+
+    assert index_status == 200
+    assert app_status == 200
+    assert "no-store" in index_headers["Cache-Control"]
+    assert "no-store" in app_headers["Cache-Control"]
 
 
 def test_favicon_request_is_ignored_without_404_noise(ui_server):

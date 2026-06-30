@@ -157,7 +157,17 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
 
     server_version = "LitRPGUI/0.1"
 
+    def end_headers(self) -> None:
+        request_path = getattr(self, "_request_path_for_headers", self.path)
+        parsed = urlparse(request_path)
+        if parsed.path in {"/", "/index.html"} or parsed.path.startswith("/static/"):
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_GET(self) -> None:  # noqa: N802 - stdlib hook name
+        self._request_path_for_headers = self.path
         parsed = urlparse(self.path)
         if parsed.path == "/":
             self.path = "/index.html"

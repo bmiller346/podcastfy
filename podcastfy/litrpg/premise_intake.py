@@ -223,7 +223,38 @@ def run_premise_intake(
         endgame_direction=endgame_direction,
         power_curve=power_curve,
     )
-    raw = llm.generate(prompt=prompt, stage="premise_intake")
+    try:
+        raw = llm.generate(prompt=prompt, stage="premise_intake")
+    except Exception as exc:
+        payload = repair_sparse_premise_intake_payload(
+            {},
+            premise=premise,
+            series_id=series_id,
+            target_books=target_books,
+            chapters_per_book=chapters_per_book,
+            book_length_mode=book_length_mode,
+            arc_style=arc_style,
+            series_title=series_title,
+            series_promise=series_promise,
+            endgame_direction=endgame_direction,
+            power_curve=power_curve,
+            fallback_reason=f"Skipped AI intake because generation failed: {type(exc).__name__}: {exc}",
+        )
+        validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+        return _save_premise_intake_result(
+            storage_dir=storage_dir,
+            series_id=series_id,
+            payload=payload,
+            merge_existing=merge_existing,
+            target_books=target_books,
+            chapters_per_book=chapters_per_book,
+            book_length_mode=book_length_mode,
+            arc_style=arc_style,
+            series_title=series_title,
+            series_promise=series_promise,
+            endgame_direction=endgame_direction,
+            power_curve=power_curve,
+        )
     try:
         payload = extract_premise_intake_json(str(raw))
     except ValueError as exc:
@@ -296,7 +327,41 @@ def run_premise_intake(
             validation_error=str(exc),
             previous_payload=payload,
         )
-        repaired_raw = llm.generate(prompt=repair_prompt, stage="premise_intake_repair")
+        try:
+            repaired_raw = llm.generate(prompt=repair_prompt, stage="premise_intake_repair")
+        except Exception as repair_exc:
+            payload = repair_sparse_premise_intake_payload(
+                payload,
+                premise=premise,
+                series_id=series_id,
+                target_books=target_books,
+                chapters_per_book=chapters_per_book,
+                book_length_mode=book_length_mode,
+                arc_style=arc_style,
+                series_title=series_title,
+                series_promise=series_promise,
+                endgame_direction=endgame_direction,
+                power_curve=power_curve,
+                fallback_reason=(
+                    "AI repair generation failed: "
+                    f"{type(repair_exc).__name__}: {repair_exc}"
+                ),
+            )
+            validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+            return _save_premise_intake_result(
+                storage_dir=storage_dir,
+                series_id=series_id,
+                payload=payload,
+                merge_existing=merge_existing,
+                target_books=target_books,
+                chapters_per_book=chapters_per_book,
+                book_length_mode=book_length_mode,
+                arc_style=arc_style,
+                series_title=series_title,
+                series_promise=series_promise,
+                endgame_direction=endgame_direction,
+                power_curve=power_curve,
+            )
         try:
             payload = extract_premise_intake_json(str(repaired_raw))
         except ValueError as repair_exc:

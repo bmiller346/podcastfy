@@ -633,12 +633,15 @@ function derivePremiseFromPackage(packageValue) {
   const metadata = source.metadata && typeof source.metadata === "object" ? source.metadata : {};
   const plan = firstObject(source.series_plan, source.seriesPlan, source.series_shape, source.seriesShape);
   const bible = firstObject(source.story_bible, source.storyBible, source.bible);
-  const title = metadata.title || plan.series_title || plan.title || source.series_title || source.title || currentSeriesId();
+  const title = metadata.title || plan.series_title || plan.title || source.series_title || source.title || "";
   const promise = source.premise || bible.premise || plan.series_promise || plan.promise || "";
   const endgame = plan.endgame_direction || plan.endgame || "";
   const world = firstObject(source.world_register, source.worldRegister);
   const locations = packageArray(world.locations || []).map((item) => item.name).filter(Boolean).slice(0, 4);
   const characters = roleArrayFromPackage(source).map((role) => role.name).filter(Boolean).slice(0, 5);
+  if (!title && !promise && !endgame && locations.length === 0 && characters.length === 0) {
+    return "";
+  }
   const parts = [
     title ? `${title}.` : "",
     promise,
@@ -662,9 +665,17 @@ function fillPremiseFromAvailableContext() {
   const fromMarkdown = derivePremiseFromMessyContext(messyContextInput && messyContextInput.value);
   const premise = cleanValue(fromWorkspace) || cleanValue(fromMarkdown);
   if (!premise) return false;
+  if (cleanValue(fromWorkspace) && packageValue && packageValue.series_id) {
+    setActiveSeriesId(packageValue.series_id, { syncTask: true, syncPackage: true });
+  } else if (cleanValue(fromMarkdown)) {
+    const analysis = analyzeMessyContext(messyContextInput && messyContextInput.value);
+    if (analysis.series_id) {
+      setActiveSeriesId(analysis.series_id, { syncTask: true, syncPackage: true });
+    }
+  }
   taskForm.elements.premise.value = premise;
-  if (taskForm.elements.mode && taskForm.elements.mode.value === "premise_intake") {
-    taskForm.elements.mode.value = "chapter";
+  if (taskForm.elements.mode) {
+    taskForm.elements.mode.value = "premise_intake";
   }
   if (taskForm.elements.render_audio) taskForm.elements.render_audio.checked = false;
   updateTaskPreview({ syncSeries: true });
