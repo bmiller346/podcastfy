@@ -253,7 +253,18 @@ def test_run_premise_intake_repairs_sparse_payload_before_saving(tmp_path):
             "series_promise": "Generic LitRPG challenges.",
         },
         "story_bible": {"characters": {}},
-        "world_register": {"locations": [], "rules": [], "entity_ecology": []},
+        "world_register": {
+            "locations": [{"name": "Sophie II", "detail": "The boat."}],
+            "rules": [],
+            "entity_ecology": [],
+        },
+        "book_outlines": {
+            "1": [
+                {"chapter": 1, "title": "A", "premise": "A"},
+                {"chapter": 2, "title": "B", "premise": "B"},
+                {"chapter": 3, "title": "C", "premise": "C"},
+            ]
+        },
     }
     llm = SequencePremiseLLM([sparse_payload, _payload()])
 
@@ -271,10 +282,7 @@ def test_run_premise_intake_repairs_sparse_payload_before_saving(tmp_path):
         series_title="The Knotty Buoy",
     )
 
-    assert [call["stage"] for call in llm.calls] == [
-        "premise_intake",
-        "premise_intake_repair",
-    ]
+    assert [call["stage"] for call in llm.calls] == ["premise_intake", "premise_intake_repair"]
     assert "too sparse or generic" in llm.calls[1]["prompt"]
     assert any(path.endswith("world_register.json") for path in result.written_files)
     assert load_world_register(tmp_path, "knotty-buoy").locations[0].name == "The Knotty Buoy"
@@ -311,10 +319,7 @@ def test_run_premise_intake_salvages_sparse_output_after_repair_failure(tmp_path
         series_title="The Knotty Buoy",
     )
 
-    assert [call["stage"] for call in llm.calls] == [
-        "premise_intake",
-        "premise_intake_repair",
-    ]
+    assert [call["stage"] for call in llm.calls] == ["premise_intake"]
     assert any(path.endswith("story_bible.json") for path in result.written_files)
     assert any(path.endswith("world_register.json") for path in result.written_files)
     bible = load_story_bible(tmp_path, "the-knotty-buoy")
@@ -327,6 +332,7 @@ def test_run_premise_intake_salvages_sparse_output_after_repair_failure(tmp_path
     assert any(entity.entity == "OSHA Wraiths" for entity in world.entity_ecology)
     assert len(outline) == 30
     assert result.payload["_intake_metadata"]["fallback_used"] is True
+    assert "Skipped AI repair" in result.payload["_intake_metadata"]["fallback_reason"]
 
 
 def test_litrpg_task_supports_premise_intake_mode(tmp_path):

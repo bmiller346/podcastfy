@@ -228,6 +228,38 @@ def run_premise_intake(
     try:
         validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     except ValueError as exc:
+        if is_obvious_empty_intake_shell(payload, premise=premise, chapters_per_book=chapters_per_book):
+            payload = repair_sparse_premise_intake_payload(
+                payload,
+                premise=premise,
+                series_id=series_id,
+                target_books=target_books,
+                chapters_per_book=chapters_per_book,
+                book_length_mode=book_length_mode,
+                arc_style=arc_style,
+                series_title=series_title,
+                series_promise=series_promise,
+                endgame_direction=endgame_direction,
+                power_curve=power_curve,
+                fallback_reason=f"Skipped AI repair for empty intake shell: {exc}",
+            )
+            validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
+            return save_premise_intake_payload(
+                storage_dir=storage_dir,
+                series_id=series_id,
+                payload=payload,
+                merge_existing=merge_existing,
+                fallback_shape={
+                    "target_books": target_books,
+                    "book_length_mode": book_length_mode,
+                    "chapters_per_book": chapters_per_book,
+                    "arc_style": arc_style,
+                    "series_title": series_title,
+                    "series_promise": series_promise,
+                    "endgame_direction": endgame_direction,
+                    "power_curve": power_curve,
+                },
+            )
         repair_prompt = build_premise_intake_repair_prompt(
             premise=premise,
             series_id=series_id,
@@ -252,6 +284,7 @@ def run_premise_intake(
                 series_promise=series_promise,
                 endgame_direction=endgame_direction,
                 power_curve=power_curve,
+                fallback_reason="AI premise intake remained sparse after repair pass.",
             )
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     return save_premise_intake_payload(
@@ -285,6 +318,7 @@ def repair_sparse_premise_intake_payload(
     series_promise: str = "",
     endgame_direction: str = "",
     power_curve: str = "logarithmic",
+    fallback_reason: str = "AI premise intake remained sparse after repair pass.",
 ) -> dict[str, Any]:
     """Deterministically supplement sparse AI intake output from source text.
 
@@ -310,9 +344,39 @@ def repair_sparse_premise_intake_payload(
         repaired[key] = _merge_sparse_value(repaired.get(key), value)
     repaired["_intake_metadata"] = {
         "fallback_used": True,
-        "fallback_reason": "AI premise intake remained sparse after repair pass.",
+        "fallback_reason": fallback_reason,
     }
     return repaired
+
+
+def is_obvious_empty_intake_shell(
+    payload: Mapping[str, Any],
+    *,
+    premise: str,
+    chapters_per_book: int,
+) -> bool:
+    """Return true when a payload has so little content that repair is wasteful."""
+
+    if len(str(premise or "")) < 2000:
+        return False
+    story_bible = _mapping(payload.get("story_bible"))
+    world_register = _mapping(payload.get("world_register"))
+    character_count = len(_mapping(story_bible.get("characters")))
+    world_count = sum(
+        len(_list(world_register.get(key)))
+        for key in ("locations", "rules", "entity_ecology", "economy_anchors")
+    )
+    outline_count = _outline_chapter_count(payload.get("book_outlines"))
+    useful_sections = sum(
+        1
+        for value in (character_count, world_count, outline_count)
+        if value > 0
+    )
+    return useful_sections == 0 or (
+        character_count == 0
+        and world_count == 0
+        and outline_count < max(1, min(3, chapters_per_book))
+    )
 
 
 def build_deterministic_premise_intake_payload(
