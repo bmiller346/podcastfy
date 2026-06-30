@@ -309,6 +309,32 @@ h2 {
   margin: 0 0 14px;
 }
 
+.intake-result {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 14px;
+  border: 1px solid #d7c48d;
+  border-radius: 6px;
+  background: #fffaf0;
+  padding: 10px;
+  color: #526170;
+  font-size: 13px;
+}
+
+.intake-result strong {
+  color: #26323d;
+}
+
+.intake-result[data-state="succeeded"] {
+  border-color: #9bc4a5;
+  background: #f2fbf4;
+}
+
+.intake-result[data-state="failed"] {
+  border-color: #dbaaa3;
+  background: #fff6f4;
+}
+
 .story-file-bar {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.85fr);

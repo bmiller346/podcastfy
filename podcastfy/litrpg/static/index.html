@@ -63,21 +63,25 @@
 
       <section class="panel messy-intake-panel">
         <div class="section-heading">
-          <h2>1. Story Workshop</h2>
-          <p>Start here: load the markdown seed, edit it like a readable story brief, save it, then queue intake to derive JSON artifacts.</p>
+          <h2>1. Premise Intake</h2>
+          <p>Start here: paste or load the full story dump, save the markdown seed, then run intake once to create the structured series workspace.</p>
         </div>
         <ol class="primary-flow">
           <li><strong>Load</strong> `usage/litrpg_messy_context_seed.md`.</li>
           <li><strong>Edit or chat</strong> until the markdown says what you mean.</li>
           <li><strong>Save</strong> the markdown so you can close and return later.</li>
-          <li><strong>Queue Intake Agent</strong> to generate the structured series workspace.</li>
+          <li><strong>Run Premise Intake</strong> to generate the structured series workspace.</li>
         </ol>
         <div class="actions intake-actions workshop-actions">
           <button id="load-story-seed" type="button">Load Seed Markdown</button>
           <button id="save-story-seed" type="button">Save Seed Markdown</button>
-          <button id="queue-premise-intake" type="button">Queue Intake Agent</button>
+          <button id="queue-premise-intake" type="button">Run Premise Intake</button>
           <button id="copy-mcp-context" type="button">Copy MCP Payload</button>
           <button id="apply-messy-context" type="button">Optional Rough Autofill</button>
+        </div>
+        <div id="premise-intake-result" class="intake-result" aria-live="polite">
+          <strong>Premise intake has not run in this session.</strong>
+          <span>Run Premise Intake after the markdown seed is saved. The short Premise field below is only an override/debug summary.</span>
         </div>
         <div class="story-file-bar">
           <label>
@@ -122,10 +126,10 @@
                 <button id="markdown-full" type="button">Full</button>
               </span>
             </span>
-            <textarea id="messy-context" rows="18" spellcheck="true" placeholder="Paste or edit the full story seed markdown here. The intake agent will read this raw text directly; you do not need to split it into fields first."></textarea>
+            <textarea id="messy-context" rows="18" spellcheck="true" placeholder="Paste or edit the full story seed markdown here. Premise intake reads this raw text directly; you do not need to split it into fields first."></textarea>
           </label>
         </div>
-        <p class="field-note">This markdown is the readable source of truth. Queue Intake Agent derives structured JSON/artifacts from it; Optional Rough Autofill only guesses title, series id, and a short premise in the browser.</p>
+        <p class="field-note">This markdown is the readable source of truth. Run Premise Intake derives structured JSON/artifacts from it; Optional Rough Autofill only guesses title, series id, and a short premise in the browser.</p>
         <div id="messy-context-summary" class="diagnostics-grid" aria-live="polite"></div>
       </section>
 
@@ -175,7 +179,7 @@
             <button id="new-series-package" type="button">New Package Draft</button>
           </div>
         </div>
-        <p class="field-note">New Package Draft is only for manual package editing. The normal path is Story Workshop -> Queue Intake Agent -> Load Series.</p>
+        <p class="field-note">New Package Draft is only for manual package editing. The normal path is Premise Intake -> Run Premise Intake -> Load Series.</p>
         <div id="series-status" class="diagnostics-grid" aria-live="polite"></div>
         <div id="robust-state-panel" class="robust-state-panel" aria-live="polite">
           <div class="robust-state-header">
@@ -204,8 +208,8 @@
             <input name="series_id" type="text" placeholder="paper-cuts" required>
           </label>
           <label class="wide">
-            Premise
-            <textarea name="premise" rows="3" placeholder="A village baker solves murders through pastry gossip, or a retired sailor gets trapped in a hostile game-show dungeon." required></textarea>
+            Short premise override
+            <textarea name="premise" rows="3" placeholder="Optional short summary for manual/debug tasks. For full intake, use the Premise Intake markdown box above." required></textarea>
           </label>
           <label>
             Mode

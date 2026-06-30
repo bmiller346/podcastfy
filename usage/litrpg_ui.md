@@ -32,10 +32,10 @@ builder and not New Package Draft. The first-pass test flow is:
 1. Load `usage/litrpg_messy_context_seed.md`.
 2. Edit the markdown or add a revision note.
 3. Save the seed markdown.
-4. Queue Intake Agent.
+4. Run Premise Intake.
 5. Use **3. Series Workspace** only after intake succeeds, to load or inspect the generated series artifacts.
 
-The task builder is an advanced/manual surface for overrides, chapter runs, and debugging.
+The task builder is an advanced/manual surface for overrides, chapter runs, and debugging. Its short premise box is not the main intake surface.
 
 The Create Task panel is meant for local experimentation without hand-editing a task file first. It covers:
 
@@ -48,9 +48,9 @@ The Create Task panel is meant for local experimentation without hand-editing a 
 
 The browser builds a JSON payload that matches the LitRPG task schema and submits it to the local jobs API. The preview box shows the exact task object before it is queued.
 
-## Messy Context Intake
+## Premise Intake
 
-Use the Story Workshop as the readable story seed workspace. It can load and save `usage/litrpg_messy_context_seed.md`, so your normal editing loop can be a markdown conversation with the project instead of a scavenger hunt through scattered story fields.
+Use the Premise Intake panel as the readable story seed workspace. It can load and save `usage/litrpg_messy_context_seed.md`, so your normal editing loop can be a markdown conversation with the project instead of a scavenger hunt through scattered story fields.
 
 The workshop is split into two surfaces:
 
@@ -60,11 +60,11 @@ The workshop is split into two surfaces:
 
 - **Load Seed Markdown** loads the current seed document into the editor.
 - **Save Seed Markdown** writes the editor text back to the current Story file path.
-- **Queue Intake Agent** submits the `premise_intake` job with the full raw dump as `source_text`. This is the primary path; it does not require splitting the notes into fields first.
+- **Run Premise Intake** submits the `premise_intake` job with the full raw dump as `source_text`. This is the primary path; it does not require splitting the notes into fields first.
 - **Copy MCP Payload** copies a `bootstrap_from_premise` tool payload for MCP clients or agent shells. Use this when another agent is driving the MCP server directly instead of clicking through the local UI.
 - **Optional Rough Autofill** infers a title/series id and short visible premise in the browser. It is only a convenience guess for editing the form by hand, not the authoritative intake pass.
 
-In normal use, you do not paste messy notes into MCP by hand. MCP is the tool layer agents call. The local UI is the human-friendly editing surface, and both paths end up calling the same premise-intake code. The scattered task fields are still available for explicit overrides and debugging, but they are downstream of the markdown source.
+In normal use, you do not paste messy notes into MCP by hand. MCP is the tool layer agents call. The local UI is the human-friendly editing surface, and both paths end up calling the same premise-intake code. The scattered task fields are still available for explicit overrides and debugging, but they are downstream of the markdown source. After intake succeeds, use **Load Series** in the Series Workspace to inspect the generated story bible, outline, voice cards, continuity, and ledgers.
 
 The markdown seed is intentionally stored in the repo under `usage/` so you can
 close the browser, restart the server, reload the seed, and keep editing. The

@@ -64,6 +64,7 @@ const applyMessyContextButton = document.querySelector("#apply-messy-context");
 const queuePremiseIntakeButton = document.querySelector("#queue-premise-intake");
 const copyMcpContextButton = document.querySelector("#copy-mcp-context");
 const messyContextSummary = document.querySelector("#messy-context-summary");
+const premiseIntakeResult = document.querySelector("#premise-intake-result");
 const defaultStorySeedPath = "usage/litrpg_messy_context_seed.md";
 
 let latestSettings = null;
@@ -761,7 +762,7 @@ function applyMessyContextToStoryFields({ queueMode = false } = {}) {
   updateTaskPreview({ syncSeries: true });
   syncPackageOutputFromRoleEditor();
   taskOutput.textContent = queueMode
-    ? "Messy context applied. Intake agent is ready to queue."
+    ? "Story seed applied. Premise intake is ready to run."
     : "Rough autofill complete. Review the guessed fields before using them.";
   return analysis;
 }
@@ -1007,6 +1008,9 @@ async function submitTaskPayload(payload, { statusText = "Queueing generation...
     });
     const job = await pollJob(response.job.job_id);
     latestJob = job;
+    if (payload && payload.mode === "premise_intake") {
+      renderPremiseIntakeResult(job);
+    }
     updateDiagnostics();
     taskOutput.textContent = JSON.stringify(job, null, 2);
     await refreshAll();
@@ -1016,6 +1020,27 @@ async function submitTaskPayload(payload, { statusText = "Queueing generation...
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+function renderPremiseIntakeResult(job) {
+  if (!premiseIntakeResult) return;
+  const status = job && (job.error ? "failed" : job.status || "unknown");
+  const result = job && job.result && typeof job.result === "object" ? job.result : {};
+  const summary = job && job.task_summary && typeof job.task_summary === "object" ? job.task_summary : {};
+  const written = Array.isArray(result.written_files) ? result.written_files : [];
+  const artifacts = Array.isArray(result.artifact_paths) ? result.artifact_paths : [];
+  const seriesId = result.series_id || summary.series_id || currentSeriesId() || "local-series";
+  const count = written.length + artifacts.length;
+  premiseIntakeResult.dataset.state = status;
+  if (status === "failed") {
+    premiseIntakeResult.innerHTML = `<strong>Premise intake failed.</strong><span>${escapeHtml(job.error || "Check the generation console for details.")}</span>`;
+    return;
+  }
+  if (status !== "succeeded") {
+    premiseIntakeResult.innerHTML = `<strong>Premise intake ${escapeHtml(status)}.</strong><span>Watch Intake Status for the current job.</span>`;
+    return;
+  }
+  premiseIntakeResult.innerHTML = `<strong>Premise intake complete for ${escapeHtml(seriesId)}.</strong><span>${escapeHtml(String(count))} artifact path${count === 1 ? "" : "s"} reported. Use Series Workspace -> Load Series to inspect the generated story bible, outline, voice cards, continuity, and ledgers.</span>`;
 }
 
 async function loadRobustState({ quiet = false } = {}) {
@@ -2513,11 +2538,15 @@ if (queuePremiseIntakeButton) {
     try {
       const payload = buildMessyContextIntakeTask();
       await submitTaskPayload(payload, {
-        statusText: "Queueing intake agent with raw messy context...",
+        statusText: "Running premise intake from the story seed markdown...",
         button: queuePremiseIntakeButton,
       });
     } catch (error) {
       taskOutput.textContent = error.message;
+      if (premiseIntakeResult) {
+        premiseIntakeResult.dataset.state = "failed";
+        premiseIntakeResult.innerHTML = `<strong>Premise intake did not start.</strong><span>${escapeHtml(error.message)}</span>`;
+      }
     }
   });
 }

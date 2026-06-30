@@ -116,13 +116,14 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="apply-messy-context"' in html
     assert 'id="queue-premise-intake"' in html
     assert 'id="copy-mcp-context"' in html
+    assert 'id="premise-intake-result"' in html
     assert 'id="messy-context-summary"' in html
-    assert "1. Story Workshop" in html
+    assert "1. Premise Intake" in html
     assert "2. Intake Status" in html
     assert "3. Series Workspace" in html
     assert "Advanced Task Builder" in html
     assert "Auto-route cloud model by intent" in html
-    assert "Story Workshop -> Queue Intake Agent -> Load Series" in html
+    assert "Premise Intake -> Run Premise Intake -> Load Series" in html
     assert "Story file" in html
     assert "usage/litrpg_messy_context_seed.md" in html
     assert "Revision Chat" in html
@@ -131,10 +132,13 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "Discard" in html
     assert "Load Seed Markdown" in html
     assert "Save Seed Markdown" in html
-    assert "Queue Intake Agent" in html
+    assert "Run Premise Intake" in html
     assert "Copy MCP Payload" in html
     assert "Optional Rough Autofill" in html
     assert "readable source of truth" in html
+    assert "Premise intake has not run in this session." in html
+    assert "Short premise override" in html
+    assert "only an override/debug summary" in html
     assert "readable source of truth" in html
     assert 'id="task-form"' in html
     assert "Leave blank to keep existing key" in html
