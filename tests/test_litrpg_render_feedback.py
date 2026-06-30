@@ -259,6 +259,39 @@ def test_task_config_passes_render_loop_and_writes_result(tmp_path):
     assert written["render_feedback"][0]["verdict"] == "directive_invalid"
 
 
+def test_task_config_accepts_named_performance_directive_map(tmp_path):
+    task_path = tmp_path / "task.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "series_id": "paper-cuts",
+                "premise": "A clerk tests audio.",
+                "storage_dir": "library",
+                "render_audio": True,
+                "outline": "Outline",
+                "script": "<NARRATOR>Begin.</NARRATOR>",
+                "render_loop": {"enabled": True},
+                "performance_directives": {
+                    "default": {"intensity": 0.55, "pace": "steady"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    from podcastfy.litrpg.task import run_litrpg_task
+
+    tts = FakeTTS()
+    result = run_litrpg_task(task_path, tts=tts)
+
+    assert len(tts.calls) == 1
+    assert result["render_feedback"][0]["directive"] == {
+        "id": "default",
+        "intensity": 0.55,
+        "pace": "steady",
+    }
+
+
 def test_build_retry_directive_increases_intensity_for_valley_risk():
     feedback = _feedback(tts_valley_risk=True, score=0.2)
 

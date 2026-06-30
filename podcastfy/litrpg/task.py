@@ -256,6 +256,14 @@ def _performance_directives_from_task(task: Mapping[str, Any]) -> list[dict[str,
     if isinstance(value, list):
         return [dict(item) for item in value if isinstance(item, Mapping)]
     if isinstance(value, Mapping):
+        named = []
+        for name, directive in value.items():
+            if isinstance(directive, Mapping):
+                item = dict(directive)
+                item.setdefault("id", str(name))
+                named.append(item)
+        if named:
+            return named
         return [dict(value)]
     return []
 
