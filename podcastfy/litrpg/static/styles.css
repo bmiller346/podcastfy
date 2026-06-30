@@ -1,8 +1,36 @@
 :root {
   color-scheme: light;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #f6f7f9;
-  color: #1d252c;
+  --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --color-page: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #fbfcfd;
+  --color-text: #1d252c;
+  --color-heading: #26323d;
+  --color-muted: #66717d;
+  --color-subtle: #495560;
+  --color-border: #d7dce2;
+  --color-border-strong: #c6cdd5;
+  --color-accent: #2569a8;
+  --color-accent-border: #1e4f82;
+  --color-danger: #b85245;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --space-1: 6px;
+  --space-2: 8px;
+  --space-3: 10px;
+  --space-4: 12px;
+  --space-5: 14px;
+  --space-6: 16px;
+  --space-7: 18px;
+  --type-xs: 12px;
+  --type-sm: 13px;
+  --type-md: 14px;
+  --type-lg: 18px;
+  --type-xl: 28px;
+  font-family: var(--font-body);
+  background: var(--color-page);
+  color: var(--color-text);
 }
 
 * {
@@ -21,10 +49,10 @@ textarea {
 }
 
 button {
-  border: 1px solid #1e4f82;
-  border-radius: 6px;
-  background: #2569a8;
-  color: #fff;
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-surface);
   cursor: pointer;
   min-height: 38px;
   padding: 0 14px;
@@ -82,10 +110,10 @@ select,
 textarea {
   width: 100%;
   min-height: 38px;
-  border: 1px solid #c6cdd5;
-  border-radius: 6px;
-  background: #fff;
-  color: #1d252c;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   padding: 7px 9px;
 }
 
@@ -115,13 +143,13 @@ p {
 }
 
 h1 {
-  font-size: 28px;
+  font-size: var(--type-xl);
   font-weight: 700;
 }
 
 h2 {
   margin-bottom: 14px;
-  font-size: 18px;
+  font-size: var(--type-lg);
 }
 
 .section-heading {
@@ -137,20 +165,20 @@ h2 {
 }
 
 .section-heading p {
-  color: #66717d;
-  font-size: 13px;
+  color: var(--color-muted);
+  font-size: var(--type-sm);
 }
 
 .topbar p {
   margin-top: 6px;
-  color: #5d6874;
+  color: var(--color-muted);
 }
 
 .panel {
   margin-top: 16px;
-  border: 1px solid #d7dce2;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
   padding: 18px;
 }
 
@@ -160,14 +188,14 @@ h2 {
   justify-content: space-between;
   gap: 12px;
   cursor: pointer;
-  color: #26323d;
-  font-size: 18px;
+  color: var(--color-heading);
+  font-size: var(--type-lg);
   font-weight: 700;
 }
 
 .settings-panel summary small {
-  color: #66717d;
-  font-size: 13px;
+  color: var(--color-muted);
+  font-size: var(--type-sm);
   font-weight: 400;
 }
 

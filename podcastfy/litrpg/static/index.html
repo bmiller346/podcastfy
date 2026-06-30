@@ -40,19 +40,47 @@
           </label>
           <label>
             Default generation provider
-            <input name="default_generation_provider" type="text" placeholder="hybrid">
+            <select name="default_generation_provider">
+              <option value="">Use app default</option>
+              <option value="hybrid">hybrid auto</option>
+              <option value="gemini">gemini</option>
+              <option value="openai">openai</option>
+              <option value="ollama">ollama</option>
+            </select>
           </label>
           <label>
             Default TTS provider
-            <input name="default_tts_provider" type="text" placeholder="edge">
+            <select name="default_tts_provider">
+              <option value="">Use app default</option>
+              <option value="edge">edge</option>
+              <option value="openai">openai</option>
+              <option value="elevenlabs">elevenlabs</option>
+              <option value="geminiapi">geminiapi</option>
+              <option value="geminimulti">geminimulti</option>
+            </select>
           </label>
           <label>
             Default model
-            <input name="default_model" type="text" placeholder="gpt-5.4">
+            <select name="default_model">
+              <option value="">Use provider default model</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+              <option value="gpt-5.4">GPT-5.4</option>
+              <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+              <option value="litrpg-writer">litrpg-writer</option>
+              <option value="hermes3:latest">hermes3:latest</option>
+            </select>
           </label>
           <label>
             Default TTS model
-            <input name="default_tts_model" type="text" placeholder="tts model">
+            <select name="default_tts_model">
+              <option value="">Use provider default model</option>
+              <option value="edge">Edge default voice</option>
+              <option value="gpt-4o-mini-tts">GPT-4o Mini TTS</option>
+              <option value="eleven_multilingual_v2">Eleven Multilingual v2</option>
+              <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash Preview TTS</option>
+              <option value="en-US-Studio-MultiSpeaker">Google Studio MultiSpeaker</option>
+            </select>
           </label>
           <div class="actions">
             <button type="submit">Save Settings</button>
@@ -479,6 +507,6 @@
         <div id="library" class="library"></div>
       </section>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js" defer></script>
   </body>
 </html>

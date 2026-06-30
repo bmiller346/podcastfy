@@ -194,7 +194,7 @@ function renderSettings(data) {
   const defaults = data.defaults || {};
   for (const [key, value] of Object.entries(defaults)) {
     const field = settingsForm.elements[key];
-    if (field) field.value = value || "";
+    setSettingsFieldValue(field, value || "");
   }
 
   const providers = Object.entries(data.api_keys || {});
@@ -204,6 +204,17 @@ function renderSettings(data) {
       return `<div class="status-item"><strong>${provider}</strong>: ${source}</div>`;
     })
     .join("");
+}
+
+function setSettingsFieldValue(field, value) {
+  if (!field) return;
+  if (field.tagName === "SELECT" && value) {
+    const hasOption = Array.from(field.options).some((option) => option.value === value);
+    if (!hasOption) {
+      field.add(new Option(`Saved: ${value}`, value));
+    }
+  }
+  field.value = value || "";
 }
 
 function renderTasks(data) {
@@ -2665,11 +2676,17 @@ async function runQuickAction(action) {
   }
 }
 
-refreshAdvancedTaskDropdowns();
+function initializeApp() {
+  refreshAdvancedTaskDropdowns();
+  refreshAll().catch((error) => {
+    taskOutput.textContent = error.message;
+  });
+  updateTaskPreview({ syncSeries: true });
+  updateDiagnostics();
+}
 
-refreshAll().catch((error) => {
-  taskOutput.textContent = error.message;
-});
-
-updateTaskPreview({ syncSeries: true });
-updateDiagnostics();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeApp, { once: true });
+} else {
+  initializeApp();
+}

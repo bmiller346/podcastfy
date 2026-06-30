@@ -125,6 +125,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "Auto-route cloud model by intent" in html
     assert "Premise Intake -> Run Premise Intake -> Load Series" in html
     assert "Story file" in html
+    assert '<script src="/static/app.js" defer></script>' in html
     assert "usage/litrpg_messy_context_seed.md" in html
     assert "Revision Chat" in html
     assert "Propose Markdown Change" in html
@@ -142,6 +143,16 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "readable source of truth" in html
     assert 'id="task-form"' in html
     assert "Leave blank to keep existing key" in html
+    assert '<select name="default_generation_provider">' in html
+    assert '<select name="default_tts_provider">' in html
+    assert '<select name="default_model">' in html
+    assert '<select name="default_tts_model">' in html
+    assert '<input name="default_generation_provider" type="text"' not in html
+    assert '<input name="default_tts_provider" type="text"' not in html
+    assert '<input name="default_model" type="text"' not in html
+    assert '<input name="default_tts_model" type="text"' not in html
+    assert '<option value="hybrid">hybrid auto</option>' in html
+    assert '<option value="edge">edge</option>' in html
     assert 'name="series_id"' in html
     assert 'name="premise"' in html
     assert 'name="mode"' in html

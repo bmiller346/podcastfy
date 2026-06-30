@@ -366,6 +366,49 @@ def test_run_premise_intake_salvages_sparse_output_after_repair_failure(tmp_path
     assert "Skipped AI repair" in result.payload["_intake_metadata"]["fallback_reason"]
 
 
+def test_run_premise_intake_salvages_nested_sparse_story_bible_after_repair(tmp_path):
+    sparse_payload = {
+        "series_shape": {
+            "series_title": "The Knotty Buoy",
+            "series_promise": "Generic LitRPG challenges.",
+        },
+        "story_bible": {
+            "premise": "A generic ocean dungeon.",
+            "characters": {},
+        },
+        "world_register": {
+            "locations": [{"name": "Sophie II", "detail": "The boat."}],
+            "rules": [],
+            "entity_ecology": [],
+        },
+        "book_outlines": {
+            "1": [
+                {"chapter": 1, "title": "A", "premise": "A"},
+                {"chapter": 2, "title": "B", "premise": "B"},
+                {"chapter": 3, "title": "C", "premise": "C"},
+            ]
+        },
+    }
+    llm = SequencePremiseLLM([sparse_payload, sparse_payload])
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="the-knotty-buoy",
+        premise=_long_knotty_seed(),
+        llm=llm,
+        target_books=1,
+        chapters_per_book=30,
+        series_title="The Knotty Buoy",
+    )
+
+    bible = load_story_bible(tmp_path, "the-knotty-buoy")
+
+    assert [call["stage"] for call in llm.calls] == ["premise_intake", "premise_intake_repair"]
+    assert {"Edward Marsh", "Kelli Marsh", "Pedro"}.issubset(bible.characters)
+    assert result.payload["story_bible"]["premise"] == "A generic ocean dungeon."
+    assert result.payload["_intake_metadata"]["fallback_used"] is True
+
+
 def test_run_premise_intake_salvages_malformed_initial_json(tmp_path):
     llm = RawSequencePremiseLLM(['{"series_shape": {"series_title": "The Knotty Buoy",}}'])
 
