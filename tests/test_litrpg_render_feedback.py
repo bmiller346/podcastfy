@@ -7,7 +7,9 @@ from pathlib import Path
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.render_feedback import RenderFeedback
 from podcastfy.litrpg.render_feedback import build_retry_directive
+from podcastfy.litrpg.render_feedback import build_directive_revision_prompt
 from podcastfy.litrpg.render_feedback import directive_validation_to_dict
+from podcastfy.litrpg.render_feedback import parse_directive_revision
 from podcastfy.litrpg.render_feedback import render_feedback_to_dict
 from podcastfy.litrpg.render_feedback import score_rendered_audio
 from podcastfy.litrpg.render_feedback import validate_directive
@@ -194,6 +196,7 @@ def test_pipeline_with_render_loop_enabled_includes_feedback(tmp_path):
         "max_attempts": 3,
         "retry_below_score": 0.72,
         "retry_strategy": "none",
+        "llm_revision_enabled": False,
         "auto_retry_enabled": False,
     }
     assert result["render_feedback"][0]["segment_id"] == "paper-cuts_episode_001"
@@ -278,6 +281,53 @@ def test_build_retry_directive_reduces_long_pauses_for_silence_risk():
 
     assert directive["pause_before_ms"] == 800
     assert directive["pause_after_ms"] == 400
+
+
+def test_directive_revision_prompt_contains_feedback_constraints_and_history():
+    feedback = _feedback(score=0.31, verdict="needs_review")
+
+    prompt = build_directive_revision_prompt(
+        "Do not change this line.",
+        {"intensity": 0.4, "custom": "keep"},
+        feedback,
+        history=[{"attempt": 1, "score": 0.2}, {"attempt": 2, "score": 0.31}],
+        constraints={"provider": "edge"},
+    )
+
+    assert "Return valid JSON only" in prompt
+    assert "Do not change this line." in prompt
+    assert '"score": 0.31' in prompt
+    assert "do_not_change_segment_text" in prompt
+    assert "preserve_unknown_directive_keys_unless_unsafe" in prompt
+    assert '"attempt": 2' in prompt
+    assert '"provider": "edge"' in prompt
+
+
+def test_parse_directive_revision_accepts_plain_and_fenced_json():
+    plain = parse_directive_revision('{"directive":{"intensity":0.6},"reason":"quieter","risk_notes":["none"]}')
+    fenced = parse_directive_revision(
+        '```json\n{"directive":{"pause_after_ms":100},"reason":"trim pause"}\n```'
+    )
+
+    assert plain["directive"]["intensity"] == 0.6
+    assert plain["reason"] == "quieter"
+    assert fenced["directive"]["pause_after_ms"] == 100
+
+
+def test_parse_directive_revision_rejects_missing_or_non_dict_directive():
+    try:
+        parse_directive_revision('{"reason":"missing"}')
+    except ValueError as exc:
+        assert "requires a directive" in str(exc)
+    else:
+        raise AssertionError("missing directive should fail")
+
+    try:
+        parse_directive_revision('{"directive":["bad"]}')
+    except ValueError as exc:
+        assert "directive must be a JSON object" in str(exc)
+    else:
+        raise AssertionError("non-dict directive should fail")
 
 
 def _feedback(**overrides):

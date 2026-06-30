@@ -17,8 +17,10 @@ from podcastfy.litrpg.episode_store import EpisodeStore
 from podcastfy.litrpg.render_feedback import directive_invalid_feedback
 from podcastfy.litrpg.render_feedback import directive_validation_to_dict
 from podcastfy.litrpg.render_feedback import build_retry_directive
+from podcastfy.litrpg.render_feedback import build_directive_revision_prompt
 from podcastfy.litrpg.render_feedback import render_feedback_to_dict
 from podcastfy.litrpg.render_feedback import render_feedback_effect_metadata
+from podcastfy.litrpg.render_feedback import parse_directive_revision
 from podcastfy.litrpg.render_feedback import score_rendered_audio
 from podcastfy.litrpg.render_feedback import validate_directive
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
@@ -118,6 +120,7 @@ def generate_litrpg_audio_episode(
                 provider=provider,
                 model=provider_model,
                 directives=performance_directives or [],
+                llm=llm,
             )
 
     engine = LitRPGEngine(
@@ -177,12 +180,14 @@ class FeedbackRenderer:
         provider: str,
         model: str,
         directives: list[dict[str, Any]],
+        llm: Any | None = None,
     ) -> None:
         self.inner = inner
         self.render_loop = dict(render_loop)
         self.provider = provider
         self.model = model
         self.directives = directives
+        self.llm = llm
 
     def render_episode(self, bundle: Mapping[str, Any]) -> dict[str, Any]:
         segment_id = _segment_id_from_bundle(bundle)
@@ -270,12 +275,24 @@ class FeedbackRenderer:
                     break
                 if not retry_enabled or attempt >= max_attempts:
                     break
-                next_directives = _next_retry_directives(
+                next_directives, revision = self._next_retry_directives(
                     current_directives,
                     feedback_payload,
                     strategy=strategy,
                     attempt=attempt + 1,
+                    bundle=bundle,
+                    history=attempt_records,
                 )
+                if revision is not None:
+                    feedback_payload["revision"] = revision
+                    if revision.get("parse_error") or (
+                        isinstance(revision.get("validation"), Mapping)
+                        and not revision["validation"].get("valid", True)
+                    ):
+                        feedback_payload.setdefault("notes", []).append(
+                            "retry stopped: LLM directive revision failed"
+                        )
+                        break
                 validations = [
                     validate_directive(directive, provider=self.provider)
                     for directive in next_directives
@@ -364,19 +381,102 @@ class FeedbackRenderer:
         path = Path(original_output_filename)
         self.inner.output_filename = f"{path.stem}_attempt_{attempt:03d}{path.suffix}"
 
+    def _next_retry_directives(
+        self,
+        directives: list[dict[str, Any]],
+        feedback_payload: Mapping[str, Any],
+        *,
+        strategy: str,
+        attempt: int,
+        bundle: Mapping[str, Any],
+        history: list[Mapping[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        if strategy != "llm_revision":
+            return (
+                _next_retry_directives(
+                    directives,
+                    feedback_payload,
+                    strategy=strategy,
+                    attempt=attempt,
+                ),
+                None,
+            )
+        if not bool(self.render_loop.get("llm_revision_enabled")):
+            return (
+                _next_retry_directives(
+                    directives,
+                    feedback_payload,
+                    strategy="deterministic_adjustment",
+                    attempt=attempt,
+                ),
+                {
+                    "strategy": "llm_revision",
+                    "reason": "llm_revision_enabled is false; used deterministic_adjustment fallback",
+                    "risk_notes": ["LLM revision disabled by config"],
+                    "parse_error": None,
+                    "validation": directive_validation_to_dict(validate_directive({})),
+                },
+            )
+        directive = dict(directives[0]) if directives else {}
+        feedback = _feedback_from_payload(feedback_payload)
+        prompt = build_directive_revision_prompt(
+            str(bundle.get("script") or ""),
+            directive,
+            feedback,
+            history=history[-3:],
+            constraints={
+                "provider": self.provider,
+                "known_validator": "validate_directive",
+            },
+        )
+        revision = {
+            "strategy": "llm_revision",
+            "reason": "",
+            "risk_notes": [],
+            "parse_error": None,
+            "validation": {},
+        }
+        try:
+            raw = _generate_directive_revision(self.llm, prompt)
+            parsed = parse_directive_revision(raw)
+        except Exception as exc:
+            revision["parse_error"] = str(exc)
+            revision["validation"] = directive_validation_to_dict(validate_directive({}))
+            return [directive], revision
+        revised = dict(parsed["directive"])
+        validation = validate_directive(revised, provider=self.provider)
+        revision.update(
+            {
+                "reason": parsed.get("reason", ""),
+                "risk_notes": list(parsed.get("risk_notes") or []),
+                "validation": directive_validation_to_dict(validation),
+            }
+        )
+        if not validation.valid:
+            return [directive], revision
+        if len(directives) <= 1:
+            return [revised], revision
+        return [revised, *[dict(item) for item in directives[1:]]], revision
+
 
 def _render_loop_config(value: Mapping[str, Any] | None) -> dict[str, Any]:
     config = dict(value or {})
     enabled = bool(config.get("enabled"))
     strategy = str(config.get("retry_strategy") or "none")
-    if strategy not in {"none", "same_directive", "deterministic_adjustment"}:
+    if strategy not in {"none", "same_directive", "deterministic_adjustment", "llm_revision"}:
         strategy = "none"
+    effective_strategy = (
+        "deterministic_adjustment"
+        if strategy == "llm_revision" and not bool(config.get("llm_revision_enabled"))
+        else strategy
+    )
     return {
         "enabled": enabled,
         "max_attempts": int(config.get("max_attempts") or 1),
         "retry_below_score": float(config.get("retry_below_score") or 0.72),
         "retry_strategy": strategy,
-        "auto_retry_enabled": bool(enabled and strategy != "none" and int(config.get("max_attempts") or 1) > 1),
+        "llm_revision_enabled": bool(config.get("llm_revision_enabled")),
+        "auto_retry_enabled": bool(enabled and effective_strategy != "none" and int(config.get("max_attempts") or 1) > 1),
     }
 
 
@@ -426,6 +526,21 @@ def _feedback_from_payload(payload: Mapping[str, Any]) -> Any:
         human_review_required=bool(payload.get("human_review_required")),
         notes=list(payload.get("notes") or []),
     )
+
+
+def _generate_directive_revision(llm: Any, prompt: str) -> str:
+    if llm is None:
+        raise ValueError("llm_revision strategy requires an llm")
+    if hasattr(llm, "generate"):
+        return str(llm.generate(prompt=prompt, stage="render_directive_revision"))
+    if hasattr(llm, "generate_text"):
+        return str(llm.generate_text(prompt=prompt, stage="render_directive_revision"))
+    if callable(llm):
+        try:
+            return str(llm(prompt=prompt, stage="render_directive_revision"))
+        except TypeError:
+            return str(llm(prompt))
+    raise TypeError("llm must be callable or expose generate/generate_text")
 
 
 def _selected_attempt_index(records: list[Mapping[str, Any]]) -> int:

@@ -6,8 +6,9 @@ import audioop
 import math
 import wave
 from dataclasses import asdict, dataclass, field
+import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 
 KNOWN_PACES = {
@@ -20,6 +21,7 @@ KNOWN_PACES = {
     "neutral",
     "breathless",
     "deadpan",
+    "steady",
 }
 KNOWN_REGISTERS = {
     "bureaucratic_default",
@@ -281,6 +283,71 @@ def build_retry_directive(
     adjusted["retry_attempt"] = int(attempt)
     adjusted["retry_source"] = "deterministic_adjustment"
     return adjusted
+
+
+def build_directive_revision_prompt(
+    segment_text: str,
+    directive: Mapping[str, Any],
+    feedback: RenderFeedback,
+    history: Sequence[Mapping[str, Any]] = (),
+    constraints: Mapping[str, Any] | None = None,
+) -> str:
+    """Build a JSON-only prompt for feedback-driven directive revision."""
+
+    recent_history = list(history)[-3:]
+    payload = {
+        "task": "Revise only the audio performance directive for another TTS render attempt.",
+        "segment_text": str(segment_text or ""),
+        "current_directive": dict(directive or {}),
+        "feedback": render_feedback_to_dict(feedback),
+        "attempt_history": recent_history,
+        "hard_constraints": {
+            "do_not_change_segment_text": True,
+            "do_not_invent_story_facts": True,
+            "preserve_unknown_directive_keys_unless_unsafe": True,
+            "output_valid_json_only": True,
+            "revised_directive_must_pass_validator": True,
+            **dict(constraints or {}),
+        },
+        "required_json_shape": {
+            "directive": {},
+            "reason": "",
+            "risk_notes": [],
+        },
+    }
+    return (
+        "Return valid JSON only. Do not include markdown, prose, or code fences.\n"
+        + json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True)
+    )
+
+
+def parse_directive_revision(raw: str) -> dict[str, Any]:
+    """Parse a directive revision response, tolerating fenced JSON."""
+
+    text = str(raw or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"directive revision must be valid JSON: {exc.msg}") from exc
+    if not isinstance(payload, Mapping):
+        raise ValueError("directive revision must be a JSON object")
+    if "directive" not in payload:
+        raise ValueError("directive revision requires a directive object")
+    directive = payload.get("directive")
+    if not isinstance(directive, Mapping):
+        raise ValueError("directive revision directive must be a JSON object")
+    return {
+        "directive": dict(directive),
+        "reason": str(payload.get("reason") or ""),
+        "risk_notes": [str(item) for item in payload.get("risk_notes") or []],
+    }
 
 
 def render_feedback_effect_metadata(payload: Any) -> dict[str, Any]:

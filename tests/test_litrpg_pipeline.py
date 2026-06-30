@@ -24,6 +24,21 @@ class FakeLLM:
         )
 
 
+class RevisionLLM(FakeLLM):
+    def __init__(self, revisions):
+        super().__init__()
+        self.revisions = list(revisions)
+        self.revision_prompts = []
+
+    def generate(self, *, prompt, stage):
+        if stage == "render_directive_revision":
+            self.calls.append(stage)
+            self.revision_prompts.append(prompt)
+            index = len(self.revision_prompts) - 1
+            return self.revisions[min(index, len(self.revisions) - 1)]
+        return super().generate(prompt=prompt, stage=stage)
+
+
 class ExplodingLLM:
     def generate(self, *, prompt, stage):
         raise AssertionError("LLM should not be called during replay")
@@ -360,6 +375,137 @@ def test_render_retry_effect_log_includes_attempt_metadata(tmp_path):
     assert {entry.metadata["attempt"] for entry in attempts} >= {1, 2}
     assert any(entry.metadata.get("selected_attempt") == 2 for entry in attempts)
     assert result["render_feedback"][1]["selected"] is True
+
+
+def test_llm_revision_disabled_does_not_call_fake_llm_revision(tmp_path):
+    llm = RevisionLLM(['{"directive":{"intensity":0.9},"reason":"should not run"}'])
+    tts = SequenceWaveTTS([0, 9000])
+
+    result = generate_litrpg_audio_episode(
+        premise="A clerk discovers the office is a dungeon.",
+        series_id="llm-disabled",
+        storage_dir=tmp_path,
+        llm=llm,
+        tts=tts,
+        render_loop={
+            "enabled": True,
+            "max_attempts": 2,
+            "retry_below_score": 0.72,
+            "retry_strategy": "llm_revision",
+            "llm_revision_enabled": False,
+        },
+        performance_directives=[{"intensity": 0.4}],
+    )
+
+    assert "render_directive_revision" not in llm.calls
+    assert len(tts.calls) == 2
+    assert result["render_feedback"][0]["revision"]["risk_notes"] == ["LLM revision disabled by config"]
+
+
+def test_llm_revision_enabled_calls_llm_after_low_score_and_rerenders(tmp_path):
+    llm = RevisionLLM(
+        ['{"directive":{"intensity":0.7,"pause_after_ms":80},"reason":"raise energy","risk_notes":[]}' ]
+    )
+    tts = SequenceWaveTTS([0, 9000])
+
+    result = generate_litrpg_audio_episode(
+        premise="A clerk discovers the office is a dungeon.",
+        series_id="llm-enabled",
+        storage_dir=tmp_path,
+        llm=llm,
+        tts=tts,
+        render_loop={
+            "enabled": True,
+            "max_attempts": 2,
+            "retry_below_score": 0.72,
+            "retry_strategy": "llm_revision",
+            "llm_revision_enabled": True,
+        },
+        performance_directives=[{"intensity": 0.4, "pause_after_ms": 200}],
+    )
+
+    assert llm.calls.count("render_directive_revision") == 1
+    assert len(tts.calls) == 2
+    assert "current_directive" in llm.revision_prompts[0]
+    assert result["render_feedback"][0]["revision"]["reason"] == "raise energy"
+    assert result["render_feedback"][1]["directive"]["intensity"] == 0.7
+
+
+def test_llm_revision_invalid_json_stops_retry_cleanly(tmp_path):
+    llm = RevisionLLM(["not json"])
+    tts = SequenceWaveTTS([0, 9000])
+
+    result = generate_litrpg_audio_episode(
+        premise="A clerk discovers the office is a dungeon.",
+        series_id="llm-invalid-json",
+        storage_dir=tmp_path,
+        llm=llm,
+        tts=tts,
+        render_loop={
+            "enabled": True,
+            "max_attempts": 3,
+            "retry_below_score": 0.72,
+            "retry_strategy": "llm_revision",
+            "llm_revision_enabled": True,
+        },
+        performance_directives=[{"intensity": 0.4}],
+    )
+
+    assert len(tts.calls) == 1
+    assert "valid JSON" in result["render_feedback"][0]["revision"]["parse_error"]
+    assert result["render_feedback"][0]["human_review_required"] is True
+
+
+def test_llm_revision_invalid_directive_stops_retry_cleanly(tmp_path):
+    llm = RevisionLLM(['{"directive":{"intensity":1.4},"reason":"too much","risk_notes":["bad"]}'])
+    tts = SequenceWaveTTS([0, 9000])
+
+    result = generate_litrpg_audio_episode(
+        premise="A clerk discovers the office is a dungeon.",
+        series_id="llm-invalid-directive",
+        storage_dir=tmp_path,
+        llm=llm,
+        tts=tts,
+        render_loop={
+            "enabled": True,
+            "max_attempts": 3,
+            "retry_below_score": 0.72,
+            "retry_strategy": "llm_revision",
+            "llm_revision_enabled": True,
+        },
+        performance_directives=[{"intensity": 0.4}],
+    )
+
+    assert len(tts.calls) == 1
+    assert result["render_feedback"][0]["revision"]["validation"]["valid"] is False
+    assert "intensity" in result["render_feedback"][0]["revision"]["validation"]["reason"]
+
+
+def test_llm_revision_respects_max_attempts(tmp_path):
+    llm = RevisionLLM(
+        ['{"directive":{"intensity":0.6},"reason":"try again","risk_notes":[]}' ]
+    )
+    tts = SequenceWaveTTS([0, 0, 0, 9000])
+
+    result = generate_litrpg_audio_episode(
+        premise="A clerk discovers the office is a dungeon.",
+        series_id="llm-max",
+        storage_dir=tmp_path,
+        llm=llm,
+        tts=tts,
+        render_loop={
+            "enabled": True,
+            "max_attempts": 3,
+            "retry_below_score": 0.72,
+            "retry_strategy": "llm_revision",
+            "llm_revision_enabled": True,
+        },
+        performance_directives=[{"intensity": 0.4}],
+    )
+
+    assert len(tts.calls) == 3
+    assert llm.calls.count("render_directive_revision") == 2
+    assert [item["attempt"] for item in result["render_feedback"]] == [1, 2, 3]
 
 
 def _write_tone(path: Path, *, amplitude: int, sample_rate: int = 24000) -> None:

@@ -2,6 +2,8 @@ import importlib
 import json
 from pathlib import Path
 
+from podcastfy.litrpg.render_feedback import validate_directive
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_EXAMPLE = REPO_ROOT / "usage" / "litrpg_catamaran_crawlers_package.example.json"
@@ -9,6 +11,8 @@ TASK_EXAMPLE = REPO_ROOT / "usage" / "litrpg_task.example.json"
 KNOTTY_SEED = REPO_ROOT / "usage" / "knotty_buoy_seed" / "knotty_buoy_canonical_seed.json"
 KNOTTY_SEED_README = REPO_ROOT / "usage" / "knotty_buoy_seed" / "README.md"
 KNOTTY_INTAKE_TASK = REPO_ROOT / "usage" / "knotty_buoy_premise_intake.example.json"
+RENDER_LOOP_EXAMPLE = REPO_ROOT / "usage" / "litrpg_render_loop.example.json"
+RENDER_LOOP_DOCS = REPO_ROOT / "usage" / "litrpg_render_loop.md"
 
 
 def _load_package():
@@ -169,3 +173,35 @@ def test_knotty_buoy_docs_show_intake_bootstrap_without_final_prose():
     assert intake["series_id"] == seed["metadata"]["series_id"]
     assert intake["chapters_per_book"] == seed["metadata"]["chapter_count"]
     assert seed["metadata"]["artifact_type"] == "canonical_seed_data"
+
+
+def test_render_loop_example_is_bounded_and_parseable():
+    task = json.loads(RENDER_LOOP_EXAMPLE.read_text(encoding="utf-8"))
+    render_loop = task["render_loop"]
+    directives = task["performance_directives"]
+    valid_strategies = {"none", "same_directive", "deterministic_adjustment", "llm_revision"}
+
+    assert task["mode"] == "episode"
+    assert task["render_audio"] is True
+    assert render_loop["enabled"] is True
+    assert render_loop["retry_strategy"] in valid_strategies
+    assert 1 <= render_loop["max_attempts"] <= 3
+    assert 0.0 < render_loop["retry_below_score"] <= 1.0
+    assert "default" in directives
+    assert 0.0 <= directives["default"]["intensity"] <= 1.0
+    assert directives["default"]["pace"] == "steady"
+    assert validate_directive(directives["default"]).valid is True
+    assert "script" in task and "No story rewrite requested" in task["script"]
+
+
+def test_render_loop_llm_revision_example_is_explicitly_opt_in():
+    task = json.loads(RENDER_LOOP_EXAMPLE.read_text(encoding="utf-8"))
+    example = task["llm_revision_example"]["render_loop"]
+    docs = RENDER_LOOP_DOCS.read_text(encoding="utf-8")
+
+    assert task["render_loop"]["retry_strategy"] == "deterministic_adjustment"
+    assert example["retry_strategy"] == "llm_revision"
+    assert example["llm_revision_enabled"] is True
+    assert "No autonomous story rewrite happens." in docs
+    assert "get_render_feedback" in docs
+    assert "audio_metadata.json" in docs

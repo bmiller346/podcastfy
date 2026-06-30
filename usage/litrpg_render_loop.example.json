@@ -1,0 +1,39 @@
+{
+  "mode": "episode",
+  "series_id": "render-loop-smoke",
+  "premise": "Short local render loop smoke.",
+  "storage_dir": "../data/litrpg",
+  "result_path": "../data/litrpg/render-loop-smoke/episode-001.json",
+  "settings_path": "../settings.local.json",
+  "render_audio": true,
+  "replay_existing": false,
+  "tts": {
+    "provider": "openai",
+    "model": "gpt-4o-mini-tts",
+    "format": "mp3"
+  },
+  "render_loop": {
+    "enabled": true,
+    "max_attempts": 3,
+    "retry_below_score": 0.72,
+    "retry_strategy": "deterministic_adjustment"
+  },
+  "performance_directives": {
+    "default": {
+      "intensity": 0.55,
+      "pace": "steady"
+    }
+  },
+  "llm_revision_example": {
+    "description": "Opt-in only. Move these fields into render_loop when you intentionally want a bounded director/LLM directive revision pass after deterministic retry support.",
+    "render_loop": {
+      "enabled": true,
+      "max_attempts": 3,
+      "retry_below_score": 0.72,
+      "retry_strategy": "llm_revision",
+      "llm_revision_enabled": true
+    }
+  },
+  "outline": "1. NARRATOR opens a tiny audio smoke scene. 2. SYSTEM issues a render-loop notice. 3. HERO confirms the segment is intentionally short.",
+  "script": "<NARRATOR>This is a short local render loop smoke.</NARRATOR><SYSTEM>RENDER LOOP NOTICE: validate, render, measure, and stop at the configured limit.</SYSTEM><HERO>No story rewrite requested.</HERO>"
+}
