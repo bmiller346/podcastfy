@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 from podcastfy.litrpg.casting import build_role_tts_instructions
 from podcastfy.litrpg.casting import cast_plan_from_mapping
 from podcastfy.litrpg.mechanics import validate_mechanics
+from podcastfy.litrpg.part_reuse import select_reusable_part_scripts
 from podcastfy.litrpg.qa import build_chapter_qa
 from podcastfy.litrpg.hooks import build_hook_context
 from podcastfy.litrpg.production import ChapterPart
@@ -62,7 +63,33 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
 
     reviews_enabled = _reviews_enabled(task)
     revision_enabled = _revision_enabled(task)
-    locked_part_scripts = _mapping_or_none(task.get("locked_part_scripts")) or {}
+    explicit_lock_source = (
+        task.get("explicit_locked_part_scripts")
+        if task.get("explicit_locked_part_scripts") is not None
+        else task.get("locked_part_scripts")
+    )
+    explicit_locked_part_scripts = {
+        str(part_id): str(script)
+        for part_id, script in (_mapping_or_none(explicit_lock_source) or {}).items()
+    }
+    reuse_report = []
+    reused_part_scripts: dict[str, str] = {}
+    reuse_source = task.get("part_reuse_source") or task.get("reuse_ready_parts_from") or task.get("lock_ready_parts_from")
+    if reuse_source:
+        reused_part_scripts, reuse_report = select_reusable_part_scripts(
+            reuse_source,
+            expected_parts=plan.parts,
+        )
+    locked_part_scripts = {
+        **reused_part_scripts,
+        **explicit_locked_part_scripts,
+    }
+    reuse_decisions = _part_reuse_decisions_by_id(
+        plan.parts,
+        reuse_report=reuse_report,
+        reused_part_scripts=reused_part_scripts,
+        explicit_locked_part_scripts=explicit_locked_part_scripts,
+    )
     target_tone = str(task.get("tone") or task.get("target_tone") or "")
     story_bible_summary = str(task.get("story_bible_summary") or "")
     series_package_summary = _series_package_summary_from_task(task)
@@ -231,6 +258,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "injected_beats": list(part.injected_beats),
             "prompt": prompt,
             "locked": locked_script is not None,
+            "reuse": dict(reuse_decisions.get(part.part_id) or {}),
             "script": script,
             "review_prompt": review_prompt,
             "review": review,
@@ -366,6 +394,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "generation": dict(task.get("generation") or {}),
             "reviews_enabled": reviews_enabled,
             "revision_enabled": revision_enabled,
+            "part_reuse": list(reuse_decisions.values()),
         },
         "parts": generated_parts,
         "chapter_review_prompt": chapter_review_prompt,
@@ -409,6 +438,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                     "role_instruction_count": len(role_instructions),
                     "blocking_issues": list(qa.get("blocking_issues") or []),
                 },
+                "part_reuse": list(reuse_decisions.values()),
             },
         },
     }
@@ -442,6 +472,54 @@ def _apply_part_overrides(
 
         updated.append(replace(part, **values))
     return updated
+
+
+def _part_reuse_decisions_by_id(
+    parts: Sequence[ChapterPart],
+    *,
+    reuse_report: Sequence[Mapping[str, Any]],
+    reused_part_scripts: Mapping[str, str],
+    explicit_locked_part_scripts: Mapping[str, str],
+) -> dict[str, dict[str, Any]]:
+    report_by_id = {
+        str(item.get("part_id")): dict(item)
+        for item in reuse_report
+        if isinstance(item, Mapping) and item.get("part_id")
+    }
+    decisions: dict[str, dict[str, Any]] = {}
+    for part in parts:
+        part_id = part.part_id
+        decision = dict(report_by_id.get(part_id) or {})
+        if part_id in explicit_locked_part_scripts:
+            decision.update(
+                {
+                    "part_id": part_id,
+                    "status": "explicit_lock",
+                    "reusable": True,
+                    "reason": "Part script was explicitly locked in the task.",
+                    "source": "task.locked_part_scripts",
+                    "stale_fields": [],
+                }
+            )
+        elif part_id in reused_part_scripts:
+            decision.setdefault("part_id", part_id)
+            decision.setdefault("status", "reused")
+            decision.setdefault("reusable", True)
+            decision.setdefault("reason", "Saved ready part was reused.")
+            decision.setdefault("stale_fields", [])
+        elif not decision:
+            decision = {
+                "part_id": part_id,
+                "status": "regenerated",
+                "reusable": False,
+                "reason": "No reusable locked script was selected; part will be generated.",
+                "source": "",
+                "stale_fields": [],
+            }
+        if decision.get("status") in {"missing", "blocked", "stale"}:
+            decision["status"] = "regenerated_after_" + str(decision["status"])
+        decisions[part_id] = decision
+    return decisions
 
 
 def _reviews_enabled(task: Mapping[str, Any]) -> bool:

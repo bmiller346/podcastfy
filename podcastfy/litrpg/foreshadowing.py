@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from podcastfy.litrpg.models import mystery_lock_from_mapping
+
 FORESHADOW_LEDGER_FILENAME = "foreshadow_ledger.json"
 FORESHADOW_SCHEMA_VERSION = 1
 STATUS_PLANTED = "planted"
@@ -95,28 +97,17 @@ def foreshadow_ledger_from_dict(
 def foreshadow_entry_from_dict(data: dict[str, Any]) -> ForeshadowEntry:
     """Build a foreshadow entry from loose JSON."""
 
-    payoff_range = data.get("intended_payoff_range")
-    if isinstance(payoff_range, (list, tuple)) and len(payoff_range) >= 2:
-        start = _int_value(payoff_range[0], 0)
-        end = _int_value(payoff_range[1], start)
-    else:
-        start = _int_value(data.get("intended_payoff_start"), 0)
-        end = _int_value(data.get("intended_payoff_end"), start)
-
+    lock = mystery_lock_from_mapping(data)
     return ForeshadowEntry(
-        detail=str(data.get("detail") or "").strip(),
-        planted_chapter=_int_value(data.get("planted_chapter"), 0),
-        intended_payoff_start=start,
-        intended_payoff_end=max(start, end),
-        mystery=str(data.get("mystery") or "").strip(),
-        status=str(data.get("status") or STATUS_PLANTED).strip() or STATUS_PLANTED,
-        planted_book=_int_value(data.get("planted_book"), 1),
-        payoff_book=_int_value(data.get("payoff_book"), _int_value(data.get("book"), 1)),
-        paid_chapter=(
-            _int_value(data.get("paid_chapter"), 0)
-            if data.get("paid_chapter") is not None
-            else None
-        ),
+        detail=lock.detail,
+        planted_chapter=lock.planted_chapter,
+        intended_payoff_start=lock.intended_payoff_start,
+        intended_payoff_end=lock.intended_payoff_end,
+        mystery=lock.mystery,
+        status=lock.status,
+        planted_book=lock.planted_book,
+        payoff_book=lock.payoff_book,
+        paid_chapter=lock.paid_chapter,
     )
 
 
@@ -241,10 +232,3 @@ def _dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
-
-
-def _int_value(value: Any, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default

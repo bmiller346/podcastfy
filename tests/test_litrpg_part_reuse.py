@@ -1,6 +1,8 @@
 import json
 
+from podcastfy.litrpg.part_reuse import list_reusable_parts
 from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
+from podcastfy.litrpg.part_reuse import select_reusable_part_scripts
 from podcastfy.litrpg.task import run_litrpg_task
 
 
@@ -54,6 +56,45 @@ def test_locked_part_scripts_from_ready_parts_skips_failed_parts():
     assert "party-pressure" not in locked
 
 
+def test_select_reusable_part_scripts_reports_stale_contracts():
+    prior = _prior_result()
+    prior["parts"][0]["title"] = "Old Cold Open"
+    prior["parts"][0]["required_roles"] = ["NARRATOR"]
+    expected_parts = [
+        {
+            "part_id": "cold-open",
+            "title": "Cold Open",
+            "required_roles": ["NARRATOR", "HERO"],
+        },
+        {
+            "part_id": "party-pressure",
+            "title": "Party Pressure",
+            "required_roles": ["NARRATOR"],
+        },
+        {
+            "part_id": "boss-setpiece",
+            "title": "Boss Setpiece",
+            "required_roles": ["BOSS"],
+        },
+    ]
+
+    scripts, report = select_reusable_part_scripts(prior, expected_parts=expected_parts)
+    report_by_id = {item["part_id"]: item for item in report}
+
+    assert "cold-open" not in scripts
+    assert report_by_id["cold-open"]["status"] == "stale"
+    assert report_by_id["cold-open"]["stale_fields"] == ["title", "required_roles"]
+    assert report_by_id["party-pressure"]["status"] == "blocked"
+    assert report_by_id["boss-setpiece"]["status"] == "missing"
+
+
+def test_list_reusable_parts_omits_script_text():
+    report = list_reusable_parts(_prior_result())
+
+    assert report[0]["part_id"] == "cold-open"
+    assert "script" not in report[0]
+
+
 def test_run_litrpg_task_injects_reused_locks_and_keeps_explicit_locks(tmp_path, monkeypatch):
     prior_path = tmp_path / "prior_chapter.json"
     prior_path.write_text(json.dumps(_prior_result()), encoding="utf-8")
@@ -90,3 +131,8 @@ def test_run_litrpg_task_injects_reused_locks_and_keeps_explicit_locks(tmp_path,
         "boss-setpiece": "<BOSS>Manual lock with loot.</BOSS>",
     }
     assert "party-pressure" not in captured["locked_part_scripts"]
+    assert captured["explicit_locked_part_scripts"] == {
+        "cold-open": "<NARRATOR>Explicit winner XP.</NARRATOR>",
+        "boss-setpiece": "<BOSS>Manual lock with loot.</BOSS>",
+    }
+    assert captured["part_reuse_report"][0]["part_id"] == "cold-open"

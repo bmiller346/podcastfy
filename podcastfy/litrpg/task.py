@@ -21,13 +21,15 @@ from podcastfy.litrpg.llm import (
     GeminiGenerator,
     IntentRoutingGemini,
     IntentRoutingOpenAI,
+    LOCAL_PROSE_EXACT_STAGES,
+    LOCAL_PROSE_STAGE_PREFIXES,
     OllamaGenerator,
     OpenAIResponsesGenerator,
     StageRouterLLM,
 )
 from podcastfy.litrpg.llm import StageRouting
 from podcastfy.litrpg.packages import format_series_package_summary
-from podcastfy.litrpg.part_reuse import locked_part_scripts_from_ready_parts
+from podcastfy.litrpg.part_reuse import list_reusable_parts, locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
@@ -191,17 +193,18 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
     if provider == "ollama":
         return _ollama_generator_from_config(generation)
     if provider == "hybrid":
+        _validate_hybrid_local_provider(generation)
         return StageRouterLLM(
             local=_ollama_generator_from_config(generation),
             default=_commercial_generator_from_config(generation, settings=settings),
             routing=StageRouting(
                 local_exact=_string_tuple(
                     generation.get("local_exact_stages"),
-                    default=("script",),
+                    default=LOCAL_PROSE_EXACT_STAGES,
                 ),
                 local_prefixes=_string_tuple(
                     generation.get("local_stage_prefixes"),
-                    default=("part:", "revise:"),
+                    default=LOCAL_PROSE_STAGE_PREFIXES,
                 ),
             ),
             allow_local_fallback=bool(generation.get("allow_local_fallback", False)),
@@ -353,6 +356,15 @@ def _ollama_generator_from_config(generation: Mapping[str, Any]) -> OllamaGenera
     )
 
 
+def _validate_hybrid_local_provider(generation: Mapping[str, Any]) -> None:
+    local_provider = str(generation.get("local_provider") or "ollama").lower()
+    if local_provider != "ollama":
+        raise ValueError(
+            "generation.provider=hybrid currently supports only local_provider=ollama. "
+            "Use commercial_provider=openai or commercial_provider=gemini for the cloud backend."
+        )
+
+
 def _commercial_generator_from_config(generation: Mapping[str, Any], *, settings: Mapping[str, Any]) -> Any:
     config = _commercial_generation_config(generation)
     provider = str(config.get("provider") or "openai").lower()
@@ -447,12 +459,18 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
     series_id = str(task.get("series_id") or "default-series")
     reuse_path = task.get("reuse_ready_parts_from") or task.get("lock_ready_parts_from")
     if reuse_path:
+        resolved_reuse_path = _resolve_task_path(base_dir, reuse_path)
         reused_locks = locked_part_scripts_from_ready_parts(
-            _resolve_task_path(base_dir, reuse_path)
+            resolved_reuse_path
         )
         explicit_locks = task.get("locked_part_scripts") or {}
         if not isinstance(explicit_locks, Mapping):
             raise ValueError("locked_part_scripts must be a JSON object")
+        chapter_task["part_reuse_source"] = str(resolved_reuse_path)
+        chapter_task["part_reuse_report"] = list_reusable_parts(resolved_reuse_path)
+        chapter_task["explicit_locked_part_scripts"] = {
+            str(part_id): str(script) for part_id, script in explicit_locks.items()
+        }
         chapter_task["locked_part_scripts"] = {
             **reused_locks,
             **{str(part_id): str(script) for part_id, script in explicit_locks.items()},

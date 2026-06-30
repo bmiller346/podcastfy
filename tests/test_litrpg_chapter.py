@@ -338,6 +338,67 @@ def test_generate_litrpg_chapter_writes_part_checkpoints(tmp_path):
     assert result["render"]["ready"] is True
 
 
+def test_generate_litrpg_chapter_reports_reused_regenerated_and_stale_parts(tmp_path):
+    prior_path = tmp_path / "prior.json"
+    reusable_script = (
+        "<NARRATOR>NARRATOR reports XP and loot.</NARRATOR>"
+        "<HERO>HERO reports XP and loot.</HERO>"
+        "<SYSTEM>SYSTEM reports XP and loot.</SYSTEM>"
+        "<SIDEKICK>SIDEKICK reports XP and loot.</SIDEKICK>"
+        "<MINION>MINION reports XP and loot.</MINION>"
+    )
+    prior_path.write_text(
+        json.dumps(
+            {
+                "parts": [
+                    {
+                        "part_id": "cold-open",
+                        "title": "Cold Open",
+                        "required_roles": ["NARRATOR", "HERO", "SYSTEM", "SIDEKICK", "MINION"],
+                        "revised_script": reusable_script,
+                        "gate": {"final": {"ready": True}},
+                    },
+                    {
+                        "part_id": "boss-setpiece",
+                        "title": "Old Boss",
+                        "required_roles": ["NARRATOR", "HERO", "SYSTEM", "BOSS", "BEAST", "MINION", "SIDEKICK"],
+                        "revised_script": "<NARRATOR>Stale XP and loot.</NARRATOR>",
+                        "gate": {"final": {"ready": True}},
+                    },
+                    {
+                        "part_id": "party-pressure",
+                        "title": "Party Pressure",
+                        "required_roles": ["NARRATOR"],
+                        "revised_script": "<NARRATOR>Blocked XP.</NARRATOR>",
+                        "gate": {"final": {"ready": False}},
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    llm = AllRolesChapterLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            reviews={"enabled": False},
+            reuse_ready_parts_from=str(prior_path),
+        ),
+        llm=llm,
+    )
+
+    stages = [call["stage"] for call in llm.calls]
+    reuse_by_id = {item["part_id"]: item for item in result["chapter"]["part_reuse"]}
+    assert "part:cold-open" not in stages
+    assert "part:boss-setpiece" in stages
+    assert result["parts"][0]["locked"] is True
+    assert result["parts"][0]["reuse"]["status"] == "reused"
+    assert reuse_by_id["boss-setpiece"]["status"] == "regenerated_after_stale"
+    assert reuse_by_id["boss-setpiece"]["stale_fields"] == ["title"]
+    assert reuse_by_id["party-pressure"]["status"] == "regenerated_after_blocked"
+    assert result["render"]["metadata"]["part_reuse"] == result["chapter"]["part_reuse"]
+
+
 def test_run_litrpg_task_defaults_checkpoints_and_persists_state(tmp_path):
     task_path = tmp_path / "chapter_task.json"
     task = _chapter_task(

@@ -1,0 +1,470 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "series_id": "knotty-buoy",
+    "title": "The Knotty Buoy",
+    "artifact_type": "canonical_seed_data",
+    "status": "source_fixture",
+    "usage": "Bootstrap source data for premise intake and regression tests. This is not final chapter prose.",
+    "source_files": [
+      "usage/knotty_buoy_premise.md",
+      "usage/litrpg_messy_context_seed.md",
+      "usage/knotty_buoy_premise_intake.example.json"
+    ],
+    "chapter_count": 30
+  },
+  "series_core": {
+    "canonical_vessel_name": "Sophie II",
+    "registration_identity": "The Knotty Buoy",
+    "promise": "Edward and Kelli Marsh survive a cosmic ocean dungeon from aboard their battered 44-foot catamaran while Pedro's construction-site insults become dangerous dungeon mechanics.",
+    "endgame_direction": "Expose Gallowgate's debt machinery and force the Grand Dredger's purpose into the open.",
+    "tone_contract": [
+      "practical maritime survival",
+      "union-hall logic",
+      "old-married friction",
+      "hostile achievement popups",
+      "dungeon bureaucracy with real costs"
+    ],
+    "family_pressure_rule": "Edward and Kelli's adult children stay physically off the boat in Book 1; Gallowgate may weaponize distance, names, memories, and audits as leverage."
+  },
+  "characters": [
+    {
+      "id": "edward",
+      "name": "Edward Marsh",
+      "role": "retired inspector and reluctant boat captain",
+      "pre_dungeon": "Senior Structural Engineer in commercial construction across the Philadelphia/South Jersey corridor, specializing in load-bearing failure analysis.",
+      "voice": "clipped, South Jersey practical, suspicious of paperwork, dry when frightened",
+      "physical_continuity": [
+        "left-knee rain ache",
+        "salt rash",
+        "hand cuts",
+        "sleep debt",
+        "improvised tool belts",
+        "stress saltines"
+      ],
+      "anchors": [
+        "faded canvas work pants",
+        "faded UPF sun shirt",
+        "waterproof notebook",
+        "carpenter's pencil",
+        "Sophie II as memorial to Sophie the cockatoo"
+      ]
+    },
+    {
+      "id": "kelli",
+      "name": "Kelli Marsh",
+      "role": "odds-reader, social detonator, and survival co-commander",
+      "pre_dungeon": "High-stakes Blackjack and Craps regular from Atlantic City, primarily Borgata; banned from two casinos for aggressively calling out pit bosses.",
+      "voice": "warmer but more dangerous, affection hidden inside correction, socially faster than Edward",
+      "physical_continuity": [
+        "sunburn",
+        "bruised ribs",
+        "wet hair",
+        "boat grease",
+        "wedding ring taps against hard surfaces",
+        "oversized polarized sunglasses"
+      ],
+      "anchors": [
+        "Sophie guilt over overheated cookware fumes",
+        "risk tolerance as pattern recognition",
+        "goes quiet before going all-in"
+      ]
+    },
+    {
+      "id": "pedro",
+      "name": "Pedro",
+      "role": "blue-and-gold macaw turned eldritch familiar",
+      "voice": "mimicry, job-site heckling, sudden impossible prophecy",
+      "visual_continuity": [
+        "missing feathers",
+        "glowing eyes",
+        "soot",
+        "salt crystals",
+        "unnatural shadow behavior"
+      ],
+      "mechanical_hook": "Favorite insults become repeatable magical pressure against monsters, systems, and morale."
+    }
+  ],
+  "pedro_phrase_vocabulary": {
+    "declared_total_phrases": 47,
+    "available_phrases": [
+      {
+        "text": "THAT'S NOT CODE.",
+        "category": "usable"
+      },
+      {
+        "text": "WHO SIGNED THIS?",
+        "category": "usable"
+      },
+      {
+        "text": "WHERE'S THE PERMIT?",
+        "category": "usable"
+      },
+      {
+        "text": "CALL THE INSPECTOR.",
+        "category": "usable"
+      },
+      {
+        "text": "COFFEE BREAK.",
+        "category": "usable"
+      },
+      {
+        "text": "WE'RE IN THE HOLE.",
+        "category": "usable"
+      },
+      {
+        "text": "DOUBLE DOWN.",
+        "category": "usable"
+      },
+      {
+        "text": "HIT ME.",
+        "category": "usable"
+      },
+      {
+        "text": "CRAP SHOOT.",
+        "category": "usable"
+      },
+      {
+        "text": "WATER IN THE BILGE.",
+        "category": "usable"
+      },
+      {
+        "text": "DEAD IN THE WATER.",
+        "category": "usable"
+      },
+      {
+        "text": "I'M NOT PAYING FOR THAT.",
+        "category": "usable"
+      },
+      {
+        "text": "THE HOUSE TAKES ALL.",
+        "category": "concerning"
+      },
+      {
+        "text": "BLOOD ON THE FELT.",
+        "category": "concerning"
+      },
+      {
+        "text": "STRUCTURAL COLLAPSE.",
+        "category": "concerning"
+      },
+      {
+        "text": "IT'S IN THE WALLS.",
+        "category": "concerning"
+      },
+      {
+        "text": "ROLL THE BONES.",
+        "category": "concerning"
+      },
+      {
+        "text": "NO FIXED ADDRESS.",
+        "category": "concerning"
+      },
+      {
+        "text": "THE ARCHITECT IS ROTTING.",
+        "category": "flagged",
+        "broadcast_lock": "Permanently muted from universal broadcast logs; if the Grand Dredger hears it, Floor 1 will be purged."
+      }
+    ]
+  },
+  "home_base": {
+    "id": "sophie_ii",
+    "name": "Sophie II",
+    "system_registration": "The Knotty Buoy",
+    "type": "44-foot Leopard Catamaran",
+    "stats": {
+      "engines": "twin 45hp diesel engines",
+      "solar": "800W solar array",
+      "water": "desalinator/watermaker filtering dungeon-brine into potable water",
+      "draft": "4 feet",
+      "status": "Guild Hall / Mobile Asset"
+    },
+    "starting_damage": [
+      "patched fiberglass",
+      "unreliable bilge pump",
+      "half-working galley",
+      "faded decals",
+      "too many extension cords",
+      "vulnerable port hull"
+    ],
+    "track_continuity": [
+      "hull cracks",
+      "patched rigging",
+      "monster residue",
+      "jury-rigged defenses",
+      "storage limits",
+      "fuel",
+      "potable water",
+      "morale"
+    ],
+    "upgrade_hooks": [
+      "dungeon-epoxy repairs",
+      "Barnacle Scrip-funded permits",
+      "battery bank redirects electrical or magical attacks",
+      "mobile safe-zone rules protect the interior",
+      "future floor refits treat the boat as a chassis"
+    ]
+  },
+  "world_register": {
+    "gallowgate": {
+      "name": "Gallowgate",
+      "type": "administrative faction",
+      "voice": "polite, predatory, obsessed with forms, access tiers, docking fees, and liability",
+      "pressure": [
+        "debt conversion",
+        "trials",
+        "customs offices",
+        "repair permits",
+        "enforceable spectacle"
+      ]
+    },
+    "grand_dredger": {
+      "name": "Grand Dredger",
+      "type": "deep long-term power behind the dungeon",
+      "presentation": [
+        "dredge chains",
+        "pressure groans",
+        "missing seabeds",
+        "salvaged memories",
+        "impossible wake patterns"
+      ],
+      "mystery": "What is the Grand Dredger collecting from each floor?"
+    }
+  },
+  "floor_1": {
+    "designation": "The Drowned Scaffolding",
+    "rules": [
+      "Water-based subterranean ocean floor.",
+      "Barnacle Scrip is currency and Salvaged Copper is crafting material.",
+      "Repairs cost XP, oxygen, permits, or social/faction consequences.",
+      "Monsters cannot spawn inside the galley while Guild Truce Rules hold.",
+      "Registered vessels can be assigned temporary MOBILE ASSET status."
+    ],
+    "economy": [
+      "Barnacle Scrip",
+      "Salvaged Copper",
+      "repair permits",
+      "oxygen allotments",
+      "favor markers"
+    ],
+    "entities": [
+      {
+        "name": "Barnacle Mimics",
+        "role": "attach to hulls and slowly eat fiberglass while pretending to be harmless marine growth"
+      },
+      {
+        "name": "Rebar Gargoyles",
+        "role": "wait atop rusted skyscrapers and dive-bomb passing ships"
+      },
+      {
+        "name": "OSHA Wraiths",
+        "role": "undead safety inspectors that apply Violation Debuffs when rigging is not perfectly tied"
+      },
+      {
+        "name": "Dockmaster Brine",
+        "role": "Floor 1 boss who weaponizes contracts, tides, and guilt"
+      }
+    ],
+    "visual_language": [
+      "rusted half-submerged skyscraper skeletons",
+      "oil rigs",
+      "crane towers",
+      "bioluminescent ocean",
+      "wet rust",
+      "ozone",
+      "distant metal groaning under pressure"
+    ]
+  },
+  "mysteries_and_plants": [
+    "Why did the System classify Sophie II as a guild hall instead of a boat?",
+    "What old inspection file connects Edward to Gallowgate?",
+    "Why can Pedro damage interface language?",
+    "What is the Grand Dredger collecting from each floor?",
+    "Why does Kelli recognize one of the drowned contestant names?",
+    "What debt is hidden inside the first repair permit?",
+    "Why does the System keep surfacing cockatoo/Sophie references?",
+    "Did the System take Edward and Kelli's adult children, or is Gallowgate using leverage?"
+  ],
+  "book_1_outline": [
+    {
+      "chapter": 1,
+      "title": "Out of the Atlantic",
+      "source_beat": "Sophie II drops into a dungeon sea and receives a guild-hall registration.",
+      "ending_hook": "Edward fails to close the notification."
+    },
+    {
+      "chapter": 2,
+      "title": "The Familiar's First Words",
+      "source_beat": "Pedro's insult liquefies a barnacle mimic.",
+      "ending_hook": "The System labels Pedro an unauthorized familiar."
+    },
+    {
+      "chapter": 3,
+      "title": "Bilge Pump Tutorial",
+      "source_beat": "Edward learns repairs cost XP and oxygen.",
+      "ending_hook": "The bilge pump demands a permit."
+    },
+    {
+      "chapter": 4,
+      "title": "Kelli Takes Inventory",
+      "source_beat": "Kelli turns pantry math into survival command.",
+      "ending_hook": "A missing family photo and an old cockatoo feather reappear in the loot crate."
+    },
+    {
+      "chapter": 5,
+      "title": "Docking Fees",
+      "source_beat": "Gallowgate opens a floating customs office.",
+      "ending_hook": "The clerk recognizes Edward's old inspector badge."
+    },
+    {
+      "chapter": 6,
+      "title": "Barnacle Scrip",
+      "source_beat": "The crew earns currency by scraping monsters off the hull.",
+      "ending_hook": "The hull scrapes back."
+    },
+    {
+      "chapter": 7,
+      "title": "Pedro's Blue Notice",
+      "source_beat": "Pedro repeats a phrase no one taught him.",
+      "ending_hook": "A Grand Dredger chain sounds beneath the water."
+    },
+    {
+      "chapter": 8,
+      "title": "The First Salvage Auction",
+      "source_beat": "Drowned contestants bid on repair parts.",
+      "ending_hook": "Kelli sees a familiar surname on a bidder tag."
+    },
+    {
+      "chapter": 9,
+      "title": "Hull Breach Manners",
+      "source_beat": "A polite monster enters through a crack and asks to be evicted properly.",
+      "ending_hook": "The eviction form names Sophie II as liable."
+    },
+    {
+      "chapter": 10,
+      "title": "Sponsor Weather",
+      "source_beat": "Dungeon sponsors alter wind and visibility.",
+      "ending_hook": "Pedro's shadow points against the wind."
+    },
+    {
+      "chapter": 11,
+      "title": "The Galley Boss",
+      "source_beat": "The galley becomes a cooking arena with hostile recipes.",
+      "ending_hook": "Kelli wins a knife that remembers debts."
+    },
+    {
+      "chapter": 12,
+      "title": "Edward Files A Complaint",
+      "source_beat": "Edward submits a grievance to Gallowgate.",
+      "ending_hook": "The complaint returns stamped APPROVED FOR PUNISHMENT."
+    },
+    {
+      "chapter": 13,
+      "title": "Reef Of Lost Boats",
+      "source_beat": "Sophie II reaches a graveyard of failed bases.",
+      "ending_hook": "One wreck broadcasts Edward's voice."
+    },
+    {
+      "chapter": 14,
+      "title": "Rigging Under Fire",
+      "source_beat": "The mast and rigging take real damage during a chase.",
+      "ending_hook": "The sail shows a map not sewn by anyone aboard."
+    },
+    {
+      "chapter": 15,
+      "title": "Midfloor Inspection",
+      "source_beat": "Gallowgate inspectors board the catamaran.",
+      "ending_hook": "They find a hidden Grand Dredger mark under old paint."
+    },
+    {
+      "chapter": 16,
+      "title": "Pedro Eats A Rule",
+      "source_beat": "Pedro bites a glowing rule line and changes a cooldown.",
+      "ending_hook": "The System goes briefly silent."
+    },
+    {
+      "chapter": 17,
+      "title": "Kelli's Drowned Name",
+      "source_beat": "Kelli investigates the bidder surname.",
+      "ending_hook": "A memory token speaks in her mother's cadence."
+    },
+    {
+      "chapter": 18,
+      "title": "Repair Permit Seven",
+      "source_beat": "The crew earns a permit that fixes one thing and curses another.",
+      "ending_hook": "The hull heals around something trapped inside."
+    },
+    {
+      "chapter": 19,
+      "title": "The Sponsor Desk Lies",
+      "source_beat": "Sponsor commentary frames Edward as a villain.",
+      "ending_hook": "Kelli decides to use the broadcast against them."
+    },
+    {
+      "chapter": 20,
+      "title": "Crab Court",
+      "source_beat": "A faction trial tries to repossess The Knotty Buoy.",
+      "ending_hook": "Pedro is called as an expert witness."
+    },
+    {
+      "chapter": 21,
+      "title": "The Chain Below",
+      "source_beat": "The Grand Dredger's chains surface and drag the floor line.",
+      "ending_hook": "Sophie II is hooked but not pulled under."
+    },
+    {
+      "chapter": 22,
+      "title": "Salvage Guild Mutiny",
+      "source_beat": "A salvage guild offers alliance at a terrible price.",
+      "ending_hook": "Edward finds his old inspection number in their charter."
+    },
+    {
+      "chapter": 23,
+      "title": "Kelli's Knife Debt",
+      "source_beat": "The galley knife demands payment in a memory.",
+      "ending_hook": "Kelli chooses which memory not to surrender."
+    },
+    {
+      "chapter": 24,
+      "title": "Unauthorized Guild Hall",
+      "source_beat": "Gallowgate downgrades the boat's legal status.",
+      "ending_hook": "Every safe room refuses them entry."
+    },
+    {
+      "chapter": 25,
+      "title": "Pedro's Missing Feather",
+      "source_beat": "Pedro loses a feather that becomes a compass.",
+      "ending_hook": "It points inside Edward's toolbox."
+    },
+    {
+      "chapter": 26,
+      "title": "The Toolbox Door",
+      "source_beat": "Edward's toolbox opens into an impossible storage room.",
+      "ending_hook": "A Grand Dredger invoice waits inside."
+    },
+    {
+      "chapter": 27,
+      "title": "Floor Boss: Dockmaster Brine",
+      "source_beat": "The floor boss weaponizes contracts, tides, and guilt.",
+      "ending_hook": "Kelli takes the contract instead of Edward."
+    },
+    {
+      "chapter": 28,
+      "title": "Low Oxygen, High Stakes",
+      "source_beat": "The crew fights while exhausted and nearly out of air.",
+      "ending_hook": "Pedro speaks in the Grand Dredger's voice."
+    },
+    {
+      "chapter": 29,
+      "title": "Arbitration By Combat",
+      "source_beat": "Edward turns rule knowledge into a boss strategy.",
+      "ending_hook": "The System accepts his grievance as a weapon."
+    },
+    {
+      "chapter": 30,
+      "title": "The Knot Holds",
+      "source_beat": "The crew survives Floor 1 but inherits a deeper debt.",
+      "ending_hook": "Sophie II sails toward Floor 2's Glass Dunes with the Grand Dredger waking below."
+    }
+  ]
+}

@@ -84,3 +84,15 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
 ```
 
 Use story-generation provider names such as `openai`, `gemini`, `ollama`, or `hybrid` under `generation.provider`. In hybrid mode, set `commercial_provider` to `gemini` for the cheaper cloud review/intake path or `openai` when you want OpenAI as the commercial reviewer. Use TTS provider names such as `openai`, `geminiapi`, `edge`, `gemini`, `geminimulti`, or `elevenlabs` under `tts.provider`. Unknown provider names are rejected by the relevant provider factory.
+
+## Hybrid Stage Routing
+
+By default, hybrid mode uses the local Ollama backend only for prose drafting stages:
+
+- `script`
+- stages beginning with `part:`
+- stages beginning with `revise:`
+
+Commercial OpenAI or Gemini handles planning, intake, package generation, review, architecture, and chat-style editing stages, including `outline`, `premise_intake`, `premise_intake_repair`, `series_package`, `review:*`, `director:*`, `mechanics:*`, `chapter_review`, `visual_state_update`, `hook`, `rhythm`, `reader_proxy`, `story_seed_revision`, and `chat`.
+
+The local backend in hybrid mode is currently `ollama`; unsupported `local_provider` values are rejected early. Unsupported `commercial_provider` values are also rejected early, and missing OpenAI or Gemini API keys produce provider-specific setup messages.

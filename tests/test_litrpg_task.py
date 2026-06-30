@@ -281,6 +281,59 @@ def test_llm_from_task_builds_hybrid_router_with_gemini_commercial():
     assert llm.default.cheap_model == "gemini-2.5-flash-lite"
 
 
+def test_llm_from_task_hybrid_default_routing_keeps_planning_commercial():
+    llm = _llm_from_task(
+        {
+            "generation": {
+                "provider": "hybrid",
+                "local_model": "litrpg-writer",
+                "commercial_provider": "gemini",
+                "commercial_model": "gemini-2.5-flash",
+            }
+        },
+        settings={"gemini_api_key": "gemini-key"},
+    )
+
+    assert llm.routing.local_exact == ("script",)
+    assert llm.routing.local_prefixes == ("part:", "revise:")
+    assert llm.routing.backend_for("part:cold-open") == "local"
+    assert llm.routing.backend_for("revise:cold-open") == "local"
+    assert llm.routing.backend_for("premise_intake") == "default"
+    assert llm.routing.backend_for("series_package") == "default"
+    assert llm.routing.backend_for("chapter_review") == "default"
+    assert llm.routing.backend_for("story_seed_revision") == "default"
+
+
+def test_llm_from_task_rejects_unsupported_hybrid_local_provider():
+    with pytest.raises(ValueError, match="local_provider=ollama"):
+        _llm_from_task(
+            {
+                "generation": {
+                    "provider": "hybrid",
+                    "local_provider": "openai",
+                    "commercial_provider": "gemini",
+                    "commercial_model": "gemini-2.5-flash",
+                }
+            },
+            settings={"gemini_api_key": "gemini-key"},
+        )
+
+
+def test_llm_from_task_rejects_unsupported_hybrid_commercial_provider():
+    with pytest.raises(ValueError, match="commercial_provider currently supports openai or gemini"):
+        _llm_from_task(
+            {
+                "generation": {
+                    "provider": "hybrid",
+                    "local_provider": "ollama",
+                    "commercial_provider": "ollama",
+                    "local_model": "litrpg-writer",
+                }
+            },
+            settings={},
+        )
+
+
 def test_llm_from_task_requires_valid_gemini_key_for_gemini():
     with pytest.raises(ValueError, match="Gemini generation requires a valid API key"):
         _llm_from_task(

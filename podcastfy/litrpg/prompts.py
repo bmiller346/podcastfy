@@ -33,6 +33,48 @@ LITRPG_MECHANICS = (
     "stat",
 )
 
+SCARCITY_LOCK_LANGUAGE = (
+    "Track currencies, trade goods, costs, scarcity, repairs, consumed items, debts, and access as hard constraints.",
+    "Do not grant a new resource, clue, item, alliance, safe route, or ability unless the script or source state earns it.",
+    "When something is spent, damaged, delayed, or made scarce, make the consequence audible in later choices.",
+)
+
+ANNOUNCER_SYSTEM_TONE = (
+    "SYSTEM or Announcer moments must land as events, not plain narration.",
+    "Keep the voice crisp, hostile, performative, and funny because it is precise, not because it explains too much.",
+    "If the chosen genre has no System, apply this to the closest narrator, host, authority, interface, or recurring audio device.",
+)
+
+BUREAUCRATIC_SADISM_RULES = (
+    "Institutional cruelty should feel like fine print weaponized through permits, fees, registrations, audits, notices, or rule exceptions.",
+    "Rules can be absurd, but their costs must be concrete and enforceable in the scene.",
+    "Do not let bureaucracy become random chaos; make each punishment traceable to a stated or discoverable rule.",
+)
+
+CHARACTER_VOICE_SEPARATION = (
+    "Separate character voices through diction, sentence rhythm, taboo phrases, favorite insults, humor modes, and pressure tells.",
+    "Show how each major character sounds different in fear, anger, tenderness, and tactical focus.",
+    "Do not collapse the cast into narrator monologue or interchangeable banter.",
+)
+
+PHYSICAL_CONTINUITY_DEGRADATION = (
+    "Visual continuity is mandatory: preserve static anchors, dynamic degradation, current injuries, fatigue markers, gear damage, repairs, and absurd physical traits.",
+    "A physical limitation or gear state should affect a choice, movement, joke, or consequence.",
+    "Do not make bodies, clothing, equipment, bases, or vehicles pristine after prior damage unless repair is established.",
+)
+
+MYSTERY_LOCK_DISCIPLINE = (
+    "Protect long-term mysteries: plant clues, red herrings, payoff windows, and what must not be revealed yet.",
+    "Do not spend protected reveals, forbidden payoffs, or series-mystery answers before their intended timing.",
+    "Prefer production-ready constraints over literary commentary: name the open question, lock, clue wording, and payoff boundary.",
+)
+
+TTS_FRIENDLY_ROLE_BLOCK_CONSTRAINTS = (
+    "Use XML-style role blocks only, with no markdown, SSML, tables, JSON, or prose outside the script when final script text is requested.",
+    "Keep each spoken block short enough for TTS regeneration and later review.",
+    "Allowed role tags must be treated as a closed set; every required role must appear unless physically impossible.",
+)
+
 
 def _join_items(items: Sequence[str] | None, fallback: str) -> str:
     if not items:
@@ -47,6 +89,63 @@ def _format_state(state: Mapping[str, Any] | None) -> str:
     for key in sorted(state):
         lines.append(f"- {key}: {state[key]}")
     return "\n".join(lines)
+
+
+def _format_policy_block(title: str, lines: Sequence[str]) -> str:
+    body = "\n".join(f"- {line}" for line in lines if str(line).strip())
+    return f"{title}:\n{body}"
+
+
+def format_scarcity_lock_language() -> str:
+    """Return canonical scarcity and earned-resource prompt constraints."""
+
+    return _format_policy_block("Scarcity lock", SCARCITY_LOCK_LANGUAGE)
+
+
+def format_announcer_system_tone() -> str:
+    """Return canonical Announcer/System tone constraints."""
+
+    return _format_policy_block("Announcer / System tone", ANNOUNCER_SYSTEM_TONE)
+
+
+def format_bureaucratic_sadism_rules() -> str:
+    """Return canonical bureaucratic-sadism rule constraints."""
+
+    return _format_policy_block("Bureaucratic-sadism rules", BUREAUCRATIC_SADISM_RULES)
+
+
+def format_character_voice_separation() -> str:
+    """Return canonical character voice separation constraints."""
+
+    return _format_policy_block("Character voice separation", CHARACTER_VOICE_SEPARATION)
+
+
+def format_physical_continuity_degradation() -> str:
+    """Return canonical physical continuity and degradation constraints."""
+
+    return _format_policy_block(
+        "Physical continuity / degradation",
+        PHYSICAL_CONTINUITY_DEGRADATION,
+    )
+
+
+def format_mystery_lock_discipline() -> str:
+    """Return canonical mystery-lock and payoff discipline constraints."""
+
+    return _format_policy_block("Mystery lock discipline", MYSTERY_LOCK_DISCIPLINE)
+
+
+def format_tts_role_block_constraints(allowed_roles: Sequence[str] | str | None = None) -> str:
+    """Return canonical TTS-friendly role block constraints."""
+
+    lines = list(TTS_FRIENDLY_ROLE_BLOCK_CONSTRAINTS)
+    if allowed_roles:
+        if isinstance(allowed_roles, str):
+            role_text = allowed_roles
+        else:
+            role_text = ", ".join(str(role) for role in allowed_roles)
+        lines.append(f"Allowed role tags: {role_text}.")
+    return _format_policy_block("TTS-friendly role block constraints", lines)
 
 
 def build_episode_outline_prompt(

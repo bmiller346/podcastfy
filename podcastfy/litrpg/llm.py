@@ -9,6 +9,35 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+LOCAL_PROSE_EXACT_STAGES = ("script",)
+LOCAL_PROSE_STAGE_PREFIXES = ("part:", "revise:")
+COMMERCIAL_STRONG_STAGES = (
+    "premise_intake",
+    "premise_intake_repair",
+    "series_package",
+    "chapter_review",
+    "visual_state_update",
+    "mechanics",
+    "outline",
+    "story_seed_revision",
+    "architecture",
+    "architect",
+    "series_architect",
+)
+COMMERCIAL_CHEAP_STAGES = (
+    "review",
+    "director",
+    "description",
+    "tonal",
+    "showmanship",
+    "hook",
+    "rhythm",
+    "reader_proxy",
+    "chat",
+    "revision",
+)
+COMMERCIAL_NANO_STAGES = ("settings_probe", "smoke", "status")
+
 
 class OpenAIResponsesGenerator:
     """OpenAI Responses API adapter for staged LitRPG generation."""
@@ -159,26 +188,11 @@ def classify_openai_intent(
 
     stage_key = stage.casefold()
     base_stage = stage_key.split(":", 1)[0]
-    if base_stage in {
-        "premise_intake",
-        "series_package",
-        "chapter_review",
-        "visual_state_update",
-        "mechanics",
-    }:
+    if base_stage in COMMERCIAL_STRONG_STAGES:
         return "strong"
-    if base_stage in {
-        "review",
-        "director",
-        "description",
-        "tonal",
-        "showmanship",
-        "hook",
-        "rhythm",
-        "reader_proxy",
-    }:
+    if base_stage in COMMERCIAL_CHEAP_STAGES:
         return "cheap"
-    if base_stage in {"settings_probe", "smoke", "status"}:
+    if base_stage in COMMERCIAL_NANO_STAGES:
         return "nano"
 
     prompt_key = prompt.casefold()
@@ -451,13 +465,27 @@ class OllamaGenerator:
 class StageRouting:
     """Stage matching rules for hybrid local/commercial generation."""
 
-    local_exact: tuple[str, ...] = ("script",)
-    local_prefixes: tuple[str, ...] = ("part:", "revise:")
+    local_exact: tuple[str, ...] = LOCAL_PROSE_EXACT_STAGES
+    local_prefixes: tuple[str, ...] = LOCAL_PROSE_STAGE_PREFIXES
 
     def is_local(self, stage: str) -> bool:
         return stage in self.local_exact or any(
             stage.startswith(prefix) for prefix in self.local_prefixes
         )
+
+    def backend_for(self, stage: str) -> str:
+        """Return the hybrid backend label selected for a stage."""
+
+        return "local" if self.is_local(stage) else "default"
+
+    def explain(self, stage: str) -> str:
+        """Return a deterministic human-readable routing decision."""
+
+        backend = self.backend_for(stage)
+        if backend == "local":
+            return f"{stage}: local prose backend"
+        intent = classify_openai_intent(stage=stage, prompt="")
+        return f"{stage}: commercial {intent} backend"
 
 
 class StageRouterLLM:

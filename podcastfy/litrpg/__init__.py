@@ -29,7 +29,12 @@ from podcastfy.litrpg.foreshadowing import add_plants, compute_ready_to_pay
 from podcastfy.litrpg.foreshadowing import format_foreshadow_context
 from podcastfy.litrpg.foreshadowing import load_foreshadow_ledger, mark_paid
 from podcastfy.litrpg.foreshadowing import save_foreshadow_ledger
-from podcastfy.litrpg.hooks import build_hook_context, hook_type_for_contract
+from podcastfy.litrpg.hooks import HookContract, MysteryLock
+from podcastfy.litrpg.hooks import build_hook_context, build_hook_contract
+from podcastfy.litrpg.hooks import format_ending_hook_obligations
+from podcastfy.litrpg.hooks import format_mystery_lock
+from podcastfy.litrpg.hooks import format_opening_hook_obligation
+from podcastfy.litrpg.hooks import hook_type_for_contract
 from podcastfy.litrpg.library import delete_episode, get_audio_path, get_episode
 from podcastfy.litrpg.library import list_episodes, list_regenerable_parts, list_series
 from podcastfy.litrpg.library import mark_episode_status
@@ -53,7 +58,10 @@ from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
 from podcastfy.litrpg.qa import build_chapter_qa, parse_part_qa_artifacts
 from podcastfy.litrpg.models import CharacterState, EpisodeBundle, EpisodeConfig
-from podcastfy.litrpg.models import QuestState, ScriptLine, SeriesState
+from podcastfy.litrpg.models import ChapterContract
+from podcastfy.litrpg.models import QuestState, SchemaValidationError, ScriptLine
+from podcastfy.litrpg.models import SeriesArcBeat, SeriesState, VoiceConstraint
+from podcastfy.litrpg.models import WorldRegisterEntry
 from podcastfy.litrpg.renderer import RoleScriptRenderer
 from podcastfy.litrpg.rhythm import build_prose_rhythm_prompt
 from podcastfy.litrpg.rhythm import build_reader_proxy_prompt
@@ -99,6 +107,7 @@ __all__ = [
     "CharacterBibleEntry",
     "BookPlan",
     "ChapterBeat",
+    "ChapterContract",
     "ChapterOutlineEntry",
     "CharacterState",
     "ContinuityLedger",
@@ -108,12 +117,16 @@ __all__ = [
     "EpisodeStore",
     "ForeshadowEntry",
     "ForeshadowLedger",
+    "HookContract",
+    "MysteryLock",
     "OpenAIResponsesGenerator",
     "OllamaGenerator",
     "PremiseIntakeResult",
     "QuestState",
     "RoleScriptRenderer",
     "ScriptLine",
+    "SchemaValidationError",
+    "SeriesArcBeat",
     "SeriesState",
     "SeriesArchitect",
     "SeriesShape",
@@ -125,8 +138,10 @@ __all__ = [
     "WANDERING_EVENTS",
     "VoiceCard",
     "VoiceCardDeck",
+    "VoiceConstraint",
     "VoiceProfile",
     "WorldRegister",
+    "WorldRegisterEntry",
     "add_or_promote_asset",
     "add_plants",
     "apply_delta_to_state",
@@ -134,6 +149,7 @@ __all__ = [
     "build_default_cast_plan",
     "build_chapter_qa",
     "build_hook_context",
+    "build_hook_contract",
     "build_local_sfx_prompt",
     "build_mix_plan",
     "build_premise_intake_prompt",
@@ -161,7 +177,10 @@ __all__ = [
     "format_chapter_contract_context",
     "format_continuity_context",
     "format_emotional_arc_context",
+    "format_ending_hook_obligations",
     "format_foreshadow_context",
+    "format_mystery_lock",
+    "format_opening_hook_obligation",
     "format_showrunner_context",
     "format_voice_card_context",
     "format_world_register_context",

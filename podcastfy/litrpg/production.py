@@ -5,6 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.prompts import format_announcer_system_tone
+from podcastfy.litrpg.prompts import format_bureaucratic_sadism_rules
+from podcastfy.litrpg.prompts import format_character_voice_separation
+from podcastfy.litrpg.prompts import format_mystery_lock_discipline
+from podcastfy.litrpg.prompts import format_physical_continuity_degradation
+from podcastfy.litrpg.prompts import format_scarcity_lock_language
+from podcastfy.litrpg.prompts import format_tts_role_block_constraints
+
 
 DEFAULT_CAST_ROLES = {
     "NARRATOR": "Cinematic narrator who keeps action clear and momentum high.",
@@ -280,6 +288,13 @@ Hook continuity and binge-read context:
 Story engine continuity context:
 {story_engine_context or "No additional continuity, voice, foreshadowing, or world-register context is available yet."}
 
+Reusable prompt policy:
+{format_tts_role_block_constraints(part.required_roles)}
+{format_character_voice_separation()}
+{format_scarcity_lock_language()}
+{format_physical_continuity_degradation()}
+{format_mystery_lock_discipline()}
+
 Requirements:
 - Use XML-style role blocks only, for example <HERO>...</HERO>.
 - Do not collapse the cast into narrator monologue. Let characters speak.
@@ -313,17 +328,22 @@ Hook context:
 Chapter contract:
 {contract or "No chapter contract supplied."}
 
+Reusable prompt policy:
+{format_mystery_lock_discipline()}
+{format_scarcity_lock_language()}
+
 Evaluate:
 - Does the opening honor the prior chapter's final image, question, or emotional charge before moving on?
 - Does the ending leave a concrete last image, an open question, and an implied cost?
-- Does the ending hook type match the tempo/phase? High tension needs action danger; low tension can use tonal reframe, quiet dread, or emotional cost.
+- Does the ending hook type match the tempo/phase? High tension needs action danger; lower tension can use tonal reframe, quiet dread, emotional cost, plan reversal, rules revelation, or social/faction consequence.
 - Does the final beat arise from this chapter's consequences rather than a random teaser?
 - Is the final sentence specific enough that a reader remembers an image, not just a plot fact?
+- If this is a long-arc mystery plant, does it preserve the mystery lock and avoid the forbidden payoff?
 
 Return compact JSON:
 {{
   "verdict": "pass|revise|block",
-  "hook_type": "action_cliffhanger|tonal_reframe|quiet_dread|emotional_cost|plan_turn|revelation_question|open_question",
+  "hook_type": "action_cliffhanger|tonal_reframe|quiet_dread|emotional_cost|plan_reversal|rules_revelation|social_faction_consequence",
   "opening_acknowledges_prior_hook": true,
   "ending_has_last_image": true,
   "ending_has_open_question": true,
@@ -332,6 +352,8 @@ Return compact JSON:
   "open_question": "",
   "implied_cost": "",
   "next_chapter_obligation": "",
+  "reveal_timing": "immediate|next_chapter|long_arc",
+  "forbidden_payoff_respected": true,
   "fixes": []
 }}
 
@@ -357,6 +379,10 @@ Required roles: {roles}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Reusable prompt policy:
+{format_character_voice_separation()}
+{format_tts_role_block_constraints(required_roles)}
 
 Check for:
 - Missing required role voices.
@@ -388,6 +414,9 @@ Required roles: {roles}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Reusable prompt policy:
+{format_tts_role_block_constraints(required_roles)}
 
 Do not rewrite the prose. Add production intent only.
 
@@ -439,6 +468,9 @@ Story bible continuity:
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
 
+Reusable prompt policy:
+{format_scarcity_lock_language()}
+
 Check:
 - {primary_check}
 - Whether consumed items are removed or consequences are acknowledged.
@@ -467,6 +499,9 @@ def build_description_audit_prompt(
 
 Story bible continuity:
 {story_bible_summary or "No separate story bible is available yet."}
+
+Reusable prompt policy:
+{format_physical_continuity_degradation()}
 
 Check as hard constraints, not optional polish:
 - Are static visual anchors, current injuries, fatigue markers, gear condition, and absurd traits respected?
@@ -510,6 +545,9 @@ def build_visual_state_extraction_prompt(
 Existing story bible continuity:
 {story_bible_summary or "No separate story bible is available yet."}
 
+Reusable prompt policy:
+{format_physical_continuity_degradation()}
+
 Return only JSON compatible with the StoryBible shape. Capture new or changed:
 - visual_anchors_static
 - visual_anchors_dynamic
@@ -533,6 +571,9 @@ def build_tonal_audit_prompt(*, part_script: str, target_tone: str = "", genre: 
 
 Target tone: {target_tone or profile.tonal_target}
 
+Reusable prompt policy:
+{format_bureaucratic_sadism_rules() if profile.is_litrpg else format_scarcity_lock_language()}
+
 Give two independent 1-10 ratings:
 - stakes_seriousness: consequences feel emotionally real.
 - genre_pressure: the chosen genre engine is active enough.
@@ -553,6 +594,10 @@ Script:
 def build_showmanship_audit_prompt(*, part_script: str, genre: str = "") -> str:
     profile = story_profile(genre)
     return f"""Simulate the {profile.showmanship_label} reviewing this chapter part.
+
+Reusable prompt policy:
+{format_announcer_system_tone()}
+{format_bureaucratic_sadism_rules() if profile.is_litrpg else format_scarcity_lock_language()}
 
 Score 1-10:
 - crowd_engagement
@@ -595,6 +640,12 @@ Allowed role tags: {roles}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Reusable prompt policy:
+{format_tts_role_block_constraints(required_roles)}
+{format_character_voice_separation()}
+{format_physical_continuity_degradation()}
+{format_scarcity_lock_language()}
 
 Use the review material below as constraints, not as decorative notes.
 Preserve strong jokes, character choices, and continuity. Fix blocking issues.
@@ -644,6 +695,11 @@ Genre/style: {profile.genre}
 
 Series package context:
 {series_package_summary or "No separate series package is available yet."}
+
+Reusable prompt policy:
+{format_character_voice_separation()}
+{format_announcer_system_tone()}
+{format_mystery_lock_discipline()}
 
 Check:
 - Character voice separation across at least 15 distinct roles where applicable.

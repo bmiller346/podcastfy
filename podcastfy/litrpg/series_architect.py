@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.models import chapter_contract_from_mapping, series_arc_beat_from_mapping
 from podcastfy.litrpg.showrunner import (
     ABSURDITY_DIRECTIVES,
     CREATIVITY_DIRECTIVES,
@@ -344,7 +345,7 @@ class SeriesArchitect:
                     "must_not_use": list(outline.must_not_use),
                 }
             )
-        return contract
+        return chapter_contract_from_mapping(contract).to_dict()
 
 
 def format_chapter_contract_context(contract: Mapping[str, Any]) -> str:
@@ -528,15 +529,16 @@ def _directives(tension: int, creativity: int, absurdity: int, must_preserve: Se
 
 
 def _chapter_beat_from_mapping(data: Mapping[str, Any]) -> ChapterBeat:
+    beat = series_arc_beat_from_mapping(data)
     return ChapterBeat(
-        chapter=max(1, int(data.get("chapter") or 1)),
-        phase=str(data.get("phase") or ""),
-        tension=int(data.get("tension") or 5),
-        creativity=int(data.get("creativity") or 5),
-        absurdity=int(data.get("absurdity") or 5),
-        act=int(data.get("act") or 1),
-        directives=_string_list(data.get("directives")),
-        must_not_spend=_string_list(data.get("must_not_spend")),
+        chapter=beat.chapter,
+        phase=beat.phase,
+        tension=beat.tension,
+        creativity=beat.creativity,
+        absurdity=beat.absurdity,
+        act=beat.act,
+        directives=list(beat.directives),
+        must_not_spend=list(beat.must_not_spend),
     )
 
 

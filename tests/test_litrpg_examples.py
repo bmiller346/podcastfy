@@ -6,6 +6,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_EXAMPLE = REPO_ROOT / "usage" / "litrpg_catamaran_crawlers_package.example.json"
 TASK_EXAMPLE = REPO_ROOT / "usage" / "litrpg_task.example.json"
+KNOTTY_SEED = REPO_ROOT / "usage" / "knotty_buoy_seed" / "knotty_buoy_canonical_seed.json"
+KNOTTY_SEED_README = REPO_ROOT / "usage" / "knotty_buoy_seed" / "README.md"
+KNOTTY_INTAKE_TASK = REPO_ROOT / "usage" / "knotty_buoy_premise_intake.example.json"
 
 
 def _load_package():
@@ -91,3 +94,78 @@ def test_checked_in_task_example_points_to_series_package_fixture():
 
     assert task["series_package_path"] == "litrpg_catamaran_crawlers_package.example.json"
     assert PACKAGE_EXAMPLE.exists()
+
+
+def test_knotty_buoy_canonical_seed_exists_and_preserves_core_names():
+    seed = json.loads(KNOTTY_SEED.read_text(encoding="utf-8"))
+
+    assert seed["schema_version"] == 1
+    assert seed["metadata"]["series_id"] == "knotty-buoy"
+    assert seed["metadata"]["status"] == "source_fixture"
+    assert seed["series_core"]["registration_identity"] == "The Knotty Buoy"
+    assert seed["series_core"]["canonical_vessel_name"] == "Sophie II"
+
+    characters = {entry["id"]: entry for entry in seed["characters"]}
+    assert characters["edward"]["name"] == "Edward Marsh"
+    assert characters["kelli"]["name"] == "Kelli Marsh"
+    assert characters["pedro"]["name"] == "Pedro"
+    assert "Gallowgate" in seed["world_register"]["gallowgate"]["name"]
+    assert seed["world_register"]["grand_dredger"]["name"] == "Grand Dredger"
+
+
+def test_knotty_buoy_seed_includes_pedro_phrase_vocabulary():
+    seed = json.loads(KNOTTY_SEED.read_text(encoding="utf-8"))
+    vocabulary = seed["pedro_phrase_vocabulary"]
+    phrases = {entry["text"]: entry for entry in vocabulary["available_phrases"]}
+
+    assert vocabulary["declared_total_phrases"] == 47
+    for phrase in [
+        "THAT'S NOT CODE.",
+        "WHERE'S THE PERMIT?",
+        "DOUBLE DOWN.",
+        "I'M NOT PAYING FOR THAT.",
+        "THE HOUSE TAKES ALL.",
+        "THE ARCHITECT IS ROTTING.",
+    ]:
+        assert phrase in phrases
+    assert phrases["THE ARCHITECT IS ROTTING."]["category"] == "flagged"
+    assert "Grand Dredger" in phrases["THE ARCHITECT IS ROTTING."]["broadcast_lock"]
+
+
+def test_knotty_buoy_seed_covers_home_base_floor_rules_and_outline():
+    seed = json.loads(KNOTTY_SEED.read_text(encoding="utf-8"))
+
+    home_base = seed["home_base"]
+    assert home_base["name"] == "Sophie II"
+    assert home_base["system_registration"] == "The Knotty Buoy"
+    assert home_base["stats"]["engines"] == "twin 45hp diesel engines"
+    assert "dungeon-epoxy repairs" in home_base["upgrade_hooks"]
+
+    floor = seed["floor_1"]
+    assert floor["designation"] == "The Drowned Scaffolding"
+    assert "Barnacle Scrip" in floor["economy"]
+    assert {entry["name"] for entry in floor["entities"]} >= {
+        "Barnacle Mimics",
+        "Rebar Gargoyles",
+        "OSHA Wraiths",
+        "Dockmaster Brine",
+    }
+
+    outline = seed["book_1_outline"]
+    assert len(outline) == 30
+    assert outline[0]["title"] == "Out of the Atlantic"
+    assert outline[-1]["title"] == "The Knot Holds"
+    assert all("source_beat" in entry and "ending_hook" in entry for entry in outline)
+
+
+def test_knotty_buoy_docs_show_intake_bootstrap_without_final_prose():
+    readme = KNOTTY_SEED_README.read_text(encoding="utf-8")
+    intake = json.loads(KNOTTY_INTAKE_TASK.read_text(encoding="utf-8"))
+    seed = json.loads(KNOTTY_SEED.read_text(encoding="utf-8"))
+
+    assert "python -m podcastfy.litrpg.task usage/knotty_buoy_premise_intake.example.json" in readme
+    assert "not generated chapter prose" in readme
+    assert intake["mode"] == "premise_intake"
+    assert intake["series_id"] == seed["metadata"]["series_id"]
+    assert intake["chapters_per_book"] == seed["metadata"]["chapter_count"]
+    assert seed["metadata"]["artifact_type"] == "canonical_seed_data"

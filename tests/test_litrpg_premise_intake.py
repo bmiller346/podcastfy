@@ -88,6 +88,11 @@ def test_build_premise_intake_prompt_requires_story_architecture_artifacts():
     assert "payoff windows" in prompt
     assert "faction agendas" in prompt
     assert "currencies, trade goods, costs, scarcity" in prompt
+    assert "Mystery lock discipline" in prompt
+    assert "Character voice separation" in prompt
+    assert "Physical continuity / degradation" in prompt
+    assert "Scarcity lock" in prompt
+    assert "Bureaucratic-sadism rules" in prompt
     assert '"chapters_per_book": 30' in prompt
     assert "Edward, Kelli, Pedro" in prompt
 
@@ -105,6 +110,9 @@ def test_build_premise_intake_repair_prompt_targets_failed_sections():
     assert "full corrected JSON object" in prompt
     assert "Sophie II" in prompt
     assert "vehicle/base mechanics" in prompt
+    assert "Character voice separation" in prompt
+    assert "Scarcity lock" in prompt
+    assert "Mystery lock discipline" in prompt
 
 
 def test_save_premise_intake_payload_repairs_partial_payload(tmp_path):

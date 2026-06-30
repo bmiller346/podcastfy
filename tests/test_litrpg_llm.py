@@ -86,8 +86,14 @@ class RecordingGenerator:
 
 def test_openai_intent_classifier_routes_structural_work_to_stronger_model():
     assert classify_openai_intent(stage="premise_intake", prompt="short") == "strong"
+    assert classify_openai_intent(stage="premise_intake_repair", prompt="short") == "strong"
+    assert classify_openai_intent(stage="series_package", prompt="short") == "strong"
+    assert classify_openai_intent(stage="outline", prompt="short") == "strong"
+    assert classify_openai_intent(stage="story_seed_revision", prompt="short") == "strong"
     assert classify_openai_intent(stage="mechanics:cold-open", prompt="short") == "strong"
     assert classify_openai_intent(stage="review:cold-open", prompt="short") == "cheap"
+    assert classify_openai_intent(stage="chat", prompt="short") == "cheap"
+    assert classify_openai_intent(stage="revision", prompt="short") == "cheap"
     assert classify_openai_intent(stage="smoke", prompt="short") == "nano"
     assert classify_openai_intent(stage="unknown", prompt="Build a continuity ledger") == "strong"
 
@@ -253,6 +259,40 @@ def test_stage_router_sends_prose_to_local_and_reviews_to_default():
 
     assert [call["stage"] for call in local.calls] == ["part:cold-open", "revise:cold-open"]
     assert [call["stage"] for call in default.calls] == ["mechanics:cold-open"]
+
+
+def test_stage_routing_documents_hybrid_stage_backends():
+    routing = StageRouting()
+
+    expected_local = ["script", "part:cold-open", "revise:boss-setpiece"]
+    expected_default = [
+        "outline",
+        "premise_intake",
+        "premise_intake_repair",
+        "series_package",
+        "review:cold-open",
+        "director:cold-open",
+        "mechanics:cold-open",
+        "chapter_review",
+        "visual_state_update",
+        "hook",
+        "rhythm",
+        "reader_proxy",
+        "story_seed_revision",
+        "chat",
+    ]
+
+    assert {stage: routing.backend_for(stage) for stage in expected_local} == {
+        "script": "local",
+        "part:cold-open": "local",
+        "revise:boss-setpiece": "local",
+    }
+    assert {stage: routing.backend_for(stage) for stage in expected_default} == {
+        stage: "default" for stage in expected_default
+    }
+    assert routing.explain("series_package") == "series_package: commercial strong backend"
+    assert routing.explain("review:cold-open") == "review:cold-open: commercial cheap backend"
+    assert routing.explain("part:cold-open") == "part:cold-open: local prose backend"
 
 
 def test_stage_router_supports_custom_stage_rules_and_opt_in_fallback():

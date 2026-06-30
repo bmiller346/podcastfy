@@ -306,7 +306,7 @@ function renderSeriesWorkspace() {
     diagnosticsItem("Episodes", String((libraryItem && libraryItem.episode_count) || 0)),
     diagnosticsItem("Roles", String(roleCount)),
     diagnosticsItem("Bestiary", String(bestiaryCount)),
-    diagnosticsItem("Encounters", String(encounterCount)),
+    diagnosticsItem("Generated Encounters", String(encounterCount)),
   ].join("");
 }
 
@@ -1370,7 +1370,7 @@ function renderDiagnosticsSummary(report) {
     diagnosticsItem("Genre", report.series_package.genre || report.task.genre || "unspecified"),
     diagnosticsItem("Role packages", String(report.series_package.role_count || 0)),
     diagnosticsItem("Bestiary", String(report.series_package.bestiary_count || 0)),
-    diagnosticsItem("Encounters", String(report.series_package.encounter_count || 0)),
+    diagnosticsItem("Generated Encounters", String(report.series_package.encounter_count || 0)),
     diagnosticsItem("Configured keys", String(configured)),
     diagnosticsItem("Mode", report.task.mode || "episode"),
     diagnosticsItem("Audio", audio),
@@ -1537,7 +1537,7 @@ function renderPackageRadar(seriesPackage) {
       entry.name || "Unnamed threat",
       [entry.type, entry.recurrence].filter(Boolean).join(" / ") || "needs type",
     ]),
-    renderRadarColumn("Encounters", encounters, (entry) => [
+    renderRadarColumn("Planned Encounters", encounters, (entry) => [
       entry.name || "Unnamed encounter",
       [entry.type, entry.location, entry.status].filter(Boolean).join(" / ") || "needs arena/status",
     ]),

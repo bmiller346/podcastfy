@@ -33,6 +33,11 @@ from podcastfy.litrpg.foreshadowing import (
     load_foreshadow_ledger,
     save_foreshadow_ledger,
 )
+from podcastfy.litrpg.prompts import format_bureaucratic_sadism_rules
+from podcastfy.litrpg.prompts import format_character_voice_separation
+from podcastfy.litrpg.prompts import format_mystery_lock_discipline
+from podcastfy.litrpg.prompts import format_physical_continuity_degradation
+from podcastfy.litrpg.prompts import format_scarcity_lock_language
 from podcastfy.litrpg.series_architect import (
     SeriesShape,
     bootstrap_series,
@@ -112,24 +117,24 @@ Extraction rules:
   schema: use ends_on for the final image, open question, reversal, or emotional
   cost that should pull the reader into the next chapter.
 - Put long-term mysteries in series_shape.series_mysteries, early book must_preserve,
-  and foreshadow_ledger plants. Track planted chapter ranges, payoff windows,
-  clue wording, red herrings, and what must not be revealed yet.
+  and foreshadow_ledger plants.
 - Character sheets should become both story_bible character facts and voice_cards.
-  Voice cards must capture diction, sentence rhythm, taboo phrases, favorite
-  insults, humor modes, pressure tells, emotional leakage, role tags, and how
-  the character sounds different in fear, anger, tenderness, and tactical focus.
 - Physical anchors, gear state, wounds, running jokes, and marriage/family pressure go in
   story_bible and emotional_arcs.
-- Visual continuity is mandatory: capture static anchors, dynamic degradation,
-  current injuries, fatigue markers, gear damage/repairs, base/vehicle damage,
-  absurd physical traits, and rules for how bodies or equipment worsen over time.
-- Locations, floor rules, faction agendas, mobs, economy, currencies, trade goods, costs, scarcity, and vehicle/base mechanics go in world_register.
+- Locations, floor rules, faction agendas, mobs, economy, and vehicle/base mechanics go in world_register.
   Separate registers for faction agendas, social rank, currencies, trade goods, costs, scarcity,
   dungeon floor rules, entity ecology, home-base systems, and
   institutional voices. Preserve invented names and local idioms.
 - Put recurring bits, memorable system achievements, and callback-ready jokes in continuity_ledger.
 - Plant 3-8 foreshadow entries for long-term mysteries and later book payoffs.
 - Keep all strings concise. Prefer usable production constraints over literary commentary.
+
+Reusable prompt policy:
+{format_mystery_lock_discipline()}
+{format_character_voice_separation()}
+{format_physical_continuity_degradation()}
+{format_scarcity_lock_language()}
+{format_bureaucratic_sadism_rules()}
 
 Series shape hint:
 {json.dumps(shape_hint, indent=2)}
@@ -180,6 +185,12 @@ Repair rules:
 - Preserve source names and anchors such as Edward, Kelli, Pedro, Sophie II, Sophie the cockatoo,
   Gallowgate, Grand Dredger, Drowned Scaffolding, Glass Dunes, Mycelial Canopy, Barnacle Scrip,
   OSHA Wraiths, Barnacle Mimics, and Rebar Gargoyles when present.
+
+Reusable prompt policy:
+{format_character_voice_separation()}
+{format_physical_continuity_degradation()}
+{format_scarcity_lock_language()}
+{format_mystery_lock_discipline()}
 
 Series id: {series_id}
 

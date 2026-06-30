@@ -96,6 +96,12 @@ def test_part_prompt_requires_roles_and_review_before_render():
     assert "PACING: SLOW" in prompt
     assert "Pedro invoices every insult" in prompt
     assert "System announcer: hostile office PA." in review
+    assert "TTS-friendly role block constraints" in prompt
+    assert "Allowed role tags: " in prompt
+    assert "Character voice separation" in review
+    assert "diction, sentence rhythm, taboo phrases" in review
+    assert "Scarcity lock" in prompt
+    assert "Mystery lock discipline" in prompt
 
 
 def test_chapter_review_checks_cast_separation_and_injected_scenes():
@@ -157,13 +163,18 @@ def test_review_loop_prompts_cover_director_audits_and_revision():
     assert "render_hint" in director
     assert "SFX, ducking, filters" in director
     assert "XP totals" in mechanics
+    assert "consumed items, debts, and access as hard constraints" in mechanics
     assert "physical limitation" in description
+    assert "Physical continuity / degradation" in description
     assert "stakes_seriousness" in tonal
+    assert "Bureaucratic-sadism rules" in tonal
     assert "sponsor_appeal" in showmanship
+    assert "Announcer / System tone" in showmanship
     assert "visual_anchors_dynamic" in visual_update
     assert "last_image" in hook
     assert "first two paragraphs" in hook
     assert "elevator opening by itself" in hook
+    assert "forbidden payoffs" in hook
     assert "Allowed role tags: HERO, SYSTEM" in revision
     assert "Description and character audit" in revision
     assert "Do not include markdown" in revision
