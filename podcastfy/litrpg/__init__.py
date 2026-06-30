@@ -84,6 +84,11 @@ from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
 from podcastfy.litrpg.premise_intake import extract_premise_intake_json
 from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
+from podcastfy.litrpg.promise_forge import build_hook_brief_prompt
+from podcastfy.litrpg.promise_forge import build_promise_forge_prompt
+from podcastfy.litrpg.promise_forge import format_promise_forge_context
+from podcastfy.litrpg.promise_forge import normalize_promise_forge
+from podcastfy.litrpg.promise_forge import validate_promise_forge_specificity
 from podcastfy.litrpg.prompts import build_series_anchor_block
 from podcastfy.litrpg.quarantine import QuarantineRecord
 from podcastfy.litrpg.quarantine import build_rewrite_instruction
@@ -216,11 +221,13 @@ __all__ = [
     "build_character_arc_context",
     "build_conspiracy_chapter_context",
     "build_hook_context",
+    "build_hook_brief_prompt",
     "build_hook_contract",
     "build_effect_log_entry",
     "build_local_sfx_prompt",
     "build_mix_plan",
     "build_premise_intake_prompt",
+    "build_promise_forge_prompt",
     "build_reader_proxy_prompt",
     "build_role_tts_instructions",
     "build_artifact_forge_prompt",
@@ -265,6 +272,7 @@ __all__ = [
     "format_foreshadow_context",
     "format_mystery_lock",
     "format_opening_hook_obligation",
+    "format_promise_forge_context",
     "format_showrunner_context",
     "format_scene_brief_context",
     "format_voice_card_context",
@@ -321,6 +329,7 @@ __all__ = [
     "next_episode_number",
     "next_quarantine_attempt_path",
     "normalize_mix_plan_defaults",
+    "normalize_promise_forge",
     "parse_part_qa_artifacts",
     "parse_cue_sheet",
     "parse_verdict_and_scores",
@@ -355,6 +364,7 @@ __all__ = [
     "upsert_emotional_arc",
     "validate_asset_manifest",
     "validate_mechanics",
+    "validate_promise_forge_specificity",
     "validate_mix_plan",
     "validate_series_package",
     "validate_cast_plan",

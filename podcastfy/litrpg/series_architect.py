@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 
 from podcastfy.litrpg.conspiracy_engine import ConspiracyEngine
 from podcastfy.litrpg.models import chapter_contract_from_mapping, series_arc_beat_from_mapping
+from podcastfy.litrpg.promise_forge import format_promise_forge_context, normalize_promise_forge
 from podcastfy.litrpg.showrunner import (
     ABSURDITY_DIRECTIVES,
     CREATIVITY_DIRECTIVES,
@@ -30,12 +31,17 @@ class SeriesShape:
     arc_style: str = "escalating_floor_survival"
     series_title: str = "Untitled Series"
     series_promise: str = ""
+    promise_forge: dict[str, Any] = field(default_factory=dict)
     endgame_direction: str = ""
     power_curve: str = "linear"
     series_mysteries: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data["promise_forge"] = normalize_promise_forge(data.get("promise_forge"))
+        if not data.get("series_promise") and data["promise_forge"].get("series_promise"):
+            data["series_promise"] = data["promise_forge"]["series_promise"]
+        return data
 
 
 @dataclass(slots=True)
@@ -142,13 +148,18 @@ def series_shape_from_mapping(value: SeriesShape | Mapping[str, Any]) -> SeriesS
     if isinstance(value, SeriesShape):
         return value
     data = dict(value)
+    promise_forge = normalize_promise_forge(data.get("promise_forge") if isinstance(data.get("promise_forge"), Mapping) else None)
+    series_promise = str(data.get("series_promise") or "")
+    if not series_promise and promise_forge.get("series_promise"):
+        series_promise = str(promise_forge["series_promise"])
     return SeriesShape(
         target_books=max(1, int(data.get("target_books") or 1)),
         book_length_mode=str(data.get("book_length_mode") or "standard"),
         chapters_per_book=max(1, int(data.get("chapters_per_book") or 60)),
         arc_style=str(data.get("arc_style") or "escalating_floor_survival"),
         series_title=str(data.get("series_title") or "Untitled Series"),
-        series_promise=str(data.get("series_promise") or ""),
+        series_promise=series_promise,
+        promise_forge=promise_forge,
         endgame_direction=str(data.get("endgame_direction") or ""),
         power_curve=str(data.get("power_curve") or "linear"),
         series_mysteries=_string_list(data.get("series_mysteries")),
@@ -354,6 +365,13 @@ class SeriesArchitect:
             if outline_values.get("scene_type"):
                 contract["scene_type"] = outline_values["scene_type"]
         validated = chapter_contract_from_mapping(contract).to_dict()
+        validated["promise_forge"] = dict(shape.promise_forge)
+        validated["reader_contract"] = build_reader_contract(
+            shape=shape,
+            book_plan=book_plan,
+            book_number=book_number,
+            chapter_number=chapter_number,
+        )
         conspiracy_engine = ConspiracyEngine(self.storage_dir, self.series_id)
         if conspiracy_engine.available():
             validated.update(
@@ -386,6 +404,20 @@ def format_chapter_contract_context(contract: Mapping[str, Any]) -> str:
             f"scene {contract.get('scene_type') or 'dungeon'}"
         ),
     ]
+    reader_contract = contract.get("reader_contract") if isinstance(contract.get("reader_contract"), Mapping) else {}
+    if reader_contract:
+        lines.append(
+            "- Reader contract: "
+            f"position={reader_contract.get('book_position')}; "
+            f"promise={reader_contract.get('reader_promise')}; "
+            f"trust={reader_contract.get('trust_state')}; "
+            f"payoff_pressure={reader_contract.get('payoff_pressure')}; "
+            f"reveal_density={reader_contract.get('reveal_density')}; "
+            f"optimization={reader_contract.get('optimization_target')}"
+        )
+    promise_context = format_promise_forge_context(contract.get("promise_forge") if isinstance(contract.get("promise_forge"), Mapping) else None)
+    if promise_context:
+        lines.append(promise_context)
     if contract.get("title"):
         lines.append(f"- Outline title: {contract['title']}")
     if contract.get("premise"):
@@ -435,6 +467,48 @@ def format_chapter_contract_context(contract: Mapping[str, Any]) -> str:
                 rules = "; ".join(_string_list(payload.get("operational_rules"))[:3])
                 lines.append(f"  - {faction_id}: {rules or payload.get('apparent_goal') or 'rules established'}")
     return "\n".join(lines)
+
+
+def build_reader_contract(
+    *,
+    shape: SeriesShape | Mapping[str, Any],
+    book_plan: BookPlan | Mapping[str, Any],
+    book_number: int,
+    chapter_number: int,
+) -> dict[str, str]:
+    """Return the reader relationship layer for a chapter contract."""
+
+    shape_obj = series_shape_from_mapping(shape)
+    plan = book_plan_from_mapping(book_plan, shape=shape_obj)
+    total_books = max(1, int(shape_obj.target_books))
+    book = max(1, int(book_number))
+    if book <= 1:
+        position = "book_1"
+        optimization = "why keep reading?"
+        trust = "earning initial trust through clarity, specificity, danger, and emotional grounding"
+        payoff = "plant promises cleanly; pay off small chapter-level costs"
+        reveal_density = "low: hooks and anomalies, not explanations"
+    elif book >= total_books or book / total_books >= 0.75:
+        position = "late_series"
+        optimization = "you were right to keep reading."
+        trust = "reward accumulated attention with earned convergence"
+        payoff = "high: pay off prepared promises while preserving final scarcity"
+        reveal_density = "high but controlled: answers require cost and consequence"
+    else:
+        position = "mid_series"
+        optimization = "deepen the game and prove the pattern has teeth"
+        trust = "maintain trust by reinforcing old promises while complicating them"
+        payoff = "medium: rotate reinforcement, partial payoffs, and new debt"
+        reveal_density = "medium: reveal mechanisms before endgame motives"
+    return {
+        "book_position": position,
+        "reader_promise": shape_obj.series_promise or plan.role or "chapter momentum must justify continued attention",
+        "trust_state": trust,
+        "payoff_pressure": payoff,
+        "reveal_density": reveal_density,
+        "optimization_target": optimization,
+        "chapter_position": f"chapter {int(chapter_number)} of {plan.chapter_count}",
+    }
 
 
 def _beat_type_for_contract(beat: ChapterBeat) -> str:

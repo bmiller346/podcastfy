@@ -39,6 +39,7 @@ from podcastfy.litrpg.prompts import format_character_voice_separation
 from podcastfy.litrpg.prompts import format_mystery_lock_discipline
 from podcastfy.litrpg.prompts import format_physical_continuity_degradation
 from podcastfy.litrpg.prompts import format_scarcity_lock_language
+from podcastfy.litrpg.promise_forge import normalize_promise_forge
 from podcastfy.litrpg.series_architect import (
     SeriesShape,
     bootstrap_series,
@@ -104,6 +105,10 @@ locations, and chapter outline when provided.
 
 Return ONLY a JSON object with these top-level keys:
 - series_shape: object compatible with SeriesShape.
+  It may include series_shape.promise_forge with founding_injustice,
+  permanent_constraint, comedic_signal, series_promise,
+  reader_buy_button_image, must_recur, must_not_become, originality_locks,
+  and source_brief.
 - series_arc: list of BookPlan objects.
 - book_outlines: object whose keys are book numbers and values are ChapterOutlineEntry lists.
 - story_bible: object compatible with StoryBible.
@@ -141,7 +146,9 @@ Extraction rules:
   names, forbidden aliases, current resource state, magic signatures, active
   mystery locks, established rendering rules, and recurring sensory hooks.
 - world_state.artifacts is the artifact registry source of truth. Early artifacts
-  may echo source objects, repairs, boat gear, or personal history, but avoid
+  should be shaped by series_shape.promise_forge.founding_injustice and
+  comedic_signal when present, then may echo source objects, repairs, boat gear,
+  or personal history, but avoid
   simply granting expected keepsakes. Prefer odd system reinterpretations,
   environmental loot, biome-contaminated tools, loot-box distortions, sponsor
   meddling, and artifacts whose usefulness carries mystery, cost, or suspicion.
@@ -151,6 +158,12 @@ Extraction rules:
 - Put recurring bits, memorable system achievements, and callback-ready jokes in continuity_ledger.
 - Plant 3-8 foreshadow entries for long-term mysteries and later book payoffs.
 - Keep all strings concise. Prefer usable production constraints over literary commentary.
+- The promise_forge founding injustice must be specific to this protagonist and
+  premise: unfair, funny, permanent, mechanically useful, and not generic
+  dungeon survival.
+- The intake must not imitate DCC names, voice, class names, system cadence, or terminology.
+- Keep originality_locks distinct from must_not_become: must_not_become prevents
+  planning drift; originality_locks are prose-level prohibitions.
 
 Reusable prompt policy:
 {format_mystery_lock_discipline()}
@@ -743,13 +756,20 @@ def save_premise_intake_payload(
     shape_data.setdefault("book_length_mode", "tight")
     shape_data.setdefault("arc_style", "escalating_floor_survival")
     shape_data.setdefault("power_curve", "logarithmic")
+    promise_forge = normalize_promise_forge(
+        shape_data.get("promise_forge") if isinstance(shape_data.get("promise_forge"), Mapping) else None
+    )
+    series_promise_value = str(shape_data.get("series_promise") or "")
+    if not series_promise_value and promise_forge.get("series_promise"):
+        series_promise_value = str(promise_forge["series_promise"])
     shape = SeriesShape(
         target_books=max(1, int(shape_data.get("target_books") or 1)),
         book_length_mode=str(shape_data.get("book_length_mode") or "tight"),
         chapters_per_book=max(1, int(shape_data.get("chapters_per_book") or 30)),
         arc_style=str(shape_data.get("arc_style") or "escalating_floor_survival"),
         series_title=str(shape_data.get("series_title") or "Untitled Series"),
-        series_promise=str(shape_data.get("series_promise") or ""),
+        series_promise=series_promise_value,
+        promise_forge=promise_forge,
         endgame_direction=str(shape_data.get("endgame_direction") or ""),
         power_curve=str(shape_data.get("power_curve") or "logarithmic"),
         series_mysteries=_string_list(shape_data.get("series_mysteries")),

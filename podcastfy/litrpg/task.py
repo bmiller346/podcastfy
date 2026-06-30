@@ -13,6 +13,8 @@ from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
 from podcastfy.litrpg.character_arc import CharacterArcEngine
 from podcastfy.litrpg.character_arc import format_character_arc_context
 from podcastfy.litrpg.character_arc import merge_arc_state_delta
+from podcastfy.litrpg.chapter_contract_integrator import assemble_chapter_contract
+from podcastfy.litrpg.chapter_contract_integrator import format_integrated_chapter_context
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
 from podcastfy.litrpg.continuity import format_chapter_memory_context
@@ -50,6 +52,7 @@ from podcastfy.litrpg.packages import format_series_package_summary
 from podcastfy.litrpg.part_reuse import list_reusable_parts, locked_part_scripts_from_ready_parts
 from podcastfy.litrpg.pipeline import generate_litrpg_audio_episode
 from podcastfy.litrpg.premise_intake import run_premise_intake
+from podcastfy.litrpg.promise_ledger import build_promise_report
 from podcastfy.litrpg.quarantine import next_quarantine_attempt_path
 from podcastfy.litrpg.quarantine import quarantine_record_to_dict
 from podcastfy.litrpg.quarantine import write_quarantine_record
@@ -761,7 +764,64 @@ def _story_engine_context_from_storage(
         )
     except Exception:
         pass
+    try:
+        world_state = load_world_state(storage_dir, series_id)
+        arc_context = CharacterArcEngine(storage_dir, series_id).get_chapter_context(
+            chapter_contract=contract,
+        )
+        world_register = load_world_register(storage_dir, series_id)
+        conspiracy = contract.get("conspiracy") if isinstance(contract.get("conspiracy"), Mapping) else {}
+        integrated = assemble_chapter_contract(
+            chapter_contract=contract,
+            world_state=world_state,
+            arc_context=arc_context,
+            conspiracy_context=conspiracy,
+            world_register=asdict(world_register),
+        )
+        integrated_context = format_integrated_chapter_context(integrated)
+        if integrated_context:
+            blocks.append(integrated_context)
+        promise_report = build_promise_report(
+            load_foreshadow_ledger(storage_dir, series_id),
+            book=book_number,
+            chapter=chapter_number,
+        )
+        blocks.append(_format_promise_report_context(promise_report))
+        blocks.append(_originality_guardrail_context())
+    except Exception:
+        pass
     return "\n\n".join(block for block in blocks if block)
+
+
+def _format_promise_report_context(report: Mapping[str, Any]) -> str:
+    lines = ["[promise_ledger] source=foreshadow_ledger_wrapper"]
+    for key, label in (
+        ("ready_to_pay", "ready"),
+        ("overdue", "overdue"),
+        ("active", "active"),
+    ):
+        values = report.get(key)
+        if not isinstance(values, list):
+            continue
+        for item in values[:4]:
+            if isinstance(item, Mapping):
+                lines.append(
+                    "- "
+                    f"{label}: {item.get('type')} | {item.get('reader_facing_wording')} | "
+                    f"window={item.get('intended_payoff_window')} | status={item.get('current_status')}"
+                )
+    if len(lines) == 1:
+        lines.append("- none active for this chapter")
+    return "\n".join(lines)
+
+
+def _originality_guardrail_context() -> str:
+    return (
+        "[originality_guardrail]\n"
+        "- Structural inspiration only; original voice/world/comedy engine required.\n"
+        "- Forbid copied names, cadence, faction flavor, item style, dungeon terminology, and comedic voice from DCC.\n"
+        "- Allow lethal absurd systems, mechanical clarity, emotional grounding, constrained hostile bureaucracy, and escalating setpieces."
+    )
 
 
 def _inject_stored_scarcity_sources(

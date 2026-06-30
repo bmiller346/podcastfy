@@ -35,6 +35,7 @@ from podcastfy.litrpg.quarantine import build_rewrite_instruction
 from podcastfy.litrpg.rhythm import build_prose_rhythm_prompt
 from podcastfy.litrpg.rhythm import build_reader_proxy_prompt
 from podcastfy.litrpg.scarcity import ScarcityRegistry
+from podcastfy.litrpg.scene_rendering_audit_gate import apply_scene_rendering_audit_gate
 from podcastfy.litrpg.sfx import build_mix_plan
 from podcastfy.litrpg.sfx import map_assets_for_cue_sheet
 from podcastfy.litrpg.sfx import parse_cue_sheet
@@ -375,6 +376,15 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     reader_proxy_review = ""
     scene_rendering_audit_prompt = ""
     scene_rendering_audit = ""
+    scene_rendering_gate_mode = str(task.get("scene_rendering_gate_mode") or "report").lower()
+    if scene_rendering_gate_mode not in {"off", "report", "revise", "quarantine"}:
+        scene_rendering_gate_mode = "report"
+    scene_rendering_gate_result: dict[str, Any] = {
+        "mode": scene_rendering_gate_mode,
+        "status": "not_run" if scene_rendering_gate_mode == "off" else "report_only",
+        "audit": {},
+        "rewrite_attempts": [],
+    }
     rewrite_attempts: list[dict[str, Any]] = []
     if reviews_enabled:
         visual_state_update_prompt = build_visual_state_extraction_prompt(
@@ -487,18 +497,39 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             stage="reader_proxy",
             retry_options=retry_options,
         )
-        scene_rendering_audit_prompt = build_scene_rendering_audit_prompt(
-            final_script=combined_script,
-            scene_brief=scene_brief,
-            world_state=world_state,
-            genre=genre,
-        )
-        scene_rendering_audit = _generate_with_retry(
-            llm,
-            prompt=scene_rendering_audit_prompt,
-            stage="scene_rendering_audit",
-            retry_options=retry_options,
-        )
+        if scene_rendering_gate_mode != "off":
+            scene_rendering_audit_prompt = build_scene_rendering_audit_prompt(
+                final_script=combined_script,
+                scene_brief=scene_brief,
+                world_state=world_state,
+                genre=genre,
+            )
+            scene_rendering_audit = _generate_with_retry(
+                llm,
+                prompt=scene_rendering_audit_prompt,
+                stage="scene_rendering_audit",
+                retry_options=retry_options,
+            )
+            if scene_rendering_gate_mode in {"revise", "quarantine"}:
+                scene_rendering_gate_result = apply_scene_rendering_audit_gate(
+                    audit=scene_rendering_audit,
+                    script=combined_script,
+                    llm=llm if scene_rendering_gate_mode == "revise" else None,
+                    scene_brief=scene_brief,
+                    scarcity_locks=scarcity_registry.to_dict(),
+                    max_rewrite_attempts=max_rewrite_attempts,
+                )
+                if scene_rendering_gate_result.get("status") == "revised":
+                    combined_script = str(scene_rendering_gate_result.get("script") or combined_script)
+            elif scene_rendering_gate_mode == "report":
+                scene_rendering_gate_result = apply_scene_rendering_audit_gate(
+                    audit=scene_rendering_audit,
+                    script=combined_script,
+                    max_rewrite_attempts=0,
+                )
+                scene_rendering_gate_result["mode"] = "report"
+                if scene_rendering_gate_result.get("status") == "quarantined":
+                    scene_rendering_gate_result["status"] = "reported"
     world_state_update_prompt = ""
     world_state_update = ""
     arc_state_update_prompt = ""
@@ -531,14 +562,15 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
     asset_mappings = map_assets_for_cue_sheet(cue_sheet)
     mix_plan = build_mix_plan(cue_sheet, asset_mappings=asset_mappings)
     qa = build_chapter_qa(generated_parts)
-    quarantine_required = _scarcity_requires_quarantine(scarcity_audit)
+    scene_quarantine_required = scene_rendering_gate_mode == "quarantine" and scene_rendering_gate_result.get("status") == "quarantined"
+    quarantine_required = _scarcity_requires_quarantine(scarcity_audit) or scene_quarantine_required
     rewrite_instruction = (
         build_rewrite_instruction(
             scarcity_audit,
             chapter_contract or showrunner_payload,
             scarcity_registry.to_dict(),
         )
-        if quarantine_required
+        if _scarcity_requires_quarantine(scarcity_audit)
         else ""
     )
     quarantine = _build_quarantine_summary(
@@ -559,6 +591,10 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         rewrite_attempts=len(rewrite_attempts),
         max_rewrite_attempts=max_rewrite_attempts,
     )
+    if scene_quarantine_required and not _scarcity_requires_quarantine(scarcity_audit):
+        gate_audit = scene_rendering_gate_result.get("audit") if isinstance(scene_rendering_gate_result.get("audit"), Mapping) else {}
+        quarantine["reason"] = "scene_rendering_audit_failed"
+        quarantine["violation_notes"] = list(gate_audit.get("violations") or [])
     if quarantine_required:
         qa = dict(qa)
         blocking_issues = list(qa.get("blocking_issues") or [])
@@ -566,7 +602,13 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             f"Scarcity audit violation: {issue}"
             for issue in scarcity_audit.get("violations", [])
         )
-        if not scarcity_audit.get("violations"):
+        if scene_quarantine_required:
+            gate_audit = scene_rendering_gate_result.get("audit") if isinstance(scene_rendering_gate_result.get("audit"), Mapping) else {}
+            blocking_issues.extend(
+                f"Scene rendering audit violation: {issue}"
+                for issue in gate_audit.get("violations", [])
+            )
+        if not scarcity_audit.get("violations") and not scene_quarantine_required:
             blocking_issues.append("Scarcity audit failed.")
         qa["ready"] = False
         qa["blocking_issues"] = blocking_issues
@@ -606,6 +648,8 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             "reviews_enabled": reviews_enabled,
             "revision_enabled": revision_enabled,
             "rewrite_quarantined": rewrite_quarantined,
+            "scene_rendering_gate_mode": scene_rendering_gate_mode,
+            "scene_rendering_gate": scene_rendering_gate_result,
             "rewrite_attempts": rewrite_attempts,
             "part_reuse": list(reuse_decisions.values()),
         },
@@ -626,6 +670,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
         "reader_proxy_review": reader_proxy_review,
         "scene_rendering_audit_prompt": scene_rendering_audit_prompt,
         "scene_rendering_audit": scene_rendering_audit,
+        "scene_rendering_gate": scene_rendering_gate_result,
         "world_state_update_prompt": world_state_update_prompt,
         "world_state_update": world_state_update,
         "arc_state_update_prompt": arc_state_update_prompt,
@@ -658,6 +703,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
                 "rhythm_review": rhythm_review,
                 "reader_proxy_review": reader_proxy_review,
                 "scene_rendering_audit": scene_rendering_audit,
+                "scene_rendering_gate": scene_rendering_gate_result,
                 "scene_brief": dict(scene_brief),
                 "scene_brief_context": scene_brief_context,
                 "world_state_update": world_state_update,
