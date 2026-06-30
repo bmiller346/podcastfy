@@ -1339,11 +1339,17 @@ audio {
 
 :root[data-theme="dark"] .command-center,
 :root[data-theme="dark"] .messy-intake-panel,
+:root[data-theme="dark"] .task-section,
+:root[data-theme="dark"] .task-section-primary,
+:root[data-theme="dark"] .task-section-collapsible,
 :root[data-theme="dark"] .primary-flow li,
+:root[data-theme="dark"] .flow-step,
 :root[data-theme="dark"] .revision-chat-log,
 :root[data-theme="dark"] .editor-size-controls button,
 :root[data-theme="dark"] .story-seed-status,
+:root[data-theme="dark"] .job-status,
 :root[data-theme="dark"] .diagnostic-item,
+:root[data-theme="dark"] .status-item,
 :root[data-theme="dark"] .quiet-box,
 :root[data-theme="dark"] .job-facts div,
 :root[data-theme="dark"] .output,
@@ -1358,6 +1364,25 @@ audio {
   border-color: var(--color-border);
   background: var(--color-surface-subtle);
   color: var(--color-text);
+}
+
+:root[data-theme="dark"] .task-section-grid,
+:root[data-theme="dark"] .artifact-panel-heading,
+:root[data-theme="dark"] .editor-actions,
+:root[data-theme="dark"] .episode,
+:root[data-theme="dark"] .radar-column li {
+  border-color: var(--color-border);
+}
+
+:root[data-theme="dark"] .task-section-collapsible summary:hover,
+:root[data-theme="dark"] .artifact-tab,
+:root[data-theme="dark"] .library-count,
+:root[data-theme="dark"] .badge,
+:root[data-theme="dark"] .quick-action.secondary,
+:root[data-theme="dark"] .secondary-button {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-subtle);
+  color: var(--color-heading);
 }
 
 :root[data-theme="dark"] .primary-flow strong,
@@ -1375,6 +1400,13 @@ audio {
 :root[data-theme="dark"] .part-detail,
 :root[data-theme="dark"] .output-header p,
 :root[data-theme="dark"] .artifact-panel-heading span,
+:root[data-theme="dark"] .artifact-copy,
+:root[data-theme="dark"] .artifact-card p,
+:root[data-theme="dark"] .chapter-outline-card p,
+:root[data-theme="dark"] .episode-prompt,
+:root[data-theme="dark"] .episode-path,
+:root[data-theme="dark"] .audio-meta,
+:root[data-theme="dark"] .muted,
 :root[data-theme="dark"] .empty-radar span {
   color: var(--color-muted);
 }

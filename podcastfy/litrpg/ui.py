@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from podcastfy.litrpg.agent_state import agent_state_path, load_agent_state
 from podcastfy.litrpg.effect_log import effect_log_path, read_effect_log
+from podcastfy.litrpg.render_feedback import collect_render_feedback_records
 from podcastfy.litrpg.handoff import HANDOFF_FILENAME
 from podcastfy.litrpg import library as episode_library
 from podcastfy.litrpg.settings import (
@@ -578,6 +579,9 @@ def robust_state_response(series_id: str, book_number: Any = 1) -> dict[str, Any
             "recent": effects[-10:],
             "committed_cost_usd": round(committed_cost, 4),
         },
+        "render_feedback": {
+            "recent_review_required": _recent_review_required_render_feedback(effects),
+        },
     }
 
 
@@ -978,6 +982,8 @@ def _result_metadata(result: Any) -> dict[str, Any]:
         "blocked",
         "rewrite_instruction",
         "scarcity_audit",
+        "render_feedback",
+        "render_loop",
     )
     metadata = {key: result[key] for key in keys if key in result}
     for key in ("script_path", "metadata_path", "audio_metadata_path"):
@@ -1716,6 +1722,23 @@ def _audio_format(path: Path, audio_metadata: Any) -> str:
     if isinstance(audio_metadata, dict) and audio_metadata.get("format"):
         return str(audio_metadata["format"])
     return path.suffix.lstrip(".")
+
+
+def _recent_review_required_render_feedback(
+    effects: list[dict[str, Any]], *, limit: int = 10
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for effect in effects:
+        if effect.get("stage") != "audio_render":
+            continue
+        for record in collect_render_feedback_records(effect):
+            if not bool(record.get("human_review_required")):
+                continue
+            enriched = dict(record)
+            enriched.setdefault("effect_id", effect.get("effect_id"))
+            enriched.setdefault("chapter_number", effect.get("chapter_number"))
+            records.append(enriched)
+    return records[-limit:]
 
 
 def _qa_summary(episode: dict[str, Any]) -> dict[str, Any]:

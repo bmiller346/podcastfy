@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from podcastfy.litrpg.effect_log import effect_log_path, read_effect_log
+from podcastfy.litrpg.render_feedback import collect_render_feedback_records
 from podcastfy.litrpg.series_architect import book_dir, series_dir
 
 
@@ -28,6 +29,7 @@ def generate_book_handoff(storage_dir: str | Path, series_id: str, book_number: 
     chapter_results = _chapter_results(book_root)
     quarantine_records = _quarantine_records(book_root)
     effects = read_effect_log(effect_log_path(storage, series_id))
+    render_feedback = _render_feedback_records(chapter_results, effects)
 
     lines = [
         f"# HANDOFF: {series_plan.get('series_title') or series_id} Book {int(book_number)}",
@@ -60,11 +62,14 @@ def generate_book_handoff(storage_dir: str | Path, series_id: str, book_number: 
         "## Pending human decisions",
         *_pending_decision_lines(quarantine_records),
         "",
+        "## Render feedback",
+        *_render_feedback_lines(render_feedback),
+        "",
         "## Effect log",
         *_effect_lines(effects),
         "",
         "## Recommended next action",
-        _recommended_next_action(chapter_results, quarantine_records, chapter_outline),
+        _recommended_next_action(chapter_results, quarantine_records, chapter_outline, render_feedback),
         "",
     ]
     path = book_root / HANDOFF_FILENAME
@@ -163,6 +168,82 @@ def _pending_decision_lines(records: list[Mapping[str, Any]]) -> list[str]:
     return pending or ["- None"]
 
 
+def _render_feedback_records(
+    results: list[Mapping[str, Any]], effects: list[Any]
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for result in results:
+        chapter = result.get("chapter") if isinstance(result.get("chapter"), Mapping) else {}
+        for record in collect_render_feedback_records(result):
+            enriched = dict(record)
+            if chapter.get("number") is not None:
+                enriched.setdefault("chapter_number", chapter.get("number"))
+            records.append(enriched)
+    for entry in effects:
+        if getattr(entry, "stage", "") != "audio_render":
+            continue
+        for record in collect_render_feedback_records(entry.to_dict()):
+            enriched = dict(record)
+            enriched.setdefault("chapter_number", getattr(entry, "chapter_number", None))
+            records.append(enriched)
+    return records
+
+
+def _render_feedback_lines(records: list[Mapping[str, Any]]) -> list[str]:
+    if not records:
+        return ["- None"]
+    lines: list[str] = []
+    scores = [
+        float(record["score"])
+        for record in records
+        if record.get("score") is not None
+    ]
+    if scores:
+        average = sum(scores) / len(scores)
+        lines.append(
+            f"- Score range: {min(scores):.2f}-{max(scores):.2f}; average {average:.2f}"
+        )
+    review_records = [
+        record for record in records if bool(record.get("human_review_required"))
+    ]
+    if review_records:
+        lines.append("- Human review required:")
+        for record in review_records:
+            lines.append(f"  - {_render_feedback_label(record)}")
+    invalid = [
+        record
+        for record in records
+        if record.get("directive_valid") is False
+        or str(record.get("verdict") or "") == "directive_invalid"
+    ]
+    if invalid:
+        lines.append("- Invalid directives:")
+        for record in invalid:
+            lines.append(f"  - {_render_feedback_label(record)}")
+    low_score = [
+        record
+        for record in records
+        if record.get("score") is not None and float(record.get("score")) < 0.72
+    ]
+    if low_score:
+        lines.append("- Low-score segments:")
+        for record in low_score:
+            lines.append(f"  - {_render_feedback_label(record)}")
+    if not review_records and not invalid and not low_score:
+        lines.append("- All recorded audio feedback is accepted.")
+    return lines
+
+
+def _render_feedback_label(record: Mapping[str, Any]) -> str:
+    chapter = record.get("chapter_number")
+    chapter_text = f"Chapter {chapter} " if chapter not in {None, ""} else ""
+    segment = record.get("segment_id") or "unknown segment"
+    score = record.get("score")
+    score_text = f" score {float(score):.2f}" if score is not None else ""
+    verdict = str(record.get("verdict") or "unknown")
+    return f"{chapter_text}{segment}{score_text} verdict {verdict}".strip()
+
+
 def _effect_lines(effects: list[Any]) -> list[str]:
     if not effects:
         return ["- None"]
@@ -176,11 +257,18 @@ def _recommended_next_action(
     results: list[Mapping[str, Any]],
     records: list[Mapping[str, Any]],
     outline: list[Any],
+    render_feedback: list[Mapping[str, Any]] | None = None,
 ) -> str:
     blocked = [record for record in records if record.get("status") in {"quarantined", "blocked"}]
     if blocked:
         first = blocked[0]
         return f"- Fix Chapter {first.get('chapter_number')} quarantine before approving more prose."
+    review_audio = [
+        record for record in render_feedback or [] if bool(record.get("human_review_required"))
+    ]
+    if review_audio:
+        first = review_audio[0]
+        return f"- Review audio for {_render_feedback_label(first)} before the next render pass."
     approved_numbers = [
         int(result.get("chapter", {}).get("number"))
         for result in results

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from dataclasses import field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -29,6 +30,7 @@ class EffectLogEntry:
     estimated_cost_usd: float = 0.0
     status: str = "committed"
     created_at: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -134,6 +136,7 @@ def build_effect_log_entry(
     model: str = "",
     estimated_cost_usd: float = 0.0,
     status: str = "committed",
+    metadata: Mapping[str, Any] | None = None,
 ) -> EffectLogEntry:
     """Build a normalized effect log entry from input/output payloads."""
 
@@ -168,6 +171,7 @@ def build_effect_log_entry(
         estimated_cost_usd=float(estimated_cost_usd),
         status=status,
         created_at=_utc_now(),
+        metadata=dict(metadata or {}),
     )
 
 
@@ -192,6 +196,7 @@ def _coerce_entry(value: EffectLogEntry | Mapping[str, Any]) -> EffectLogEntry:
         estimated_cost_usd=float(data.get("estimated_cost_usd") or 0.0),
         status=status,
         created_at=str(data.get("created_at") or _utc_now()),
+        metadata=dict(data.get("metadata") or {}),
     )
 
 

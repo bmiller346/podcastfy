@@ -10,6 +10,7 @@ from podcastfy.litrpg.agent_state import load_agent_state
 from podcastfy.litrpg.effect_log import effect_log_path, read_effect_log as read_effect_log_entries
 from podcastfy.litrpg.handoff import HANDOFF_FILENAME
 from podcastfy.litrpg.premise_intake import run_premise_intake
+from podcastfy.litrpg.render_feedback import collect_render_feedback_records
 from podcastfy.litrpg.series_architect import SeriesArchitect
 from podcastfy.litrpg.task import run_litrpg_task, run_litrpg_task_data
 
@@ -100,6 +101,16 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "storage_dir": {"type": "string"},
             "series_id": {"type": "string"},
             "book_number": {"type": "integer", "default": 1},
+        },
+    },
+    "get_render_feedback": {
+        "description": "Return persisted render feedback records for a LitRPG series.",
+        "required": ["storage_dir", "series_id"],
+        "properties": {
+            "storage_dir": {"type": "string"},
+            "series_id": {"type": "string"},
+            "book_number": {"type": "integer"},
+            "chapter_number": {"type": "integer"},
         },
     },
 }
@@ -266,6 +277,60 @@ def get_book_handoff(
     }
 
 
+def get_render_feedback(
+    *,
+    storage_dir: str,
+    series_id: str,
+    book_number: int | None = None,
+    chapter_number: int | None = None,
+) -> dict[str, Any]:
+    """Return persisted render feedback records from results, audio metadata, and effects."""
+
+    storage = Path(storage_dir)
+    records = _render_feedback_from_result_files(
+        storage,
+        series_id=str(series_id),
+        book_number=book_number,
+        chapter_number=chapter_number,
+    )
+    records.extend(
+        _render_feedback_from_audio_metadata(storage, series_id=str(series_id))
+    )
+    records.extend(
+        _render_feedback_from_effect_log(
+            storage,
+            series_id=str(series_id),
+            book_number=book_number,
+            chapter_number=chapter_number,
+        )
+    )
+    filtered = [
+        record
+        for record in records
+        if _feedback_matches(record, book_number=book_number, chapter_number=chapter_number)
+    ]
+    return {
+        "series_id": str(series_id),
+        "book_number": int(book_number) if book_number is not None else None,
+        "chapter_number": int(chapter_number) if chapter_number is not None else None,
+        "records": filtered,
+        "human_review_required": any(
+            bool(record.get("human_review_required")) for record in filtered
+        ),
+        "low_score_count": sum(
+            1
+            for record in filtered
+            if record.get("score") is not None and float(record.get("score")) < 0.72
+        ),
+        "invalid_directive_count": sum(
+            1
+            for record in filtered
+            if record.get("directive_valid") is False
+            or str(record.get("verdict") or "") == "directive_invalid"
+        ),
+    }
+
+
 def create_mcp_server(name: str = "podcastfy-litrpg") -> Any:
     """Create and register the optional MCP server instance."""
 
@@ -280,6 +345,7 @@ def create_mcp_server(name: str = "podcastfy-litrpg") -> Any:
     server.tool()(list_quarantine_records)
     server.tool()(read_effect_log)
     server.tool()(get_book_handoff)
+    server.tool()(get_render_feedback)
     return server
 
 
@@ -334,6 +400,99 @@ def _read_json_object(path: Path) -> dict[str, Any]:
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
     return dict(payload) if isinstance(payload, Mapping) else {}
+
+
+def _render_feedback_from_result_files(
+    storage: Path,
+    *,
+    series_id: str,
+    book_number: int | None,
+    chapter_number: int | None,
+) -> list[dict[str, Any]]:
+    root = storage / "series" / str(series_id)
+    paths: list[Path] = []
+    if book_number is not None:
+        book_root = root / f"book_{int(book_number)}"
+        if chapter_number is not None:
+            paths.extend(sorted(book_root.glob(f"chapter_{int(chapter_number):03d}.json")))
+            paths.extend(sorted(book_root.glob(f"chapter-{int(chapter_number):03d}.json")))
+        else:
+            paths.extend(sorted(book_root.glob("chapter*.json")))
+    else:
+        paths.extend(sorted(root.glob("book_*/chapter*.json")))
+    records: list[dict[str, Any]] = []
+    for path in paths:
+        payload = _read_json_object(path)
+        if not payload:
+            continue
+        chapter = payload.get("chapter") if isinstance(payload.get("chapter"), Mapping) else {}
+        for record in collect_render_feedback_records(payload):
+            enriched = dict(record)
+            enriched.setdefault("source", "result_json")
+            enriched.setdefault("source_path", str(path))
+            if book_number is not None:
+                enriched.setdefault("book_number", int(book_number))
+            if chapter.get("number") is not None:
+                enriched.setdefault("chapter_number", int(chapter.get("number")))
+            records.append(enriched)
+    return records
+
+
+def _render_feedback_from_audio_metadata(storage: Path, *, series_id: str) -> list[dict[str, Any]]:
+    root = storage / "episodes" / str(series_id)
+    records: list[dict[str, Any]] = []
+    for path in sorted(root.glob("episode-*/audio_metadata.json")):
+        payload = _read_json_object(path)
+        if not payload:
+            continue
+        for record in collect_render_feedback_records(payload):
+            enriched = dict(record)
+            enriched.setdefault("source", "audio_metadata")
+            enriched.setdefault("source_path", str(path))
+            records.append(enriched)
+    return records
+
+
+def _render_feedback_from_effect_log(
+    storage: Path,
+    *,
+    series_id: str,
+    book_number: int | None,
+    chapter_number: int | None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for entry in read_effect_log_entries(effect_log_path(storage, series_id)):
+        if entry.stage != "audio_render":
+            continue
+        if book_number is not None and entry.book_number != int(book_number):
+            continue
+        if chapter_number is not None and entry.chapter_number != int(chapter_number):
+            continue
+        for record in collect_render_feedback_records(entry.to_dict()):
+            enriched = dict(record)
+            enriched.setdefault("source", "effect_log")
+            enriched.setdefault("effect_id", entry.effect_id)
+            enriched.setdefault("book_number", entry.book_number)
+            enriched.setdefault("chapter_number", entry.chapter_number)
+            records.append(enriched)
+    return records
+
+
+def _feedback_matches(
+    record: Mapping[str, Any],
+    *,
+    book_number: int | None,
+    chapter_number: int | None,
+) -> bool:
+    if book_number is not None and record.get("book_number") is not None:
+        if int(record["book_number"]) != int(book_number):
+            return False
+    if chapter_number is not None:
+        if record.get("chapter_number") is None:
+            return False
+        if int(record["chapter_number"]) != int(chapter_number):
+            return False
+    return True
 
 
 if __name__ == "__main__":

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from dataclasses import asdict
-from typing import Any
+import json
+from pathlib import Path
+import shutil
+from typing import Any, Mapping
 
 from podcastfy.litrpg.config import LitRPGConfig, load_litrpg_config
 from podcastfy.litrpg.effect_log import append_effect_log_entry
@@ -12,6 +14,13 @@ from podcastfy.litrpg.effect_log import build_effect_log_entry
 from podcastfy.litrpg.effect_log import effect_log_path
 from podcastfy.litrpg.engine import LitRPGEngine
 from podcastfy.litrpg.episode_store import EpisodeStore
+from podcastfy.litrpg.render_feedback import directive_invalid_feedback
+from podcastfy.litrpg.render_feedback import directive_validation_to_dict
+from podcastfy.litrpg.render_feedback import build_retry_directive
+from podcastfy.litrpg.render_feedback import render_feedback_to_dict
+from podcastfy.litrpg.render_feedback import render_feedback_effect_metadata
+from podcastfy.litrpg.render_feedback import score_rendered_audio
+from podcastfy.litrpg.render_feedback import validate_directive
 from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
 from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, next_episode_number
@@ -32,6 +41,8 @@ def generate_litrpg_audio_episode(
     tts_options: dict[str, Any] | None = None,
     conversation_config: dict[str, Any] | None = None,
     litrpg_config: LitRPGConfig | None = None,
+    render_loop: dict[str, Any] | None = None,
+    performance_directives: list[dict[str, Any]] | None = None,
     replay_existing: bool = True,
     settings_path: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -82,6 +93,7 @@ def generate_litrpg_audio_episode(
         replay_existing=replay_existing,
         require_audio=render_audio,
     )
+    loop_config = _render_loop_config(render_loop)
     renderer = None
     if render_audio and replayable_bundle is None:
         from podcastfy.litrpg.renderer import RoleScriptRenderer
@@ -99,6 +111,14 @@ def generate_litrpg_audio_episode(
             ),
         )
         renderer = RoleScriptRenderer(tts=renderer_tts)
+        if loop_config["enabled"]:
+            renderer = FeedbackRenderer(
+                inner=renderer,
+                render_loop=loop_config,
+                provider=provider,
+                model=provider_model,
+                directives=performance_directives or [],
+            )
 
     engine = LitRPGEngine(
         llm=llm,
@@ -114,6 +134,11 @@ def generate_litrpg_audio_episode(
         replay_existing=replay_existing,
         require_audio_for_replay=render_audio,
     )
+    if loop_config["enabled"] and isinstance(result.get("audio_metadata"), dict):
+        audio_metadata = dict(result.get("audio_metadata") or {})
+        if "render_feedback" in audio_metadata:
+            result["render_feedback"] = list(audio_metadata.get("render_feedback") or [])
+        result["render_loop"] = dict(audio_metadata.get("render_loop") or loop_config)
 
     if not result.get("replayed"):
         state = apply_delta_to_state(
@@ -139,6 +164,406 @@ def generate_litrpg_audio_episode(
             )
 
     return result
+
+
+class FeedbackRenderer:
+    """Renderer wrapper that validates directives and scores the produced audio."""
+
+    def __init__(
+        self,
+        *,
+        inner: Any,
+        render_loop: Mapping[str, Any],
+        provider: str,
+        model: str,
+        directives: list[dict[str, Any]],
+    ) -> None:
+        self.inner = inner
+        self.render_loop = dict(render_loop)
+        self.provider = provider
+        self.model = model
+        self.directives = directives
+
+    def render_episode(self, bundle: Mapping[str, Any]) -> dict[str, Any]:
+        segment_id = _segment_id_from_bundle(bundle)
+        current_directives = [dict(item) for item in self.directives]
+        validations = [
+            validate_directive(directive, provider=self.provider)
+            for directive in current_directives
+        ]
+        validation = next((item for item in validations if not item.valid), None)
+        if validation is not None and not validation.valid:
+            feedback = directive_invalid_feedback(
+                segment_id=segment_id,
+                attempt=1,
+                provider=self.provider,
+                model=self.model,
+                validation=validation,
+            )
+            metadata = {
+                "status": "directive_invalid",
+                "audio_path": None,
+                "audio_render_skipped": True,
+                "reason": validation.reason,
+                "render_feedback": [render_feedback_to_dict(feedback)],
+                "render_loop": dict(self.render_loop),
+                "directive_validation": directive_validation_to_dict(validation),
+                "directive_validations": [
+                    directive_validation_to_dict(item) for item in validations
+                ],
+            }
+            _persist_audio_metadata(bundle, metadata)
+            return metadata
+
+        metadata = self._render_with_feedback_loop(bundle, segment_id, current_directives, validations)
+        _persist_audio_metadata(bundle, metadata)
+        return metadata
+
+    def _render_with_feedback_loop(
+        self,
+        bundle: Mapping[str, Any],
+        segment_id: str,
+        directives: list[dict[str, Any]],
+        initial_validations: list[Any],
+    ) -> dict[str, Any]:
+        threshold = float(self.render_loop.get("retry_below_score") or 0.72)
+        strategy = str(self.render_loop.get("retry_strategy") or "none")
+        max_attempts = int(self.render_loop.get("max_attempts") or 1)
+        retry_enabled = strategy != "none" and max_attempts > 1
+        attempts_to_run = max_attempts if retry_enabled else 1
+        original_output_filename = str(getattr(self.inner, "output_filename", "final.mp3"))
+        attempt_records: list[dict[str, Any]] = []
+        attempt_metadata: list[dict[str, Any]] = []
+        latest_metadata: dict[str, Any] = {}
+        current_directives = [dict(item) for item in directives]
+
+        try:
+            for attempt in range(1, attempts_to_run + 1):
+                if retry_enabled:
+                    self._set_attempt_output_filename(original_output_filename, attempt)
+                attempt_bundle = _bundle_with_directives(bundle, current_directives)
+                latest_metadata = dict(self.inner.render_episode(attempt_bundle))
+                if initial_validations or current_directives:
+                    latest_metadata["directive_validations"] = [
+                        directive_validation_to_dict(item)
+                        for item in (
+                            initial_validations
+                            if attempt == 1
+                            else [
+                                validate_directive(directive, provider=self.provider)
+                                for directive in current_directives
+                            ]
+                        )
+                    ]
+                feedback_payload = self._score_attempt(
+                    latest_metadata,
+                    bundle,
+                    segment_id=segment_id,
+                    attempt=attempt,
+                    directive=current_directives[0] if current_directives else None,
+                    threshold=threshold,
+                )
+                attempt_records.append(feedback_payload)
+                attempt_metadata.append(dict(latest_metadata))
+                if feedback_payload["score"] >= threshold:
+                    feedback_payload.setdefault("notes", []).append("accepted before retry limit")
+                    break
+                if not retry_enabled or attempt >= max_attempts:
+                    break
+                next_directives = _next_retry_directives(
+                    current_directives,
+                    feedback_payload,
+                    strategy=strategy,
+                    attempt=attempt + 1,
+                )
+                validations = [
+                    validate_directive(directive, provider=self.provider)
+                    for directive in next_directives
+                ]
+                invalid = next((item for item in validations if not item.valid), None)
+                if invalid is not None:
+                    feedback_payload.setdefault("notes", []).append(
+                        f"retry stopped: adjusted directive invalid: {invalid.reason}"
+                    )
+                    break
+                current_directives = next_directives
+        finally:
+            if hasattr(self.inner, "output_filename"):
+                self.inner.output_filename = original_output_filename
+
+        if not attempt_records:
+            return latest_metadata
+        selected_index = _selected_attempt_index(attempt_records)
+        for index, record in enumerate(attempt_records):
+            record["selected"] = index == selected_index
+            record.setdefault("notes", [])
+            if record["selected"]:
+                record["notes"].append("selected best measured attempt")
+        selected_metadata = dict(attempt_metadata[selected_index])
+        selected_metadata["render_feedback"] = attempt_records
+        selected_metadata["render_loop"] = dict(self.render_loop)
+        selected_metadata["render_attempts"] = _attempt_summaries(attempt_records, attempt_metadata)
+        if retry_enabled:
+            _copy_selected_attempt_to_final(
+                selected_metadata,
+                original_output_filename=original_output_filename,
+            )
+        _append_render_attempt_effects(
+            bundle,
+            provider=self.provider,
+            model=self.model,
+            attempts=selected_metadata["render_attempts"],
+            render_loop=self.render_loop,
+        )
+        return selected_metadata
+
+    def _score_attempt(
+        self,
+        metadata: Mapping[str, Any],
+        bundle: Mapping[str, Any],
+        *,
+        segment_id: str,
+        attempt: int,
+        directive: Mapping[str, Any] | None,
+        threshold: float,
+    ) -> dict[str, Any]:
+        audio_path = metadata.get("audio_path") or metadata.get("mixed_audio_path")
+        if audio_path:
+            feedback = score_rendered_audio(
+                audio_path,
+                segment_id=segment_id,
+                attempt=attempt,
+                provider=self.provider,
+                model=self.model,
+                expected_duration_seconds=_expected_duration_from_bundle(bundle),
+                segment_text=str(bundle.get("script") or ""),
+                directive=directive,
+            )
+            if feedback.score < threshold:
+                feedback.human_review_required = True
+                if feedback.verdict == "accepted":
+                    feedback.verdict = "needs_review"
+            payload = render_feedback_to_dict(feedback)
+            payload["audio_path"] = str(audio_path)
+            payload["directive"] = dict(directive or {})
+            return payload
+        feedback = directive_invalid_feedback(
+            segment_id=segment_id,
+            attempt=attempt,
+            provider=self.provider,
+            model=self.model,
+            validation=validate_directive({}),
+        )
+        feedback.verdict = "missing_audio"
+        feedback.notes = ["renderer did not return an audio_path"]
+        return render_feedback_to_dict(feedback)
+
+    def _set_attempt_output_filename(self, original_output_filename: str, attempt: int) -> None:
+        if not hasattr(self.inner, "output_filename"):
+            return
+        path = Path(original_output_filename)
+        self.inner.output_filename = f"{path.stem}_attempt_{attempt:03d}{path.suffix}"
+
+
+def _render_loop_config(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    config = dict(value or {})
+    enabled = bool(config.get("enabled"))
+    strategy = str(config.get("retry_strategy") or "none")
+    if strategy not in {"none", "same_directive", "deterministic_adjustment"}:
+        strategy = "none"
+    return {
+        "enabled": enabled,
+        "max_attempts": int(config.get("max_attempts") or 1),
+        "retry_below_score": float(config.get("retry_below_score") or 0.72),
+        "retry_strategy": strategy,
+        "auto_retry_enabled": bool(enabled and strategy != "none" and int(config.get("max_attempts") or 1) > 1),
+    }
+
+
+def _bundle_with_directives(
+    bundle: Mapping[str, Any], directives: list[dict[str, Any]]
+) -> dict[str, Any]:
+    payload = dict(bundle)
+    if directives:
+        payload["director_cues"] = [dict(item) for item in directives]
+    return payload
+
+
+def _next_retry_directives(
+    directives: list[dict[str, Any]],
+    feedback_payload: Mapping[str, Any],
+    *,
+    strategy: str,
+    attempt: int,
+) -> list[dict[str, Any]]:
+    if strategy == "same_directive":
+        return [dict(item) for item in directives]
+    feedback = _feedback_from_payload(feedback_payload)
+    if not directives:
+        return [build_retry_directive({}, feedback, attempt)]
+    return [
+        build_retry_directive(directive, feedback, attempt)
+        for directive in directives
+    ]
+
+
+def _feedback_from_payload(payload: Mapping[str, Any]) -> Any:
+    from podcastfy.litrpg.render_feedback import RenderFeedback
+
+    return RenderFeedback(
+        segment_id=str(payload.get("segment_id") or ""),
+        attempt=int(payload.get("attempt") or 1),
+        provider=str(payload.get("provider") or ""),
+        model=str(payload.get("model") or ""),
+        peak_db=payload.get("peak_db"),
+        rms_db=payload.get("rms_db"),
+        silence_ratio=payload.get("silence_ratio"),
+        duration_seconds=payload.get("duration_seconds"),
+        clipping_detected=bool(payload.get("clipping_detected")),
+        tts_valley_risk=bool(payload.get("tts_valley_risk")),
+        score=float(payload.get("score") or 0.0),
+        verdict=str(payload.get("verdict") or ""),
+        human_review_required=bool(payload.get("human_review_required")),
+        notes=list(payload.get("notes") or []),
+    )
+
+
+def _selected_attempt_index(records: list[Mapping[str, Any]]) -> int:
+    best_index = 0
+    best_score = -1.0
+    for index, record in enumerate(records):
+        try:
+            score = float(record.get("score") or 0.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        if score > best_score:
+            best_score = score
+            best_index = index
+    return best_index
+
+
+def _attempt_summaries(
+    records: list[Mapping[str, Any]], metadata_by_attempt: list[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    summaries = []
+    for index, record in enumerate(records):
+        metadata = metadata_by_attempt[index] if index < len(metadata_by_attempt) else {}
+        summaries.append(
+            {
+                "attempt": int(record.get("attempt") or index + 1),
+                "score": record.get("score"),
+                "verdict": record.get("verdict"),
+                "selected": bool(record.get("selected")),
+                "audio_path": metadata.get("audio_path"),
+                "mixed_audio_path": metadata.get("mixed_audio_path"),
+                "human_review_required": bool(record.get("human_review_required")),
+                "segment_id": record.get("segment_id"),
+            }
+        )
+    return summaries
+
+
+def _copy_selected_attempt_to_final(
+    metadata: dict[str, Any], *, original_output_filename: str
+) -> None:
+    selected_audio_path = metadata.get("audio_path")
+    if not selected_audio_path:
+        return
+    source = Path(str(selected_audio_path))
+    if not source.exists():
+        return
+    final = source.with_name(original_output_filename)
+    if source.resolve() != final.resolve():
+        shutil.copyfile(source, final)
+    metadata["selected_attempt_audio_path"] = str(source)
+    metadata["audio_path"] = str(final)
+
+
+def _append_render_attempt_effects(
+    bundle: Mapping[str, Any],
+    *,
+    provider: str,
+    model: str,
+    attempts: list[Mapping[str, Any]],
+    render_loop: Mapping[str, Any],
+) -> None:
+    storage_metadata = bundle.get("storage_metadata")
+    if not isinstance(storage_metadata, Mapping) or not storage_metadata.get("bundle_path"):
+        return
+    bundle_path = Path(str(storage_metadata["bundle_path"]))
+    try:
+        storage_path = bundle_path.parents[2]
+    except IndexError:
+        return
+    series_id = str(bundle.get("series_id") or "default-series")
+    episode_number = int(bundle.get("episode_number") or 1)
+    for attempt in attempts:
+        output_payload = {
+            "render_feedback": [dict(attempt)],
+            "render_loop": dict(render_loop),
+        }
+        metadata = render_feedback_effect_metadata(output_payload)
+        metadata.update(
+            {
+                "attempt": int(attempt.get("attempt") or 1),
+                "selected_attempt": (
+                    int(attempt.get("attempt") or 1)
+                    if attempt.get("selected")
+                    else None
+                ),
+            }
+        )
+        entry = build_effect_log_entry(
+            series_id=series_id,
+            book_number=1,
+            chapter_number=episode_number,
+            stage="audio_render",
+            input_payload={
+                "episode_number": episode_number,
+                "attempt": int(attempt.get("attempt") or 1),
+            },
+            output_payload=output_payload,
+            provider=provider,
+            model=model,
+            status="committed",
+            metadata=metadata,
+        )
+        append_effect_log_entry(effect_log_path(storage_path, series_id), entry)
+
+
+def _segment_id_from_bundle(bundle: Mapping[str, Any]) -> str:
+    series_id = str(bundle.get("series_id") or "series")
+    episode_number = int(bundle.get("episode_number") or 1)
+    return f"{series_id}_episode_{episode_number:03d}"
+
+
+def _expected_duration_from_bundle(bundle: Mapping[str, Any]) -> float | None:
+    config = bundle.get("config")
+    if not isinstance(config, Mapping):
+        return None
+    try:
+        minutes = float(config.get("minutes") or 0)
+    except (TypeError, ValueError):
+        return None
+    return minutes * 60 if minutes > 0 else None
+
+
+def _persist_audio_metadata(bundle: Mapping[str, Any], metadata: dict[str, Any]) -> None:
+    path_value = metadata.get("audio_metadata_path")
+    if path_value:
+        path = Path(str(path_value))
+    else:
+        storage_metadata = bundle.get("storage_metadata")
+        if not isinstance(storage_metadata, Mapping) or not storage_metadata.get("bundle_path"):
+            return
+        path = Path(str(storage_metadata["bundle_path"])) / "audio_metadata.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = dict(metadata)
+    payload["audio_metadata_path"] = str(path)
+    metadata["audio_metadata_path"] = str(path)
+    with path.open("w", encoding="utf-8") as metadata_file:
+        json.dump(payload, metadata_file, ensure_ascii=True, indent=2, sort_keys=True)
+        metadata_file.write("\n")
 
 
 def _mechanics_context_from_state(state: Any) -> dict[str, Any]:
@@ -253,6 +678,18 @@ def _append_audio_render_effect(
         output_payload=output_payload,
         provider=provider,
         model=model,
-        status="committed",
+        status=_audio_render_effect_status(output_payload),
+        metadata=render_feedback_effect_metadata(output_payload),
     )
     append_effect_log_entry(effect_log_path(storage_path, series_id), entry)
+
+
+def _audio_render_effect_status(output_payload: Any) -> str:
+    if not isinstance(output_payload, Mapping):
+        return "committed"
+    status = str(output_payload.get("status") or "").lower()
+    if status in {"failed", "failed_render", "error"}:
+        return "failed"
+    if output_payload.get("audio_render_skipped") or status in {"skipped", "directive_invalid"}:
+        return "skipped"
+    return "committed"

@@ -54,6 +54,7 @@ def test_mcp_tool_schemas_are_available_without_sdk():
     assert schemas["list_quarantine_records"]["properties"]["book_number"]["default"] == 1
     assert schemas["read_effect_log"]["properties"]["limit"]["default"] == 20
     assert schemas["get_book_handoff"]["properties"]["book_number"]["default"] == 1
+    assert schemas["get_render_feedback"]["required"] == ["storage_dir", "series_id"]
     schemas["bootstrap_from_premise"]["required"].append("mutated")
     assert "mutated" not in mcp_server.TOOL_SCHEMAS["bootstrap_from_premise"]["required"]
 
@@ -171,6 +172,93 @@ def test_mcp_helpers_expose_robust_state_files(tmp_path):
     assert "Pending human decisions" in handoff["text"]
 
 
+def test_mcp_get_render_feedback_reads_results_audio_metadata_and_effects(tmp_path):
+    from podcastfy.litrpg import mcp_server
+    from podcastfy.litrpg.effect_log import append_effect_log_entry
+    from podcastfy.litrpg.effect_log import build_effect_log_entry
+    from podcastfy.litrpg.effect_log import effect_log_path
+
+    series_root = tmp_path / "series" / "contracts"
+    book_root = series_root / "book_1"
+    book_root.mkdir(parents=True)
+    (book_root / "chapter_001.json").write_text(
+        json.dumps(
+            {
+                "chapter": {"number": 1},
+                "render_feedback": [
+                    {
+                        "segment_id": "chapter_001_part_001",
+                        "attempt": 1,
+                        "score": 0.42,
+                        "verdict": "needs_review",
+                        "human_review_required": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    episode_root = tmp_path / "episodes" / "contracts" / "episode-0001"
+    episode_root.mkdir(parents=True)
+    (episode_root / "audio_metadata.json").write_text(
+        json.dumps(
+            {
+                "render_feedback": [
+                    {
+                        "segment_id": "contracts_episode_001",
+                        "attempt": 1,
+                        "score": 0.95,
+                        "verdict": "accepted",
+                        "human_review_required": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    append_effect_log_entry(
+        effect_log_path(tmp_path, "contracts"),
+        build_effect_log_entry(
+            series_id="contracts",
+            book_number=1,
+            chapter_number=2,
+            stage="audio_render",
+            input_payload={"chapter": 2},
+            output_payload={"status": "directive_invalid"},
+            metadata={
+                "render_feedback_score": 0.0,
+                "human_review_required": True,
+                "directive_valid": False,
+                "segment_id": "chapter_002_part_001",
+                "attempt": 1,
+            },
+            status="skipped",
+        ),
+    )
+
+    all_feedback = mcp_server.get_render_feedback(
+        storage_dir=str(tmp_path),
+        series_id="contracts",
+    )
+    chapter_two = mcp_server.get_render_feedback(
+        storage_dir=str(tmp_path),
+        series_id="contracts",
+        book_number=1,
+        chapter_number=2,
+    )
+
+    assert {record["segment_id"] for record in all_feedback["records"]} >= {
+        "chapter_001_part_001",
+        "contracts_episode_001",
+        "chapter_002_part_001",
+    }
+    assert all_feedback["human_review_required"] is True
+    assert all_feedback["low_score_count"] == 2
+    assert all_feedback["invalid_directive_count"] == 1
+    assert chapter_two["records"][0]["verdict"] == "directive_invalid"
+    assert chapter_two["records"][0]["human_review_required"] is True
+
+
 def test_create_mcp_server_fails_clearly_without_sdk(monkeypatch):
     from podcastfy.litrpg import mcp_server
 
@@ -209,4 +297,5 @@ def test_create_mcp_server_registers_tools_when_sdk_present(monkeypatch):
         "list_quarantine_records",
         "read_effect_log",
         "get_book_handoff",
+        "get_render_feedback",
     ]

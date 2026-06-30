@@ -251,6 +251,18 @@ def test_ui_static_assets_are_not_cached_during_local_dev(ui_server):
     assert "no-store" in app_headers["Cache-Control"]
 
 
+def test_ui_app_script_supports_theme_toggle(ui_server):
+    status, body, content_type = request_bytes(ui_server, "/static/app.js")
+    script = body.decode("utf-8")
+
+    assert status == 200
+    assert content_type == "application/javascript"
+    assert "litrpg-studio-theme" in script
+    assert 'document.documentElement.dataset.theme = normalized' in script
+    assert 'themeToggleButton.setAttribute("aria-pressed"' in script
+    assert 'window.matchMedia("(prefers-color-scheme: dark)")' in script
+
+
 def test_ui_stylesheet_uses_font_and_type_tokens(ui_server):
     status, body, content_type = request_bytes(ui_server, "/static/styles.css")
     css = body.decode("utf-8")
@@ -265,6 +277,8 @@ def test_ui_stylesheet_uses_font_and_type_tokens(ui_server):
     assert "color-scheme: dark;" in css
     assert ".topbar-actions" in css
     assert ".secondary-button" in css
+    assert ':root[data-theme="dark"] .task-section' in css
+    assert ':root[data-theme="dark"] .task-section-grid' in css
 
 
 def test_favicon_request_is_ignored_without_404_noise(ui_server):
@@ -978,6 +992,26 @@ def test_robust_state_endpoint_exposes_agent_quarantine_handoff_and_effects(ui_s
             estimated_cost_usd=0.13,
         ),
     )
+    append_effect_log_entry(
+        effect_log_path(ui.DATA_DIR, "paper-cuts"),
+        build_effect_log_entry(
+            series_id="paper-cuts",
+            book_number=1,
+            chapter_number=12,
+            stage="audio_render",
+            input_payload={"chapter": 12},
+            output_payload={"status": "rendered"},
+            provider="fake",
+            model="unit",
+            metadata={
+                "render_feedback_score": 0.38,
+                "human_review_required": True,
+                "directive_valid": False,
+                "segment_id": "chapter_012_part_001",
+                "attempt": 1,
+            },
+        ),
+    )
 
     status, data = request_json(
         ui_server,
@@ -993,6 +1027,8 @@ def test_robust_state_endpoint_exposes_agent_quarantine_handoff_and_effects(ui_s
     assert "Fix Chapter 12" in data["handoff"]["text"]
     assert data["effect_log"]["recent"][0]["stage"] == "chapter_generation"
     assert data["effect_log"]["committed_cost_usd"] == 0.13
+    assert data["render_feedback"]["recent_review_required"][0]["segment_id"] == "chapter_012_part_001"
+    assert data["render_feedback"]["recent_review_required"][0]["human_review_required"] is True
 
 
 def test_submit_inline_task_job_tracks_summary_and_status(

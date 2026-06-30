@@ -81,3 +81,33 @@ def test_effect_log_append_read_and_skip_policy(tmp_path):
     assert should_skip_effect(path, idempotency_key=entry.idempotency_key, policy="") is False
     assert should_skip_effect(path, idempotency_key=entry.idempotency_key, policy="skip_committed") is True
     assert should_skip_effect(path, idempotency_key=failed.idempotency_key, policy="skip_committed") is False
+
+
+def test_effect_log_stores_render_feedback_metadata(tmp_path):
+    path = effect_log_path(tmp_path, "paper-cuts")
+    entry = build_effect_log_entry(
+        series_id="paper-cuts",
+        book_number=1,
+        chapter_number=3,
+        stage="audio_render",
+        input_payload={"chapter": 3},
+        output_payload={"audio_path": "final.mp3"},
+        provider="edge",
+        model="edge",
+        metadata={
+            "render_feedback_score": 0.41,
+            "human_review_required": True,
+            "directive_valid": False,
+            "segment_id": "chapter_003_part_001",
+            "attempt": 1,
+        },
+    )
+
+    append_effect_log_entry(path, entry)
+    stored = read_effect_log(path)[0]
+
+    assert stored.metadata["render_feedback_score"] == 0.41
+    assert stored.metadata["human_review_required"] is True
+    assert stored.metadata["directive_valid"] is False
+    assert stored.metadata["segment_id"] == "chapter_003_part_001"
+    assert stored.to_dict()["metadata"]["attempt"] == 1
