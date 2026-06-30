@@ -17,23 +17,23 @@
     "tone": "funny, dangerous, fast-paced, audio-first",
     "voices": {
       "NARRATOR": {
-        "voice": "marin",
+        "voice": "ballad",
         "instructions": "Warm, cinematic narration with crisp action clarity."
       },
       "HERO": {
-        "voice": "cedar",
+        "voice": "ash",
         "instructions": "Grounded, dry, slightly overwhelmed but brave."
       },
       "SYSTEM": {
-        "voice": "coral",
-        "instructions": "Hostile game-show announcer energy with clean punchlines."
+        "voice": "onyx",
+        "instructions": "Flat bureaucratic precision. No warmth. No humor. Every word is a policy notification."
       },
       "SIDEKICK": {
-        "voice": "shimmer",
+        "voice": "coral",
         "instructions": "Fast, bright, and anxious without becoming shrill."
       },
       "BOSS": {
-        "voice": "onyx",
+        "voice": "echo",
         "instructions": "Low, controlled menace with theatrical pauses."
       }
     }

@@ -27,53 +27,110 @@ cast_roles:
   VILLAIN: Long-arc antagonist who should feel different from BOSS.
 voices:
   NARRATOR:
-    voice: en-US-GuyNeural
-    effect: light_room
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: ballad
+    instructions: Warm, cinematic narration with crisp action clarity.
   HERO:
-    voice: en-US-EricNeural
-    effect: close_mic
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: ash
+    instructions: Dry, confident, grounded lead voice; brave without theatrical polish.
   SYSTEM:
-    voice: en-US-JennyNeural
-    effect: soft_chime
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: onyx
+    instructions: Flat bureaucratic precision. No warmth. No humor. Every word is a policy notification.
   SIDEKICK:
-    voice: en-US-AriaNeural
-    effect: close_mic
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: coral
+    instructions: Bright, fast, emotionally readable support voice without becoming shrill.
   BOSS:
-    voice: en-US-ChristopherNeural
-    effect: subtle_reverb
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: echo
+    instructions: Resonant, controlled authority with tactical menace.
   RIVAL:
-    voice: en-US-RogerNeural
-    effect: close_mic
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: verse
+    instructions: Competitive, adaptable, grudgingly respectful survivor voice.
   MENTOR:
-    voice: en-US-SteffanNeural
-    effect: light_room
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: sage
+    instructions: Calm, precise, guarded veteran cadence.
   MERCHANT:
-    voice: en-US-BrianNeural
-    effect: close_mic
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: fable
+    instructions: Expressive opportunist voice with salesmanship and suspicious usefulness.
   HEALER:
-    voice: en-US-AvaNeural
-    effect: close_mic
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: shimmer
+    instructions: Practical, warm, dry triage humor under pressure.
   TANK:
-    voice: en-US-AndrewNeural
-    effect: close_mic
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: echo
+    instructions: Steady front-line bruiser who treats danger as logistics.
   ROGUE:
-    voice: en-US-EmmaNeural
-    effect: close_mic
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: nova
+    instructions: Quick opportunist voice, alert to traps and social leverage.
   MAGE:
-    voice: en-US-MichelleNeural
-    effect: light_room
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: marin
+    instructions: Clear rules-minded caster explaining mechanics under stress.
   BEAST:
-    voice: en-US-ChristopherNeural
-    effect: subtle_reverb
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: onyx
+    instructions: Simple, distinct monster vocal identity; physical and heavy.
   MINION:
-    voice: en-US-BrianNeural
-    effect: radio
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: alloy
+    instructions: Disposable enemy voice for crowd texture and fast combat beats.
   GUIDE:
-    voice: en-US-JennyNeural
-    effect: soft_chime
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: alloy
+    instructions: Helpful tutorial voice, distinct from the hostile SYSTEM.
   VILLAIN:
-    voice: en-US-ChristopherNeural
-    effect: subtle_reverb
+    provider: openai
+    model: gpt-4o-mini-tts
+    voice: onyx
+    instructions: Long-arc antagonist with cold authority, separate from setpiece BOSS.
+voice_processing:
+  SYSTEM:
+    chain: announcer_broadcast
+    pitch_shift_semitones: -1.5
+    chain_params:
+      highpass_hz: 120
+      lowpass_hz: 9000
+      compression_ratio: 4.0
+    register_overrides:
+      corporate_panic:
+        chain_params:
+          compression_ratio: 6.0
+      genuine_awe:
+        pitch_shift_semitones: -0.5
+        chain_params:
+          compression_ratio: 2.0
+  NARRATOR:
+    chain: warm_narration
+  HERO:
+    chain: none
+  SIDEKICK:
+    chain: none
+  BOSS:
+    chain: monster_distortion
+    pitch_shift_semitones: -2.0
 effects:
   notification: short crystalline ping before SYSTEM updates
   loot_drop: small rising sparkle under the reveal

@@ -13,7 +13,7 @@ LitRPG task files use separate providers for story generation and text-to-speech
 
 | Provider name | Backend | Key/settings | Notes |
 | --- | --- | --- | --- |
-| `openai` | OpenAI TTS | `OPENAI_API_KEY` or `openai_api_key` | Default speech model is `gpt-4o-mini-tts`. Voices can be built-in names such as `alloy`, or a custom voice object/string containing `id`, `voice`, `voice_id`, or `object_id`. |
+| `openai` | OpenAI TTS | `OPENAI_API_KEY` or `openai_api_key` | Default speech model is `gpt-4o-mini-tts`. It supports performance `instructions`; legacy `tts-1` and `tts-1-hd` do not. Built-in voices are `alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`, `verse`, `marin`, and `cedar`, or use a custom voice object/string containing `id`, `voice`, `voice_id`, or `object_id`. |
 | `geminiapi` | Gemini API TTS | `GEMINI_API_KEY` or `gemini_api_key` | Direct Gemini API provider name. Produces WAV output and requires both a voice and model. |
 | `edge` | Microsoft Edge TTS | No API key | Uses Edge voice names. Model is accepted for config consistency but is not used by the provider. |
 | `gemini` | Google Cloud Text-to-Speech | `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `gemini_api_key` depending on settings loader | Single-speaker Google Cloud TTS path. |
@@ -45,13 +45,15 @@ The local UI writes these values to `data/litrpg/settings.json` by default. You 
     "model": "gpt-5.4"
   },
   "tts": {
-    "provider": "geminiapi",
-    "model": "gemini-3.1-flash-tts-preview",
-    "voice": "Kore",
-    "format": "wav"
+    "provider": "openai",
+    "model": "gpt-4o-mini-tts",
+    "voice": "onyx",
+    "format": "mp3"
   }
 }
 ```
+
+For LitRPG Announcer/SYSTEM lines, prefer `onyx` with the `announcer_broadcast` voice processing chain. Use `ballad` for long narration, `ash` for a dry hero, and `coral` for a bright sidekick voice.
 
 ## Hybrid Generation Snippet
 

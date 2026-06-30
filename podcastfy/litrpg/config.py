@@ -40,22 +40,93 @@ class LitRPGConfig:
     )
     voices: dict[str, dict[str, str]] = field(
         default_factory=lambda: {
-            "NARRATOR": {"voice": "en-US-GuyNeural", "effect": "light_room"},
-            "HERO": {"voice": "en-US-EricNeural", "effect": "close_mic"},
-            "SYSTEM": {"voice": "en-US-JennyNeural", "effect": "soft_chime"},
-            "SIDEKICK": {"voice": "en-US-AriaNeural", "effect": "close_mic"},
-            "BOSS": {"voice": "en-US-ChristopherNeural", "effect": "subtle_reverb"},
-            "RIVAL": {"voice": "en-US-RogerNeural", "effect": "close_mic"},
-            "MENTOR": {"voice": "en-US-SteffanNeural", "effect": "light_room"},
-            "MERCHANT": {"voice": "en-US-BrianNeural", "effect": "close_mic"},
-            "HEALER": {"voice": "en-US-AvaNeural", "effect": "close_mic"},
-            "TANK": {"voice": "en-US-AndrewNeural", "effect": "close_mic"},
-            "ROGUE": {"voice": "en-US-EmmaNeural", "effect": "close_mic"},
-            "MAGE": {"voice": "en-US-MichelleNeural", "effect": "light_room"},
-            "BEAST": {"voice": "en-US-ChristopherNeural", "effect": "subtle_reverb"},
-            "MINION": {"voice": "en-US-BrianNeural", "effect": "radio"},
-            "GUIDE": {"voice": "en-US-JennyNeural", "effect": "soft_chime"},
-            "VILLAIN": {"voice": "en-US-ChristopherNeural", "effect": "subtle_reverb"},
+            "NARRATOR": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "ballad",
+            },
+            "HERO": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "ash",
+            },
+            "SYSTEM": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "onyx",
+            },
+            "SIDEKICK": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "coral",
+            },
+            "BOSS": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "echo",
+            },
+            "RIVAL": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "verse",
+            },
+            "MENTOR": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "sage",
+            },
+            "MERCHANT": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "fable",
+            },
+            "HEALER": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "shimmer",
+            },
+            "TANK": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "echo",
+            },
+            "ROGUE": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "nova",
+            },
+            "MAGE": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "marin",
+            },
+            "BEAST": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "onyx",
+            },
+            "MINION": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "alloy",
+            },
+            "GUIDE": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "alloy",
+            },
+            "VILLAIN": {
+                "provider": "openai",
+                "model": "gpt-4o-mini-tts",
+                "voice": "onyx",
+            },
+        }
+    )
+    voice_processing: dict[str, dict[str, Any]] = field(
+        default_factory=lambda: {
+            "SYSTEM": {"chain": "announcer_broadcast", "pitch_shift_semitones": -1.5},
+            "NARRATOR": {"chain": "warm_narration"},
+            "HERO": {"chain": "none"},
         }
     )
     effects: dict[str, str] = field(
@@ -80,11 +151,18 @@ class LitRPGConfig:
             ),
             cast_roles=dict(values.get("cast_roles", defaults.cast_roles)),
             voices=dict(values.get("voices", defaults.voices)),
+            voice_processing=dict(
+                values.get("voice_processing", defaults.voice_processing)
+            ),
             effects=dict(values.get("effects", defaults.effects)),
         )
 
     def voice_effects_metadata(self) -> dict[str, Any]:
-        return {"voices": self.voices, "effects": self.effects}
+        return {
+            "voices": self.voices,
+            "voice_processing": self.voice_processing,
+            "effects": self.effects,
+        }
 
 
 def get_default_config_path() -> Path:

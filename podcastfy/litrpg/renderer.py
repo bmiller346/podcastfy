@@ -61,6 +61,13 @@ class RoleScriptRenderer:
         audio_dir = Path(bundle_path) / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
         output_path = audio_dir / self.output_filename
+        prose_gate = _prose_qa_gate_from_bundle(bundle)
+        if not prose_gate["ready"]:
+            return _write_skipped_audio_metadata(
+                bundle_path=Path(bundle_path),
+                output_path=output_path,
+                prose_gate=prose_gate,
+            )
 
         voice_map = _voice_map_from_config(dict(bundle.get("config") or {}))
         role_instructions = _role_instructions_from_config(dict(bundle.get("config") or {}))
@@ -216,6 +223,33 @@ class RoleScriptRenderer:
         return metadata
 
 
+def _write_skipped_audio_metadata(
+    *,
+    bundle_path: Path,
+    output_path: Path,
+    prose_gate: Mapping[str, Any],
+) -> dict[str, Any]:
+    metadata = {
+        "status": "quarantined",
+        "reason": "prose_qa_not_ready",
+        "audio_render_skipped": True,
+        "audio_path": str(output_path),
+        "format": output_path.suffix.lstrip("."),
+        "prose_qa_gate": dict(prose_gate),
+        "audio_provider_routes": [],
+        "voice_processing": {
+            "processed": False,
+            "reason": "prose_qa_not_ready",
+        },
+    }
+    metadata_path = bundle_path / "audio_metadata.json"
+    with metadata_path.open("w", encoding="utf-8") as metadata_file:
+        json.dump(metadata, metadata_file, ensure_ascii=True, indent=2, sort_keys=True)
+        metadata_file.write("\n")
+    metadata["audio_metadata_path"] = str(metadata_path)
+    return metadata
+
+
 def _voice_map_from_config(config: Mapping[str, Any]) -> dict[str, str]:
     voices = dict(config.get("voices") or {})
     voice_map: dict[str, str] = {}
@@ -229,6 +263,75 @@ def _voice_map_from_config(config: Mapping[str, Any]) -> dict[str, str]:
     if "default" not in voice_map and "NARRATOR" in voice_map:
         voice_map["default"] = voice_map["NARRATOR"]
     return voice_map
+
+
+def _prose_qa_gate_from_bundle(bundle: Mapping[str, Any]) -> dict[str, Any]:
+    """Return whether prose has passed upstream QA before audio spend."""
+
+    evidence: dict[str, Any] = {}
+    for label, value in _prose_ready_candidates(bundle):
+        ready = _coerce_ready_value(value)
+        if ready is None:
+            continue
+        evidence[label] = ready
+
+    quarantine = bundle.get("quarantine")
+    if isinstance(quarantine, Mapping):
+        status = str(quarantine.get("status") or "").strip().lower()
+        if status in {"quarantined", "blocked"}:
+            evidence["quarantine.status"] = status
+
+    blocked = [
+        label
+        for label, value in evidence.items()
+        if value is False or str(value).lower() in {"quarantined", "blocked"}
+    ]
+    return {
+        "ready": not blocked,
+        "reason": "prose_qa_not_ready" if blocked else "",
+        "blocked_by": blocked,
+        "evidence": evidence,
+    }
+
+
+def _prose_ready_candidates(bundle: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    candidates: list[tuple[str, Any]] = []
+    qa = bundle.get("qa")
+    if isinstance(qa, Mapping) and "ready" in qa:
+        candidates.append(("qa.ready", qa["ready"]))
+    render = bundle.get("render")
+    if isinstance(render, Mapping) and "ready" in render:
+        candidates.append(("render.ready", render["ready"]))
+    metadata = bundle.get("metadata")
+    if isinstance(metadata, Mapping):
+        for key in ("qa_ready", "render_ready"):
+            if key in metadata:
+                candidates.append((f"metadata.{key}", metadata[key]))
+        metadata_qa = metadata.get("qa")
+        if isinstance(metadata_qa, Mapping) and "ready" in metadata_qa:
+            candidates.append(("metadata.qa.ready", metadata_qa["ready"]))
+        metadata_render = metadata.get("render")
+        if isinstance(metadata_render, Mapping) and "ready" in metadata_render:
+            candidates.append(("metadata.render.ready", metadata_render["ready"]))
+        audio_readiness = metadata.get("audio_readiness")
+        if isinstance(audio_readiness, Mapping) and "render_ready" in audio_readiness:
+            candidates.append(
+                ("metadata.audio_readiness.render_ready", audio_readiness["render_ready"])
+            )
+    return candidates
+
+
+def _coerce_ready_value(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "ready", "passed", "pass", "1"}:
+        return True
+    if text in {"false", "no", "not_ready", "blocked", "quarantined", "0"}:
+        return False
+    return None
 
 
 def _role_instructions_from_config(config: Mapping[str, Any]) -> dict[str, str]:

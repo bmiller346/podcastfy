@@ -579,6 +579,42 @@ def test_role_renderer_runs_readiness_before_tts_money(tmp_path):
     assert tts.calls == []
 
 
+def test_role_renderer_skips_audio_when_prose_qa_not_ready(tmp_path):
+    class ExplodingTTS:
+        def convert_script_to_speech(self, *args, **kwargs):
+            raise AssertionError("TTS should not run when prose QA is not ready")
+
+    class ExplodingProvider:
+        provider_name = "openai"
+
+        def render_line(self, *args, **kwargs):
+            raise AssertionError("Audio provider should not run when prose QA is not ready")
+
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    renderer = RoleScriptRenderer(
+        tts=ExplodingTTS(),
+        audio_performance_provider=ExplodingProvider(),
+    )
+
+    metadata = renderer.render_episode(
+        {
+            "script": "<SYSTEM>Quest updated.</SYSTEM>",
+            "storage_metadata": {"bundle_path": str(bundle_path)},
+            "qa": {"ready": False},
+            "config": {"voices": {"SYSTEM": {"voice": "onyx"}}},
+            "role_tags": ["SYSTEM"],
+        }
+    )
+
+    assert metadata["status"] == "quarantined"
+    assert metadata["reason"] == "prose_qa_not_ready"
+    assert metadata["audio_render_skipped"] is True
+    assert metadata["prose_qa_gate"]["blocked_by"] == ["qa.ready"]
+    assert metadata["audio_provider_routes"] == []
+    assert Path(metadata["audio_metadata_path"]).exists()
+
+
 def test_role_renderer_passes_contracted_script_and_metadata(tmp_path, monkeypatch):
     class RecordingTTS:
         def __init__(self):

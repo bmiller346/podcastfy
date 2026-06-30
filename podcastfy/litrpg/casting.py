@@ -12,7 +12,27 @@ from podcastfy.litrpg.prompts import ROLE_TAGS
 
 
 DEFAULT_PROVIDER = "config"
-OPENAI_TTS_MODELS = {"gpt-4o-mini-tts", "tts-1", "tts-1-hd"}
+OPENAI_INSTRUCTIONAL_TTS_MODELS = {
+    "gpt-4o-mini-tts",
+    "gpt-4o-mini-tts-2025-12-15",
+}
+OPENAI_LEGACY_TTS_MODELS = {"tts-1", "tts-1-hd"}
+OPENAI_TTS_MODELS = OPENAI_INSTRUCTIONAL_TTS_MODELS | OPENAI_LEGACY_TTS_MODELS
+OPENAI_BUILTIN_TTS_VOICES = {
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "fable",
+    "onyx",
+    "nova",
+    "sage",
+    "shimmer",
+    "verse",
+    "marin",
+    "cedar",
+}
 DEFAULT_ARC_MODIFIERS = {"trauma": 0.0, "confidence": 0.0, "rage": 0.0}
 ARC_MODIFIER_MIN = 0.0
 ARC_MODIFIER_MAX = 1.0
@@ -264,6 +284,7 @@ def validate_cast_plan(
             duplicates.add(member.role)
         roles_seen.add(member.role)
         warnings.extend(_provider_model_warnings(member, plan.provider_defaults))
+        warnings.extend(_provider_voice_warnings(member, plan.provider_defaults))
     warnings = list(dict.fromkeys(warnings))
 
     if mode == "chapter" and len(plan.cast_members) < 15:
@@ -470,11 +491,34 @@ def _model_warnings(role: str, provider: str, model: str) -> list[str]:
     lower_model = model.lower()
     if provider == "openai" and model not in OPENAI_TTS_MODELS:
         warnings.append(f"{role} model {model!r} is not a known OpenAI TTS model.")
+    if provider == "openai" and model in OPENAI_LEGACY_TTS_MODELS:
+        warnings.append(
+            f"{role} model {model!r} does not support performance instructions; use 'gpt-4o-mini-tts'."
+        )
     if provider in {"gemini", "google"} and lower_model.startswith(("gpt-", "tts-")):
         warnings.append(f"{role} model {model!r} looks like an OpenAI model for provider {provider!r}.")
     if provider == "openai" and lower_model.startswith(("gemini", "chirp")):
         warnings.append(f"{role} model {model!r} looks like a Google model for provider 'openai'.")
     return warnings
+
+
+def _provider_voice_warnings(
+    member: CastMember,
+    provider_defaults: Mapping[str, Any],
+) -> list[str]:
+    plan_provider = str(provider_defaults.get("provider") or DEFAULT_PROVIDER)
+    profile = member.voice_profile
+    provider = profile.provider if profile.provider != DEFAULT_PROVIDER else plan_provider
+    if provider != "openai" or not profile.voice:
+        return []
+    voice = str(profile.voice)
+    if voice in OPENAI_BUILTIN_TTS_VOICES or voice.strip().startswith("{"):
+        return []
+    return [
+        f"{member.role} voice {voice!r} is not a known OpenAI built-in TTS voice; "
+        "use one of alloy, ash, ballad, coral, echo, fable, onyx, nova, sage, "
+        "shimmer, verse, marin, cedar, or a custom voice object."
+    ]
 
 
 def _audition_line(member: CastMember) -> str:

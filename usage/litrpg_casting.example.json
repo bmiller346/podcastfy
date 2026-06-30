@@ -7,7 +7,7 @@
   "cast_members": [
     {
       "character": "Narrator",
-      "voice": "marin",
+    "voice": "ballad",
       "instructions": "Warm, cinematic narration with clean action beats.",
       "description": "Warm, cinematic guide with crisp action clarity.",
       "archetype": "cinematic narrator",
@@ -26,7 +26,7 @@
     {
       "character": "Hero",
       "display_name": "Mara",
-      "voice": "cedar",
+    "voice": "ash",
       "instructions": "Grounded, dry, slightly overwhelmed, but brave when cornered.",
       "description": "Newly awakened adventurer, brave but still learning the rules.",
       "archetype": "deadpan novice",
@@ -44,8 +44,8 @@
     },
     {
       "character": "System",
-      "voice": "coral",
-      "instructions": "Hostile game-show announcer energy with crisp LitRPG notifications.",
+    "voice": "onyx",
+    "instructions": "Flat bureaucratic precision. No warmth. No humor. Every word is a policy notification.",
       "description": "Precise game interface voice for notifications and mechanics.",
       "archetype": "hostile game interface",
       "style": "SYSTEM announcement",
@@ -64,7 +64,7 @@
     {
       "character": "Sidekick",
       "display_name": "Jax",
-      "voice": "shimmer",
+    "voice": "coral",
       "instructions": "Fast, bright, anxious under pressure without becoming shrill.",
       "description": "Quick, loyal companion who turns exposition into banter.",
       "archetype": "loyal comic counterpoint",
@@ -83,7 +83,7 @@
     {
       "character": "Boss",
       "display_name": "Quartermaster Voss",
-      "voice": "onyx",
+    "voice": "echo",
       "instructions": "Low, controlled menace with theatrical pauses.",
       "description": "Commanding antagonist with readable menace and tactical pressure.",
       "archetype": "setpiece antagonist",

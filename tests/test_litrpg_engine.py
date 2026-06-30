@@ -42,6 +42,13 @@ def test_load_litrpg_config_reads_package_defaults():
     assert "cliffhanger" in config.episode_structure
     assert set(ROLE_TAGS).issubset(config.cast_roles)
     assert set(ROLE_TAGS).issubset(config.voices)
+    assert config.voices["SYSTEM"]["voice"] == "onyx"
+    assert config.voices["SYSTEM"]["model"] == "gpt-4o-mini-tts"
+    assert config.voice_processing["SYSTEM"]["chain"] == "announcer_broadcast"
+    assert (
+        config.voice_effects_metadata()["voice_processing"]["SYSTEM"]["chain"]
+        == "announcer_broadcast"
+    )
     assert "notification" in config.effects
 
 

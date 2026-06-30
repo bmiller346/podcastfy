@@ -3,6 +3,7 @@ import json
 from podcastfy.litrpg.casting import (
     CastMember,
     CastPlan,
+    OPENAI_BUILTIN_TTS_VOICES,
     VoiceProfile,
     build_default_cast_plan,
     build_role_tts_instructions,
@@ -92,6 +93,49 @@ def test_validate_reports_chapter_errors_and_warnings_without_crashing():
     assert any("SYSTEM is missing" in error for error in metadata["errors"])
     assert any("differs from plan provider" in warning for warning in metadata["warnings"])
     assert any("OpenAI model" in warning for warning in metadata["warnings"])
+
+
+def test_openai_voice_palette_matches_current_speech_api():
+    assert OPENAI_BUILTIN_TTS_VOICES == {
+        "alloy",
+        "ash",
+        "ballad",
+        "coral",
+        "echo",
+        "fable",
+        "onyx",
+        "nova",
+        "sage",
+        "shimmer",
+        "verse",
+        "marin",
+        "cedar",
+    }
+
+
+def test_validate_warns_legacy_openai_tts_ignores_instructions():
+    plan = CastPlan(
+        provider_defaults={"provider": "openai"},
+        cast_members=[
+            CastMember(
+                role="SYSTEM",
+                display_name="System",
+                description="",
+                archetype="announcer",
+                voice_profile=VoiceProfile(
+                    provider="openai",
+                    voice="onyx",
+                    model="tts-1",
+                    instructions="Flat bureaucratic precision.",
+                ),
+            )
+        ],
+    )
+
+    metadata = validate_cast_plan(plan, mode="audition", required_roles=["SYSTEM"])
+
+    assert metadata["valid"] is True
+    assert any("does not support performance instructions" in warning for warning in metadata["warnings"])
 
 
 def test_validate_requires_voice_for_required_role():
