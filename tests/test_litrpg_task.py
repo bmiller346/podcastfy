@@ -1175,6 +1175,7 @@ def test_chapter_task_loads_and_updates_persistent_world_state(tmp_path):
         "render_audio": False,
         "reviews": False,
         "update_world_state": True,
+        "update_arc_state": True,
         "chapter_contract": {
             "book": 1,
             "chapter": 4,
@@ -1231,10 +1232,13 @@ def test_world_state_update_delta_persists_artifact_state_changes(tmp_path):
         },
     }
 
-    result = run_litrpg_task_data(task, base_dir=tmp_path, llm=ArtifactWorldStateUpdateLLM())
+    llm = ArtifactWorldStateUpdateLLM()
+    result = run_litrpg_task_data(task, base_dir=tmp_path, llm=llm)
     stored = load_world_state(tmp_path / "library", "paper-cuts")
 
     assert result["world_state_update"].startswith("{")
+    assert result["arc_state_update"] == ""
+    assert "arc_state_update" not in {call["stage"] for call in llm.calls}
     assert stored["artifacts"]["stapler_bow"]["state"]["ammo"] == 2
     assert stored["artifacts"]["stapler_bow"]["state"]["condition"] == "smoking"
     assert stored["metadata"]["artifact_uses"]["stapler_bow"]["chapter_use"] == "pinned a flesh construct"

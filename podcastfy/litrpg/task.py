@@ -1060,7 +1060,7 @@ def _save_arc_state_update_if_requested(
     task: Mapping[str, Any],
     result: Mapping[str, Any],
 ) -> None:
-    if not (task.get("update_arc_state") or task.get("update_world_state")) or not task.get("storage_dir"):
+    if not task.get("update_arc_state") or not task.get("storage_dir"):
         return
     update_text = str(result.get("arc_state_update") or "").strip()
     if not update_text:

@@ -515,7 +515,7 @@ def generate_litrpg_chapter(task: Mapping[str, Any], *, llm: Any) -> dict[str, A
             stage="world_state_update",
             retry_options=retry_options,
         )
-    if task.get("update_arc_state") or task.get("update_world_state"):
+    if task.get("update_arc_state"):
         arc_state_update_prompt = build_arc_state_update_prompt(
             final_script=combined_script,
             current_arc_registry=_mapping_or_none(task.get("emotional_arcs")) or {},
