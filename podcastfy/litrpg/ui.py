@@ -549,14 +549,21 @@ def robust_state_response(series_id: str, book_number: Any = 1) -> dict[str, Any
     state_path = agent_state_path(DATA_DIR, safe_series_id)
     handoff_path = book_root / HANDOFF_FILENAME
     quarantine = _quarantine_records(book_root)
-    effects = [entry.to_dict() for entry in read_effect_log(effect_log_path(DATA_DIR, safe_series_id))]
+    state = load_agent_state(DATA_DIR, safe_series_id)
+    log_path = effect_log_path(DATA_DIR, safe_series_id)
+    effects = [entry.to_dict() for entry in read_effect_log(log_path)]
+    committed_cost = sum(
+        float(entry.get("estimated_cost_usd") or 0.0)
+        for entry in effects
+        if entry.get("status") == "committed"
+    )
     return {
         "ok": True,
         "series_id": safe_series_id,
         "book_number": book,
         "agent_state_path": _display_path(state_path) if state_path.exists() else "",
-        "agent_state": load_agent_state(DATA_DIR, safe_series_id),
-        "blocked": load_agent_state(DATA_DIR, safe_series_id).get("blocked", []),
+        "agent_state": state,
+        "blocked": state.get("blocked", []),
         "quarantine": {
             "records": quarantine,
             "latest": quarantine[-1] if quarantine else None,
@@ -564,12 +571,12 @@ def robust_state_response(series_id: str, book_number: Any = 1) -> dict[str, Any
         "handoff": {
             "exists": handoff_path.exists(),
             "path": _display_path(handoff_path) if handoff_path.exists() else "",
+            "text": handoff_path.read_text(encoding="utf-8") if handoff_path.exists() else "",
         },
         "effect_log": {
-            "path": _display_path(effect_log_path(DATA_DIR, safe_series_id))
-            if effect_log_path(DATA_DIR, safe_series_id).exists()
-            else "",
+            "path": _display_path(log_path) if log_path.exists() else "",
             "recent": effects[-10:],
+            "committed_cost_usd": round(committed_cost, 4),
         },
     }
 

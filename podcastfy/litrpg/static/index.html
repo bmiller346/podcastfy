@@ -164,14 +164,32 @@
             Saved series
             <select id="series-select"></select>
           </label>
+          <label>
+            Book
+            <input id="robust-book-number" type="number" min="1" step="1" value="1">
+          </label>
           <div class="actions series-actions">
             <button id="use-task-series" type="button">Use Task Series</button>
             <button id="load-active-series" type="button">Load Series</button>
+            <button id="refresh-robust-state" type="button">Refresh Robust State</button>
             <button id="new-series-package" type="button">New Package Draft</button>
           </div>
         </div>
         <p class="field-note">New Package Draft is only for manual package editing. The normal path is Story Workshop -> Queue Intake Agent -> Load Series.</p>
         <div id="series-status" class="diagnostics-grid" aria-live="polite"></div>
+        <div id="robust-state-panel" class="robust-state-panel" aria-live="polite">
+          <div class="robust-state-header">
+            <h3>Robust Control Panel</h3>
+            <div class="actions robust-actions">
+              <button id="approve-harness-stage" type="button">Approve Stage</button>
+              <button id="rerun-quarantined-rewrite" type="button">Rerun Rewrite</button>
+              <button id="open-handoff" type="button">Open Handoff</button>
+            </div>
+          </div>
+          <div id="robust-state-summary" class="diagnostics-grid"></div>
+          <div id="robust-effect-history" class="effect-history"></div>
+          <pre id="handoff-preview" class="output handoff-preview" aria-live="polite"></pre>
+        </div>
         <div id="series-artifacts" class="series-artifacts" aria-live="polite"></div>
       </section>
 
@@ -208,6 +226,22 @@
           <label>
             Chapters per book
             <input name="chapters_per_book" type="number" min="1" step="1" placeholder="30">
+          </label>
+          <label>
+            Book number
+            <input name="book_number" type="number" min="1" step="1" placeholder="1">
+          </label>
+          <label>
+            Chapter number
+            <input name="chapter_number" type="number" min="1" step="1" placeholder="1">
+          </label>
+          <label>
+            Target minutes
+            <input name="target_minutes" type="number" min="1" step="1" placeholder="30">
+          </label>
+          <label>
+            Max rewrites
+            <input name="max_rewrite_attempts" type="number" min="1" step="1" placeholder="3">
           </label>
           <label class="wide">
             Premise file path
@@ -325,6 +359,18 @@
           <label class="toggle">
             <input name="render_audio" type="checkbox" checked>
             <span>Render audio after generation</span>
+          </label>
+          <label class="toggle">
+            <input name="harness_enabled" type="checkbox">
+            <span>Enable harness gates</span>
+          </label>
+          <label class="toggle">
+            <input name="rewrite_quarantined" type="checkbox">
+            <span>Rewrite quarantined chapter</span>
+          </label>
+          <label class="toggle">
+            <input name="generate_handoff" type="checkbox">
+            <span>Generate handoff</span>
           </label>
           <div class="actions task-actions">
             <button id="submit-task" type="submit">Queue Generation</button>

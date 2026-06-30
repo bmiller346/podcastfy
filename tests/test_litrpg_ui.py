@@ -84,7 +84,16 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="use-task-series"' in html
     assert 'id="load-active-series"' in html
     assert 'id="new-series-package"' in html
+    assert 'id="refresh-robust-state"' in html
+    assert 'id="robust-book-number"' in html
     assert 'id="series-status"' in html
+    assert 'id="robust-state-panel"' in html
+    assert 'id="robust-state-summary"' in html
+    assert 'id="robust-effect-history"' in html
+    assert 'id="approve-harness-stage"' in html
+    assert 'id="rerun-quarantined-rewrite"' in html
+    assert 'id="open-handoff"' in html
+    assert 'id="handoff-preview"' in html
     assert 'id="studio-flow"' in html
     assert 'id="next-actions"' in html
     assert 'id="job-console"' in html
@@ -137,6 +146,10 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="premise_path"' in html
     assert 'name="target_books"' in html
     assert 'name="chapters_per_book"' in html
+    assert 'name="book_number"' in html
+    assert 'name="chapter_number"' in html
+    assert 'name="target_minutes"' in html
+    assert 'name="max_rewrite_attempts"' in html
     assert 'name="series_promise"' in html
     assert 'name="endgame_direction"' in html
     assert 'name="genre"' in html
@@ -166,6 +179,9 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'value="wav"' in html
     assert 'value="opus"' in html
     assert 'name="render_audio"' in html
+    assert 'name="harness_enabled"' in html
+    assert 'name="rewrite_quarantined"' in html
+    assert 'name="generate_handoff"' in html
     assert 'name="result_path"' in html
     assert 'name="checkpoint_dir"' in html
     assert 'name="storage_dir"' in html
@@ -909,6 +925,7 @@ def test_robust_state_endpoint_exposes_agent_quarantine_handoff_and_effects(ui_s
             output_payload={"status": "blocked"},
             provider="fake",
             model="unit",
+            estimated_cost_usd=0.13,
         ),
     )
 
@@ -923,7 +940,9 @@ def test_robust_state_endpoint_exposes_agent_quarantine_handoff_and_effects(ui_s
     assert data["quarantine"]["latest"]["status"] == "blocked"
     assert data["quarantine"]["latest"]["rewrite_instruction"] == "Remove the sponsor reveal."
     assert data["handoff"]["path"] == "data/litrpg/series/paper-cuts/book_1/HANDOFF.md"
+    assert "Fix Chapter 12" in data["handoff"]["text"]
     assert data["effect_log"]["recent"][0]["stage"] == "chapter_generation"
+    assert data["effect_log"]["committed_cost_usd"] == 0.13
 
 
 def test_submit_inline_task_job_tracks_summary_and_status(

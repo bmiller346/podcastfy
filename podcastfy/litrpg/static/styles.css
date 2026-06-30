@@ -521,7 +521,7 @@ h2 {
 
 .series-workspace {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr) auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr) minmax(96px, 0.35fr) auto;
   gap: 14px;
   align-items: end;
   margin-bottom: 14px;
@@ -617,6 +617,66 @@ label {
   display: grid;
   gap: 12px;
   margin-top: 14px;
+}
+
+.robust-state-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  border: 1px solid #d9e0e8;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.robust-state-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.robust-state-header h3 {
+  margin: 0;
+  color: #26323d;
+  font-size: 15px;
+}
+
+.robust-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.effect-history {
+  display: grid;
+  gap: 8px;
+}
+
+.effect-list {
+  display: grid;
+  gap: 6px;
+}
+
+.effect-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(80px, 0.6fr) minmax(130px, 1fr) minmax(70px, 0.4fr);
+  gap: 8px;
+  border: 1px solid #e1e5ea;
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px;
+  color: #495560;
+  font-size: 13px;
+}
+
+.effect-row strong,
+.effect-row span {
+  overflow-wrap: anywhere;
+}
+
+.handoff-preview:empty {
+  display: none;
 }
 
 .artifact-tabs {
@@ -1105,6 +1165,7 @@ audio {
 
   .grid-form,
   .series-workspace,
+  .robust-state-header,
   .primary-flow,
   .story-file-bar,
   .story-workshop-layout,
@@ -1124,6 +1185,10 @@ audio {
     grid-template-columns: 1fr;
   }
 
+  .effect-row {
+    grid-template-columns: 1fr;
+  }
+
   .task-form .toggle,
   .task-actions,
   .package-actions {
@@ -1131,12 +1196,14 @@ audio {
   }
 
   .series-actions,
+  .robust-actions,
   .intake-actions,
   .package-actions {
     justify-content: stretch;
   }
 
   .series-actions button,
+  .robust-actions button,
   .intake-actions button,
   .package-actions button,
   .editor-actions button {
