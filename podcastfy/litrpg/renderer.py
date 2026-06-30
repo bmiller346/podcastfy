@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
+from podcastfy.litrpg.audio_provider import load_reference_clips
+from podcastfy.litrpg.audio_provider import provider_name_for_contract
 from podcastfy.litrpg.performance import build_line_performance_contracts
 from podcastfy.litrpg.performance import format_contract_script
 from podcastfy.litrpg.performance import merge_performance_role_instructions
@@ -30,10 +32,12 @@ class RoleScriptRenderer:
         tts: "TextToSpeech",
         output_filename: str = "final.mp3",
         audio_qa_probe: Any | None = None,
+        audio_performance_provider: Any | None = None,
     ) -> None:
         self.tts = tts
         self.output_filename = output_filename
         self.audio_qa_probe = audio_qa_probe
+        self.audio_performance_provider = audio_performance_provider
 
     def render_episode(self, bundle: Mapping[str, Any]) -> dict[str, Any]:
         source_script = str(bundle.get("script_with_cues") or bundle.get("script") or "")
@@ -99,13 +103,23 @@ class RoleScriptRenderer:
             issue_text = "; ".join(issue.message for issue in readiness.issues)
             raise ValueError(f"LitRPG audio readiness failed: {issue_text}")
 
-        self.tts.convert_script_to_speech(
-            contracted_script,
-            str(output_path),
-            voice_map,
-            role_tags=role_tags or None,
-            role_instructions=role_instructions,
-        )
+        audio_provider_routes: list[dict[str, Any]] = []
+        if self.audio_performance_provider is not None:
+            audio_provider_routes = _render_with_audio_performance_provider(
+                self.audio_performance_provider,
+                performance_contracts=performance_contracts,
+                output_path=output_path,
+                bundle=bundle,
+                bundle_path=Path(bundle_path),
+            )
+        else:
+            self.tts.convert_script_to_speech(
+                contracted_script,
+                str(output_path),
+                voice_map,
+                role_tags=role_tags or None,
+                role_instructions=role_instructions,
+            )
 
         asset_mappings = list(bundle.get("asset_mappings") or [])
         if not asset_mappings:
@@ -155,6 +169,7 @@ class RoleScriptRenderer:
                 contract.to_dict() for contract in performance_contracts
             ],
             "audio_performance_qa": audio_performance_qa.to_dict(),
+            "audio_provider_routes": audio_provider_routes,
             "contracted_script": contracted_script,
             "cue_sheet": cue_sheet if isinstance(cue_sheet, Mapping) else cue_sheet.to_dict(),
             "asset_mappings": asset_mappings,
@@ -327,6 +342,53 @@ def _run_audio_qa_probe(
         if scores is not None:
             result["voice_similarity_scores"] = scores
     return result
+
+
+def _render_with_audio_performance_provider(
+    provider_or_map: Any,
+    *,
+    performance_contracts: Sequence[Any],
+    output_path: Path,
+    bundle: Mapping[str, Any],
+    bundle_path: Path,
+) -> list[dict[str, Any]]:
+    reference_clips = load_reference_clips(
+        bundle.get("reference_clips") or bundle.get("reference_clip_paths"),
+        base_dir=bundle_path,
+    )
+    routing_config = _audio_performance_config_from_bundle(bundle)
+    routes: list[dict[str, Any]] = []
+    chunks: list[bytes] = []
+    for contract in performance_contracts:
+        provider = provider_or_map
+        provider_name = getattr(provider, "provider_name", "injected")
+        if isinstance(provider_or_map, Mapping):
+            provider_name = provider_name_for_contract(contract, routing_config)
+            provider = provider_or_map.get(provider_name)
+            if provider is None:
+                raise ValueError(
+                    f"No audio performance provider configured for {provider_name!r}"
+                )
+        audio = provider.render_line(contract, reference_clips)
+        chunks.append(audio)
+        routes.append(
+            {
+                "line_id": contract.line_id,
+                "role": contract.role,
+                "performance_register": contract.performance_register,
+                "provider": provider_name,
+            }
+        )
+    output_path.write_bytes(b"".join(chunks))
+    return routes
+
+
+def _audio_performance_config_from_bundle(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
+    config = bundle.get("audio_performance")
+    if isinstance(config, Mapping):
+        return config
+    config = bundle.get("audio_performance_routing")
+    return config if isinstance(config, Mapping) else {}
 
 
 def _performance_context_from_bundle(bundle: Mapping[str, Any]) -> dict[str, Any]:

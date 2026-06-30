@@ -2,6 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from podcastfy.litrpg.audio_provider import ElevenLabsPerformanceProvider
+from podcastfy.litrpg.audio_provider import GeminiAudioProvider
+from podcastfy.litrpg.audio_provider import OpenAIAudioProvider
+from podcastfy.litrpg.audio_provider import provider_name_for_contract
 from podcastfy.litrpg.performance import build_line_performance_contracts
 from podcastfy.litrpg.performance_qa import build_audio_performance_qa
 from podcastfy.litrpg.renderer import RoleScriptRenderer
@@ -320,6 +324,55 @@ def test_performance_contract_allows_controlled_announcer_register_shift():
     assert "register transition collapse" in awe.style_instruction()
 
 
+def test_audio_performance_provider_requests_map_contract_by_provider():
+    contract = build_line_performance_contracts(
+        '<SYSTEM style="genuine awe">Impossible.</SYSTEM>',
+        director_cues=[
+            {
+                "role": "SYSTEM",
+                "announcer_register": "genuine_awe",
+                "register_transition": "collapse",
+                "register_earned_by": "Apex exploit.",
+            }
+        ],
+        reference_clip_ids={"SYSTEM:GENUINE_AWE": "system_ref_awe"},
+    )[0]
+    reference_clips = {"system_ref_awe": b"ref"}
+
+    gemini = GeminiAudioProvider(voice="Kore", model="gemini-3.1-flash-tts-preview")
+    eleven = ElevenLabsPerformanceProvider(voice="voice-eleven", model="eleven_multilingual_v2")
+    openai = OpenAIAudioProvider(voice="alloy", model="gpt-4o-mini-tts")
+
+    gemini_request = gemini.build_request(contract, reference_clips)
+    eleven_request = eleven.build_request(contract, reference_clips)
+    openai_request = openai.build_request(contract, reference_clips)
+
+    assert gemini_request.generation_config["performance_contract"]["performance_register"] == "genuine_awe"
+    assert gemini_request.reference_clip_ids == ["system_ref_awe"]
+    assert "style_instruction" in eleven_request.generation_config
+    assert eleven_request.reference_clip_ids == ["system_ref_awe"]
+    assert openai_request.generation_config["voice_parameters"]["transition"] == "collapse"
+    assert openai_request.generation_config["voice_parameters"]["pace"] >= 1.0
+
+
+def test_provider_name_for_contract_prefers_register_override():
+    contract = build_line_performance_contracts(
+        '<SYSTEM style="genuine awe">Impossible.</SYSTEM>',
+        director_cues=[{"role": "SYSTEM", "announcer_register": "genuine_awe"}],
+    )[0]
+
+    provider_name = provider_name_for_contract(
+        contract,
+        {
+            "default_provider": "fallback",
+            "role_provider_overrides": {"SYSTEM": "elevenlabs"},
+            "register_provider_overrides": {"genuine_awe": "gemini"},
+        },
+    )
+
+    assert provider_name == "gemini"
+
+
 def test_audio_performance_qa_quarantines_transcript_and_voice_drift():
     contracts = build_line_performance_contracts(
         '<SYSTEM>Violation fee applied.</SYSTEM>',
@@ -585,3 +638,67 @@ def test_role_renderer_quarantines_unauthorized_announcer_register(tmp_path, mon
     assert "register_transition_unearned" in codes
     assert "register_used_before_unlock" in codes
     assert "register_requires_apex_beat" in codes
+
+
+def test_role_renderer_routes_register_to_audio_performance_provider(tmp_path, monkeypatch):
+    class FailIfCalledTTS:
+        def convert_script_to_speech(self, *args, **kwargs):
+            raise AssertionError("fallback TTS should not be used")
+
+    class NamedProvider:
+        def __init__(self, provider_name):
+            self.provider_name = provider_name
+            self.calls = []
+
+        def render_line(self, contract, reference_clips):
+            self.calls.append(contract)
+            return f"{self.provider_name}:{contract.line_id};".encode("utf-8")
+
+    monkeypatch.setattr(
+        "podcastfy.litrpg.renderer.mix_audio_locally",
+        lambda **kwargs: {"mixed": False, "reason": "unit test"},
+    )
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    gemini = NamedProvider("gemini")
+    fallback = NamedProvider("fallback")
+    renderer = RoleScriptRenderer(
+        tts=FailIfCalledTTS(),
+        audio_performance_provider={"gemini": gemini, "fallback": fallback},
+    )
+
+    metadata = renderer.render_episode(
+        {
+            "script": "<SYSTEM>Standard notice.</SYSTEM><SYSTEM>Impossible.</SYSTEM>",
+            "storage_metadata": {"bundle_path": str(bundle_path)},
+            "config": {"voices": {"SYSTEM": {"voice": "voice-s"}}},
+            "role_tags": ["SYSTEM"],
+            "chapter_contract": {"chapter": 60, "phase": "Apex"},
+            "audio_performance": {
+                "default_provider": "fallback",
+                "register_provider_overrides": {"genuine_awe": "gemini"},
+            },
+            "director_cues": [
+                {"role": "SYSTEM"},
+                {
+                    "role": "SYSTEM",
+                    "announcer_register": "genuine_awe",
+                    "register_earned_by": "Apex exploit.",
+                },
+            ],
+            "post_generation_transcript_lines": {
+                "line-0001": "Standard notice.",
+                "line-0002": "Impossible.",
+            },
+        }
+    )
+
+    audio_path = Path(metadata["audio_path"])
+
+    assert [route["provider"] for route in metadata["audio_provider_routes"]] == [
+        "fallback",
+        "gemini",
+    ]
+    assert len(fallback.calls) == 1
+    assert len(gemini.calls) == 1
+    assert audio_path.read_bytes() == b"fallback:line-0001;gemini:line-0002;"
