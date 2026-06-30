@@ -12,12 +12,14 @@ from typing import Any, Mapping
 from podcastfy.litrpg.bible import format_story_bible_summary, load_story_bible
 from podcastfy.litrpg.character_arc import CharacterArcEngine
 from podcastfy.litrpg.character_arc import format_character_arc_context
+from podcastfy.litrpg.character_arc import merge_arc_state_delta
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.config import LitRPGConfig
 from podcastfy.litrpg.continuity import format_chapter_memory_context
 from podcastfy.litrpg.continuity import load_continuity_ledger
 from podcastfy.litrpg.continuity import load_emotional_arcs
 from podcastfy.litrpg.continuity import load_world_register
+from podcastfy.litrpg.continuity import save_emotional_arcs
 from podcastfy.litrpg.effect_log import append_effect_log_entry
 from podcastfy.litrpg.effect_log import build_effect_log_entry
 from podcastfy.litrpg.effect_log import effect_log_path
@@ -151,6 +153,7 @@ def run_litrpg_task_data(
         result = generate_litrpg_chapter(chapter_task, llm=resolved_llm)
         _write_quarantine_if_needed(resolved_base_dir, chapter_task, result)
         _save_world_state_update_if_requested(resolved_base_dir, chapter_task, result)
+        _save_arc_state_update_if_requested(resolved_base_dir, chapter_task, result)
         _append_chapter_effect_if_possible(
             resolved_base_dir,
             chapter_task,
@@ -584,6 +587,11 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         if not chapter_task.get("world_state"):
             try:
                 chapter_task["world_state"] = load_world_state(storage_dir, series_id)
+            except Exception:
+                pass
+        if not chapter_task.get("emotional_arcs"):
+            try:
+                chapter_task["emotional_arcs"] = asdict(load_emotional_arcs(storage_dir, series_id))
             except Exception:
                 pass
     if not chapter_task.get("series_package_summary"):
@@ -1045,6 +1053,31 @@ def _save_world_state_update_if_requested(
     current = dict(task.get("world_state") or load_world_state(storage_dir, series_id))
     merged = _merge_world_state_delta(current, update)
     save_world_state(storage_dir, series_id, merged)
+
+
+def _save_arc_state_update_if_requested(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    if not (task.get("update_arc_state") or task.get("update_world_state")) or not task.get("storage_dir"):
+        return
+    update_text = str(result.get("arc_state_update") or "").strip()
+    if not update_text:
+        return
+    try:
+        update = json.loads(update_text)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(update, Mapping):
+        return
+    storage_dir = _resolve_task_path(base_dir, task["storage_dir"])
+    series_id = str(result.get("series_id") or task.get("series_id") or "default-series")
+    current = task.get("emotional_arcs")
+    if not isinstance(current, Mapping):
+        current = asdict(load_emotional_arcs(storage_dir, series_id))
+    merged = merge_arc_state_delta(current, update)
+    save_emotional_arcs(storage_dir, series_id, merged)
 
 
 def _merge_world_state_delta(

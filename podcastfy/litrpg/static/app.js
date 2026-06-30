@@ -623,8 +623,32 @@ function buildTaskPayload() {
   if (Object.keys(tts).length) {
     task.tts = tts;
   }
+  if (formData.get("render_loop_enabled") === "on") {
+    const maxAttempts = clampInteger(Number(cleanValue(formData.get("render_max_attempts"))), 1, 5, 1);
+    const retryBelowScore = clampNumber(Number(cleanValue(formData.get("render_retry_below_score"))), 0, 1, 0.72);
+    const retryStrategy = cleanValue(formData.get("render_retry_strategy")) || "none";
+    task.render_loop = {
+      enabled: true,
+      max_attempts: maxAttempts,
+      retry_below_score: retryBelowScore,
+      retry_strategy: retryStrategy,
+    };
+    if (formData.get("llm_revision_enabled") === "on") {
+      task.render_loop.llm_revision_enabled = true;
+    }
+  }
 
   return task;
+}
+
+function clampInteger(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function clampNumber(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
 }
 
 function packageSeriesId() {
@@ -1770,6 +1794,7 @@ function renderJobConsole(job) {
   const checkpoints = (job.checkpoint_paths || []).length;
   const pathLabel = summary.mode === "premise_intake" ? "Artifacts" : "Checkpoints";
   const error = job.error ? `<div class="job-error">${escapeHtml(job.error)}</div>` : "";
+  const renderFeedback = renderJobRenderFeedback(job.result);
   return `<div class="job-status status-${escapeClass(status)}">
     <strong>${escapeHtml(status)}</strong>
     <span>${escapeHtml(job.phase || "")}</span>
@@ -1779,7 +1804,49 @@ function renderJobConsole(job) {
     <div><dt>Mode</dt><dd>${escapeHtml(summary.mode || "unknown")}</dd></div>
     <div><dt>${escapeHtml(pathLabel)}</dt><dd>${escapeHtml(String(checkpoints))}</dd></div>
   </dl>
+  ${renderFeedback}
   ${error}`;
+}
+
+function renderJobRenderFeedback(result) {
+  if (!result || typeof result !== "object") return "";
+  const feedback = Array.isArray(result.render_feedback) ? result.render_feedback : [];
+  if (!feedback.length) return "";
+  const scores = feedback
+    .map((item) => Number(item && item.score))
+    .filter((score) => Number.isFinite(score));
+  const selected = feedback.find((item) => item && item.selected) || feedback[feedback.length - 1];
+  const review = feedback.filter((item) => item && item.human_review_required);
+  const invalid = feedback.filter((item) => item && (item.verdict === "directive_invalid" || item.directive_valid === false));
+  const facts = [
+    ["Attempts", String(feedback.length)],
+    ["Selected", selected ? `#${selected.attempt || "?"}` : "none"],
+    ["Score range", scores.length ? `${Math.min(...scores).toFixed(2)}-${Math.max(...scores).toFixed(2)}` : "n/a"],
+    ["Review", String(review.length)],
+  ];
+  const invalidNotes = invalid.length
+    ? `<div class="render-feedback-notes"><strong>Invalid directives</strong>${invalid.map((item) => `<span>${escapeHtml(renderFeedbackNote(item))}</span>`).join("")}</div>`
+    : "";
+  const reviewNotes = review.length
+    ? `<div class="render-feedback-notes"><strong>Human review</strong>${review.slice(0, 4).map((item) => `<span>${escapeHtml(renderFeedbackNote(item))}</span>`).join("")}</div>`
+    : "";
+  return `<section class="render-feedback-summary" aria-label="Render feedback summary">
+    <div class="render-feedback-title">Render feedback</div>
+    <dl class="render-feedback-facts">
+      ${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
+    </dl>
+    ${reviewNotes}
+    ${invalidNotes}
+  </section>`;
+}
+
+function renderFeedbackNote(item) {
+  const segment = item.segment_id || "segment";
+  const attempt = item.attempt ? ` attempt ${item.attempt}` : "";
+  const score = Number.isFinite(Number(item.score)) ? ` score ${Number(item.score).toFixed(2)}` : "";
+  const verdict = item.verdict ? ` ${item.verdict}` : "";
+  const notes = Array.isArray(item.notes) && item.notes.length ? `: ${item.notes.join("; ")}` : "";
+  return `${segment}${attempt}${score}${verdict}${notes}`;
 }
 
 function renderPackageRadar(seriesPackage) {

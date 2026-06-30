@@ -416,6 +416,32 @@
                 <input name="render_audio" type="checkbox" checked>
                 <span>Render audio after generation</span>
               </label>
+              <label class="toggle has-tooltip" data-tooltip="Opt into audio validation, scoring, and bounded retry metadata for rendered audio." title="Opt into audio validation, scoring, and bounded retry metadata for rendered audio.">
+                <input name="render_loop_enabled" type="checkbox">
+                <span>Enable render loop</span>
+              </label>
+              <label class="has-tooltip" data-tooltip="Conservative default is none. Deterministic adjustment can retry without changing prose." title="Conservative default is none. Deterministic adjustment can retry without changing prose.">
+                Retry strategy
+                <select name="render_retry_strategy">
+                  <option value="none">none</option>
+                  <option value="same_directive">same directive</option>
+                  <option value="deterministic_adjustment">deterministic adjustment</option>
+                  <option value="llm_revision">LLM directive revision</option>
+                </select>
+              </label>
+              <label class="has-tooltip" data-tooltip="Hard cap for render attempts. The engine will never exceed this value." title="Hard cap for render attempts. The engine will never exceed this value.">
+                Max attempts
+                <input name="render_max_attempts" type="number" min="1" max="5" step="1" value="1">
+              </label>
+              <label class="has-tooltip" data-tooltip="Scores below this threshold can retry or be flagged for review." title="Scores below this threshold can retry or be flagged for review.">
+                Retry below score
+                <input name="render_retry_below_score" type="number" min="0" max="1" step="0.01" value="0.72">
+              </label>
+              <label class="toggle has-tooltip" data-tooltip="Explicit opt-in for a director/LLM call that revises only audio directives. It never rewrites story prose and every revision is validated before TTS spend." title="Explicit opt-in for a director/LLM call that revises only audio directives. It never rewrites story prose and every revision is validated before TTS spend.">
+                <input name="llm_revision_enabled" type="checkbox">
+                <span>Allow LLM directive revision</span>
+              </label>
+              <p class="field-note wide">LLM revision is off unless checked. It revises only performance directives, validates again, and remains bounded by max attempts.</p>
             </div>
           </details>
 

@@ -10,8 +10,10 @@ from podcastfy.litrpg.casting import export_voices_for_litrpg_config
 from podcastfy.litrpg.casting import generate_audition_script, load_cast_plan_json
 from podcastfy.litrpg.casting import validate_cast_plan
 from podcastfy.litrpg.character_arc import CharacterArcEngine
+from podcastfy.litrpg.character_arc import build_arc_state_update_prompt
 from podcastfy.litrpg.character_arc import build_character_arc_context
 from podcastfy.litrpg.character_arc import format_character_arc_context
+from podcastfy.litrpg.character_arc import merge_arc_state_delta
 from podcastfy.litrpg.chapter import generate_litrpg_chapter
 from podcastfy.litrpg.continuity import ContinuityLedger, EmotionalArcRegistry
 from podcastfy.litrpg.continuity import WorldRegister, format_chapter_memory_context
@@ -203,6 +205,7 @@ __all__ = [
     "build_prose_rhythm_prompt",
     "build_default_cast_plan",
     "build_chapter_qa",
+    "build_arc_state_update_prompt",
     "build_character_arc_context",
     "build_conspiracy_chapter_context",
     "build_hook_context",
@@ -302,6 +305,7 @@ __all__ = [
     "map_assets_for_cue_sheet",
     "make_idempotency_key",
     "merge_story_bible_updates",
+    "merge_arc_state_delta",
     "merge_continuity_ledgers",
     "merge_voice_cards",
     "merge_world_registers",

@@ -7,6 +7,7 @@ from podcastfy.litrpg.bible import CharacterBibleEntry, StoryBible, save_story_b
 from podcastfy.litrpg.continuity import ContinuityLedger, EconomyAnchor, EmotionalArc
 from podcastfy.litrpg.continuity import EmotionalArcRegistry, EntityEcology, LedgerEntry
 from podcastfy.litrpg.continuity import LocationDetail, RuleEntry, WorldRegister
+from podcastfy.litrpg.continuity import load_emotional_arcs
 from podcastfy.litrpg.continuity import save_continuity_ledger
 from podcastfy.litrpg.continuity import save_emotional_arcs, save_world_register
 from podcastfy.litrpg.foreshadowing import ForeshadowEntry, ForeshadowLedger
@@ -76,6 +77,9 @@ class SmokeChapterLLM:
 
 class WorldStateUpdateLLM(SmokeChapterLLM):
     def generate(self, *, prompt, stage):
+        if stage == "arc_state_update":
+            self.calls.append({"prompt": prompt, "stage": stage})
+            return json.dumps({"character_arc_updates": {}})
         if stage == "world_state_update":
             self.calls.append({"prompt": prompt, "stage": stage})
             return json.dumps(
@@ -92,6 +96,34 @@ class WorldStateUpdateLLM(SmokeChapterLLM):
                         "floor_4_market": ["ozone under the copper smell"]
                     },
                     "new_rules": ["Market lights flicker before ranged traps arm"],
+                }
+            )
+        return super().generate(prompt=prompt, stage=stage)
+
+
+class ArcStateUpdateLLM(WorldStateUpdateLLM):
+    def generate(self, *, prompt, stage):
+        if stage == "arc_state_update":
+            self.calls.append({"prompt": prompt, "stage": stage})
+            assert "character_arc_updates" in prompt
+            assert "Hero still thinks every promotion is a trap" in prompt
+            return json.dumps(
+                {
+                    "character_arc_updates": {
+                        "Hero": {
+                            "character": "Hero",
+                            "current_coping_mode": "delegates fear into checklists",
+                            "last_significant_emotional_event": "Trusted the clerk with the exit key.",
+                            "relationships": {"System": "openly defiant"},
+                            "beats": [
+                                {
+                                    "text": "Chose trust over solo control.",
+                                    "chapter": 4,
+                                    "characters": ["Hero"],
+                                }
+                            ],
+                        }
+                    }
                 }
             )
         return super().generate(prompt=prompt, stage=stage)
@@ -1120,6 +1152,21 @@ def test_chapter_task_loads_and_updates_persistent_world_state(tmp_path):
             },
         },
     )
+    save_emotional_arcs(
+        tmp_path / "library",
+        "paper-cuts",
+        EmotionalArcRegistry(
+            series_id="paper-cuts",
+            characters={
+                "Hero": EmotionalArc(
+                    character="Hero",
+                    wound="Hero still thinks every promotion is a trap.",
+                    current_coping_mode="alphabetizes terror",
+                    relationships={"System": "mutual contempt"},
+                )
+            },
+        ),
+    )
     task = {
         "mode": "chapter",
         "series_id": "paper-cuts",
@@ -1136,18 +1183,24 @@ def test_chapter_task_loads_and_updates_persistent_world_state(tmp_path):
             "character_focus": ["hero"],
         },
     }
-    llm = WorldStateUpdateLLM()
+    llm = ArcStateUpdateLLM()
 
     result = run_litrpg_task_data(task, base_dir=tmp_path, llm=llm)
     stored = load_world_state(tmp_path / "library", "paper-cuts")
+    stored_arcs = load_emotional_arcs(tmp_path / "library", "paper-cuts")
 
     first_prompt = next(call["prompt"] for call in llm.calls if call["stage"] == "part:cold-open")
     assert "Scene brief / rendering contract:" in first_prompt
     assert "sweet copper means flesh constructs" in first_prompt
     assert result["chapter"]["scene_brief"]["threat_geometry"] == "ambush-friendly aisles"
     assert result["world_state_update"].startswith("{")
+    assert result["arc_state_update"].startswith("{")
     assert "ozone under the copper smell" in stored["sensory_hooks"]["floor_4_market"]
     assert "Market lights flicker before ranged traps arm" in stored["established_rules"]
+    assert stored_arcs.characters["hero"].wound == "Hero still thinks every promotion is a trap."
+    assert stored_arcs.characters["hero"].current_coping_mode == "delegates fear into checklists"
+    assert stored_arcs.characters["hero"].relationships["System"] == "openly defiant"
+    assert stored_arcs.characters["hero"].beats[-1].text == "Chose trust over solo control."
 
 
 def test_world_state_update_delta_persists_artifact_state_changes(tmp_path):

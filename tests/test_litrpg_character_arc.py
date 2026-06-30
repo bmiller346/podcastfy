@@ -1,6 +1,8 @@
 from podcastfy.litrpg.character_arc import CharacterArcEngine
+from podcastfy.litrpg.character_arc import build_arc_state_update_prompt
 from podcastfy.litrpg.character_arc import build_character_arc_context
 from podcastfy.litrpg.character_arc import format_character_arc_context
+from podcastfy.litrpg.character_arc import merge_arc_state_delta
 from podcastfy.litrpg.continuity import EmotionalArc
 from podcastfy.litrpg.continuity import EmotionalArcRegistry
 from podcastfy.litrpg.continuity import save_emotional_arcs
@@ -71,3 +73,42 @@ def test_character_arc_engine_reads_stored_arcs_and_formats_context(tmp_path):
     assert "Relationship graph:" in formatted
     assert "Forbidden arc moves:" in formatted
     assert "alphabetizes terror" in formatted
+
+
+def test_arc_state_update_prompt_and_delta_merge_preserve_existing_arc():
+    prompt = build_arc_state_update_prompt(
+        final_script="<HERO>I trusted Mara with the badge.</HERO>",
+        current_arc_registry=_registry(),
+        chapter_contract={"chapter": 3, "character_focus": ["Hero"]},
+    )
+    merged = merge_arc_state_delta(
+        _registry(),
+        {
+            "character_arc_updates": {
+                "Hero": {
+                    "character": "Hero",
+                    "current_coping_mode": "delegates fear into checklists",
+                    "last_significant_emotional_event": "Trusted Mara with the badge.",
+                    "relationships": {"Mara": "trusts her under pressure"},
+                    "beats": [
+                        {
+                            "text": "Chose trust over solo control.",
+                            "chapter": 3,
+                            "characters": ["Hero", "Mara"],
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    hero = merged.characters["hero"]
+    assert "Output ONLY a JSON object" in prompt
+    assert "character_arc_updates" in prompt
+    assert "Believes every promotion is a trap" in prompt
+    assert hero.wound == "Believes every promotion is a trap."
+    assert hero.current_coping_mode == "delegates fear into checklists"
+    assert hero.relationships["System"] == "mutual contempt"
+    assert hero.relationships["Mara"] == "trusts her under pressure"
+    assert hero.last_significant_emotional_event == "Trusted Mara with the badge."
+    assert hero.beats[-1].text == "Chose trust over solo control."

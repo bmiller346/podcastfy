@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from podcastfy.litrpg.continuity import EmotionalArc
 from podcastfy.litrpg.continuity import EmotionalArcRegistry
+from podcastfy.litrpg.continuity import LedgerEntry
 from podcastfy.litrpg.continuity import load_emotional_arcs
+from podcastfy.litrpg.continuity import upsert_emotional_arc
 
 
 @dataclass(slots=True)
@@ -116,6 +120,85 @@ def format_character_arc_context(context: Mapping[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+def build_arc_state_update_prompt(
+    *,
+    final_script: str,
+    current_arc_registry: EmotionalArcRegistry | Mapping[str, Any] | None = None,
+    chapter_contract: Mapping[str, Any] | None = None,
+) -> str:
+    """Build the post-chapter arc-memory extraction prompt."""
+
+    registry = _coerce_registry(current_arc_registry or {"series_id": "default-series"})
+    contract = dict(chapter_contract or {})
+    return f"""You are the Character Arc State Updater for a long-form LitRPG story engine.
+Extract only durable character-arc changes that were actually established on page.
+Do not infer growth from intention, theme, outline, or subtext unless the final script makes it concrete.
+
+Output ONLY a JSON object with this schema:
+{{
+  "character_arc_updates": {{
+    "character_id_or_name": {{
+      "character": "display name",
+      "wound": "only if the wound definition changed or was newly established",
+      "current_coping_mode": "only if coping behavior materially changed",
+      "last_significant_emotional_event": "specific on-page event from this chapter",
+      "relationships": {{"other character or faction": "new durable relationship state"}},
+      "beats": [
+        {{"text": "short emotional beat", "chapter": null, "phase": "", "characters": []}}
+      ]
+    }}
+  }}
+}}
+
+Rules:
+- Preserve scarcity. Do not mark a wound resolved unless the script explicitly pays it off.
+- Relationship movement must be earned by a visible choice, cost, betrayal, rescue, confession, or refusal.
+- Coping mode changes must be durable; temporary stress reactions are beats, not a new coping mode.
+- If nothing durable changed, return {{"character_arc_updates": {{}}}}.
+
+Current arc registry:
+{json.dumps(_registry_to_dict(registry), indent=2, sort_keys=True)}
+
+Chapter contract:
+{json.dumps(contract, indent=2, sort_keys=True)}
+
+Final script:
+{final_script}
+"""
+
+
+def merge_arc_state_delta(
+    current: EmotionalArcRegistry | Mapping[str, Any],
+    update: Mapping[str, Any],
+) -> EmotionalArcRegistry:
+    """Merge an arc updater JSON delta into an EmotionalArcRegistry."""
+
+    merged = _coerce_registry(current)
+    updates = update.get("character_arc_updates")
+    if not isinstance(updates, Mapping):
+        return merged
+    for name, payload in updates.items():
+        if not isinstance(payload, Mapping):
+            continue
+        incoming = EmotionalArc(
+            character=str(payload.get("character") or name),
+            wound=str(payload.get("wound") or ""),
+            current_coping_mode=str(payload.get("current_coping_mode") or ""),
+            relationships={
+                str(key): str(value)
+                for key, value in dict(payload.get("relationships") or {}).items()
+            }
+            if isinstance(payload.get("relationships"), Mapping)
+            else {},
+            last_significant_emotional_event=str(
+                payload.get("last_significant_emotional_event") or ""
+            ),
+            beats=_beat_entries(payload.get("beats"), fallback_character=str(payload.get("character") or name)),
+        )
+        merged = upsert_emotional_arc(merged, incoming)
+    return merged
+
+
 def _pressure_for_arc(arc: Any, contract: Mapping[str, Any]) -> CharacterArcPressure:
     character = str(getattr(arc, "character", "") or "Unknown")
     relationships = [
@@ -206,6 +289,35 @@ def _coerce_registry(value: EmotionalArcRegistry | Mapping[str, Any]) -> Emotion
     from podcastfy.litrpg.continuity import emotional_arc_registry_from_dict
 
     return emotional_arc_registry_from_dict(dict(value))
+
+
+def _registry_to_dict(registry: EmotionalArcRegistry) -> dict[str, Any]:
+    return asdict(registry)
+
+
+def _beat_entries(value: Any, *, fallback_character: str) -> list[LedgerEntry]:
+    entries = []
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return entries
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        text = str(item.get("text") or item.get("detail") or "").strip()
+        if not text:
+            continue
+        entries.append(
+            LedgerEntry(
+                text=text,
+                chapter=_optional_int(item.get("chapter")),
+                phase=str(item.get("phase") or ""),
+                floor=_optional_int(item.get("floor")),
+                location=str(item.get("location") or ""),
+                characters=_string_list(item.get("characters")) or [fallback_character],
+                tags=_string_list(item.get("tags")),
+                metadata=dict(item.get("metadata") or {}) if isinstance(item.get("metadata"), Mapping) else {},
+            )
+        )
+    return entries
 
 
 def _mapping_sequence(value: Any) -> list[Mapping[str, Any]]:

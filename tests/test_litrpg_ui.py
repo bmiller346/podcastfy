@@ -213,6 +213,15 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'value="wav"' in html
     assert 'value="opus"' in html
     assert 'name="render_audio"' in html
+    assert 'name="render_loop_enabled"' in html
+    assert 'name="render_retry_strategy"' in html
+    assert 'value="deterministic_adjustment"' in html
+    assert 'value="llm_revision"' in html
+    assert 'name="render_max_attempts"' in html
+    assert 'max="5"' in html
+    assert 'name="render_retry_below_score"' in html
+    assert 'name="llm_revision_enabled"' in html
+    assert "Allow LLM directive revision" in html
     assert 'name="harness_enabled"' in html
     assert 'name="rewrite_quarantined"' in html
     assert 'name="generate_handoff"' in html
@@ -1029,6 +1038,19 @@ def test_robust_state_endpoint_exposes_agent_quarantine_handoff_and_effects(ui_s
     assert data["effect_log"]["committed_cost_usd"] == 0.13
     assert data["render_feedback"]["recent_review_required"][0]["segment_id"] == "chapter_012_part_001"
     assert data["render_feedback"]["recent_review_required"][0]["human_review_required"] is True
+
+
+def test_static_app_renders_render_loop_controls_and_feedback_summary():
+    app_js = (ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (ui.STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'formData.get("render_loop_enabled") === "on"' in app_js
+    assert "render_retry_strategy" in app_js
+    assert "llm_revision_enabled" in app_js
+    assert "renderJobRenderFeedback" in app_js
+    assert "selected" in app_js
+    assert "human_review_required" in app_js
+    assert ".render-feedback-summary" in styles
 
 
 def test_submit_inline_task_job_tracks_summary_and_status(
