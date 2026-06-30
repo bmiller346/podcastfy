@@ -123,6 +123,17 @@ from podcastfy.litrpg.voice_cards import VoiceCard, VoiceCardDeck
 from podcastfy.litrpg.voice_cards import format_voice_card_context
 from podcastfy.litrpg.voice_cards import load_voice_cards, merge_voice_cards
 from podcastfy.litrpg.voice_cards import save_voice_cards
+from podcastfy.litrpg.world_state import BEAT_SENSORY_MAP, SceneBrief
+from podcastfy.litrpg.world_state import SensoryHookLibrary
+from podcastfy.litrpg.world_state import WorldStateManager
+from podcastfy.litrpg.world_state import build_artifact_forge_prompt
+from podcastfy.litrpg.world_state import build_scene_brief
+from podcastfy.litrpg.world_state import build_scene_brief_prompt
+from podcastfy.litrpg.world_state import build_world_state_update_prompt
+from podcastfy.litrpg.world_state import format_scene_brief_context
+from podcastfy.litrpg.world_state import load_world_state, save_world_state
+from podcastfy.litrpg.world_state import merge_world_state_delta
+from podcastfy.litrpg.world_state import validate_world_state_consistency
 
 __all__ = [
     "CastMember",
@@ -155,6 +166,7 @@ __all__ = [
     "ScarcityDecision",
     "ScarcityItem",
     "ScarcityRegistry",
+    "SceneBrief",
     "SeriesArcBeat",
     "SeriesState",
     "SeriesArchitect",
@@ -169,6 +181,9 @@ __all__ = [
     "VoiceCardDeck",
     "VoiceConstraint",
     "VoiceProfile",
+    "BEAT_SENSORY_MAP",
+    "SensoryHookLibrary",
+    "WorldStateManager",
     "WorldRegister",
     "WorldRegisterEntry",
     "add_or_promote_asset",
@@ -188,11 +203,15 @@ __all__ = [
     "build_premise_intake_prompt",
     "build_reader_proxy_prompt",
     "build_role_tts_instructions",
+    "build_artifact_forge_prompt",
+    "build_scene_brief",
+    "build_scene_brief_prompt",
     "build_series_package_prompt",
     "build_series_anchor_block",
     "build_series_arc_prompt",
     "build_rewrite_instruction",
     "build_showrunner_payload",
+    "build_world_state_update_prompt",
     "bootstrap_series",
     "cast_plan_from_mapping",
     "check_harness_gate",
@@ -225,6 +244,7 @@ __all__ = [
     "format_mystery_lock",
     "format_opening_hook_obligation",
     "format_showrunner_context",
+    "format_scene_brief_context",
     "format_voice_card_context",
     "format_world_register_context",
     "generate_tempo_map",
@@ -261,6 +281,8 @@ __all__ = [
     "load_story_bible",
     "load_voice_cards",
     "load_world_register",
+    "load_world_state",
+    "merge_world_state_delta",
     "locked_part_scripts_from_ready_parts",
     "mark_episode_status",
     "mark_paid",
@@ -297,6 +319,8 @@ __all__ = [
     "save_story_bible",
     "save_voice_cards",
     "save_world_register",
+    "save_world_state",
+    "validate_world_state_consistency",
     "scan_asset_directory",
     "should_skip_effect",
     "sfx_cache_path",

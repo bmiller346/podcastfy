@@ -57,6 +57,9 @@ from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_del
 from podcastfy.litrpg.state_store import load_series_state, save_series_state
 from podcastfy.litrpg.voice_cards import format_voice_card_context
 from podcastfy.litrpg.voice_cards import load_voice_cards
+from podcastfy.litrpg.world_state import load_world_state
+from podcastfy.litrpg.world_state import merge_world_state_delta
+from podcastfy.litrpg.world_state import save_world_state
 
 
 class TaskScriptLLM:
@@ -145,6 +148,7 @@ def run_litrpg_task_data(
             return result
         result = generate_litrpg_chapter(chapter_task, llm=resolved_llm)
         _write_quarantine_if_needed(resolved_base_dir, chapter_task, result)
+        _save_world_state_update_if_requested(resolved_base_dir, chapter_task, result)
         _append_chapter_effect_if_possible(
             resolved_base_dir,
             chapter_task,
@@ -195,6 +199,8 @@ def run_litrpg_task_data(
         tts_options=task.get("tts"),
         conversation_config=task.get("conversation_config"),
         litrpg_config=config,
+        render_loop=task.get("render_loop") if isinstance(task.get("render_loop"), Mapping) else None,
+        performance_directives=_performance_directives_from_task(task),
         replay_existing=bool(task.get("replay_existing", True)),
         settings_path=(
             _resolve_task_path(resolved_base_dir, task["settings_path"])
@@ -239,6 +245,19 @@ def _run_premise_intake_task(
         power_curve=str(task.get("power_curve") or "logarithmic"),
         merge_existing=bool(task.get("merge_existing", True)),
     )
+
+
+def _performance_directives_from_task(task: Mapping[str, Any]) -> list[dict[str, Any]]:
+    value = (
+        task.get("performance_directives")
+        or task.get("director_cues")
+        or task.get("directives")
+    )
+    if isinstance(value, list):
+        return [dict(item) for item in value if isinstance(item, Mapping)]
+    if isinstance(value, Mapping):
+        return [dict(value)]
+    return []
 
 
 def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> Any:
@@ -552,6 +571,11 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         if not chapter_task.get("story_bible_summary"):
             bible = load_story_bible(storage_dir, series_id)
             chapter_task["story_bible_summary"] = format_story_bible_summary(bible)
+        if not chapter_task.get("world_state"):
+            try:
+                chapter_task["world_state"] = load_world_state(storage_dir, series_id)
+            except Exception:
+                pass
     if not chapter_task.get("series_package_summary"):
         summary = _series_package_summary_from_task(
             base_dir,
@@ -980,6 +1004,36 @@ def _write_result_if_requested(
     with path.open("w", encoding="utf-8") as result_file:
         json.dump(result, result_file, ensure_ascii=True, indent=2, sort_keys=True)
         result_file.write("\n")
+
+
+def _save_world_state_update_if_requested(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    if not task.get("update_world_state") or not task.get("storage_dir"):
+        return
+    update_text = str(result.get("world_state_update") or "").strip()
+    if not update_text:
+        return
+    try:
+        update = json.loads(update_text)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(update, Mapping):
+        return
+    storage_dir = _resolve_task_path(base_dir, task["storage_dir"])
+    series_id = str(result.get("series_id") or task.get("series_id") or "default-series")
+    current = dict(task.get("world_state") or load_world_state(storage_dir, series_id))
+    merged = _merge_world_state_delta(current, update)
+    save_world_state(storage_dir, series_id, merged)
+
+
+def _merge_world_state_delta(
+    current: Mapping[str, Any],
+    update: Mapping[str, Any],
+) -> dict[str, Any]:
+    return merge_world_state_delta(current, update)
 
 
 def _write_quarantine_if_needed(

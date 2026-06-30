@@ -628,6 +628,96 @@ def test_generate_litrpg_chapter_injects_story_engine_context_into_part_prompts(
     assert result["chapter"]["story_engine_context"].startswith("Voice Cards")
 
 
+def test_generate_litrpg_chapter_builds_scene_brief_from_world_state():
+    llm = FakeChapterLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            chapter_contract={
+                "book": 1,
+                "chapter": 3,
+                "location": "floor_4_market",
+                "scene_type": "apex",
+                "character_focus": ["hero"],
+            },
+            world_state={
+                "characters": {
+                    "hero": {
+                        "appearance": ["crawler bracelet on left wrist"],
+                        "signature_behaviors": ["checks exits first"],
+                        "emotional_tells": {"fear": "goes still"},
+                    }
+                },
+                "locations": {
+                    "floor_4_market": {
+                        "name": "Floor 4 Market",
+                        "sensory": {
+                            "visual": "amber moss light",
+                            "smell": "copper and spoiled mushroom",
+                            "spatial": "ceiling 40ft, three exits",
+                        },
+                        "threat_geometry": "ambush-friendly east aisle",
+                    }
+                },
+                "active_mysteries": {
+                    "system_true_purpose": {"status": "DO_NOT_SPEND"}
+                },
+            },
+        ),
+        llm=llm,
+    )
+
+    first_prompt = next(call["prompt"] for call in llm.calls if call["stage"] == "part:cold-open")
+    assert "Scene brief / rendering contract:" in first_prompt
+    assert "ceiling 40ft, three exits" in first_prompt
+    assert "copper and spoiled mushroom" in first_prompt
+    assert "system_true_purpose: DO_NOT_SPEND" in first_prompt
+    assert result["chapter"]["scene_brief"]["threat_geometry"] == "ambush-friendly east aisle"
+    assert result["render"]["metadata"]["scene_brief"]["spatial_anchor"].startswith("Floor 4 Market")
+
+
+def test_generate_litrpg_chapter_injects_artifact_rendering_contract():
+    llm = FakeChapterLLM()
+
+    result = generate_litrpg_chapter(
+        _chapter_task(
+            chapter_contract={
+                "location": "floor_4_market",
+                "active_artifacts": ["stapler_bow"],
+            },
+            world_state={
+                "locations": {"floor_4_market": {"name": "Floor 4 Market"}},
+                "artifacts": {
+                    "stapler_bow": {
+                        "locked_name": "Redline Stapler",
+                        "aliases_forbidden": ["staple gun"],
+                        "physical_signature": {
+                            "appearance": "red enamel jaw",
+                            "sound_fire": "chunk-thwip",
+                        },
+                        "power_ceiling": {
+                            "can_do": ["pin minions"],
+                            "cannot_do": ["kill bosses outright"],
+                        },
+                        "state": {"ammo": 4, "condition": "jammed but usable"},
+                    }
+                },
+            },
+        ),
+        llm=llm,
+    )
+
+    first_prompt = next(call["prompt"] for call in llm.calls if call["stage"] == "part:cold-open")
+    assert "Active artifact rendering" in first_prompt
+    assert "locked_name=Redline Stapler" in first_prompt
+    assert "sound_fire=chunk-thwip" in first_prompt
+    assert "forbidden_aliases=staple gun" in first_prompt
+    assert "ammo=4" in first_prompt
+    assert "condition=jammed but usable" in first_prompt
+    assert "do not rename artifacts" in first_prompt
+    assert result["chapter"]["scene_brief"]["active_artifacts"][0]["locked_name"] == "Redline Stapler"
+
+
 def test_generate_litrpg_chapter_injects_series_package_summary_into_prompts():
     llm = FakeChapterLLM()
 

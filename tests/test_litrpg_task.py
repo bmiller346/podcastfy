@@ -18,6 +18,7 @@ from podcastfy.litrpg.state_store import save_series_state
 from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task, run_litrpg_task_data
 from podcastfy.litrpg.task import _llm_from_task
 from podcastfy.litrpg.voice_cards import VoiceCard, VoiceCardDeck, save_voice_cards
+from podcastfy.litrpg.world_state import load_world_state, save_world_state
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +72,58 @@ class SmokeChapterLLM:
                 '"safe_hints":[],"spent_mysteries":[],"quarantine_required":false}'
             )
         return f"{stage} ok"
+
+
+class WorldStateUpdateLLM(SmokeChapterLLM):
+    def generate(self, *, prompt, stage):
+        if stage == "world_state_update":
+            self.calls.append({"prompt": prompt, "stage": stage})
+            return json.dumps(
+                {
+                    "character_updates": {
+                        "hero": {
+                            "last_known_state": {
+                                "injuries": ["new scorch mark"],
+                                "equipment": ["patched stapler shield"],
+                            }
+                        }
+                    },
+                    "new_sensory_hooks": {
+                        "floor_4_market": ["ozone under the copper smell"]
+                    },
+                    "new_rules": ["Market lights flicker before ranged traps arm"],
+                }
+            )
+        return super().generate(prompt=prompt, stage=stage)
+
+
+class ArtifactWorldStateUpdateLLM(SmokeChapterLLM):
+    def generate(self, *, prompt, stage):
+        if stage == "world_state_update":
+            self.calls.append({"prompt": prompt, "stage": stage})
+            assert "artifact_state_updates" in prompt
+            assert "magic_signatures" in prompt
+            assert "visual_budget_additions" in prompt
+            return json.dumps(
+                {
+                    "artifact_state_updates": {
+                        "stapler_bow": {"ammo": 2, "condition": "smoking"}
+                    },
+                    "artifact_uses": {
+                        "stapler_bow": {"chapter_use": "pinned a flesh construct"}
+                    },
+                    "magic_signatures": {
+                        "toner_burn": {
+                            "signature": "blue toner flare",
+                            "primary_sense": "light",
+                        }
+                    },
+                    "visual_budget_additions": {
+                        "toner_burn": "blue toner flare"
+                    },
+                }
+            )
+        return super().generate(prompt=prompt, stage=stage)
 
 
 def _write_task(tmp_path, **overrides):
@@ -850,6 +903,8 @@ def test_run_litrpg_task_injects_series_architect_chapter_contract(tmp_path, mon
     assert captured["chapter_title"] == "The Copier Has Teeth"
     assert captured["premise"] == "The copier room becomes a tutorial arena."
     assert captured["chapter_contract"]["book_role"] == "Origin and first floor survival"
+    assert captured["chapter_contract"]["beat_type"] == "reflection"
+    assert captured["chapter_contract"]["scene_type"] == "tavern"
     assert "HR System origin" in captured["chapter_contract"]["must_not_spend"]
     assert captured["series_plan"]["series_title"] == "Paper Cuts"
     assert captured["series_mysteries"] == ["HR System origin"]
@@ -1033,3 +1088,98 @@ def test_checked_in_chapter_example_runs_with_fake_llm_and_writes_smoke_bundle(t
     assert checkpoint_dir.exists()
     assert len(list(checkpoint_dir.glob("*_approved.xml"))) == 5
     assert state_path.exists()
+
+
+def test_chapter_task_loads_and_updates_persistent_world_state(tmp_path):
+    save_world_state(
+        tmp_path / "library",
+        "paper-cuts",
+        {
+            "characters": {
+                "hero": {
+                    "appearance": ["crawler bracelet on left wrist"],
+                    "signature_behaviors": ["checks exits first"],
+                }
+            },
+            "locations": {
+                "floor_4_market": {
+                    "name": "Floor 4 Market",
+                    "sensory": {
+                        "smell": "copper and spoiled mushroom",
+                        "spatial": "ceiling 40ft, three exits",
+                    },
+                    "threat_geometry": "ambush-friendly aisles",
+                }
+            },
+            "sensory_hooks": {
+                "floor_4_market": ["sweet copper means flesh constructs"]
+            },
+        },
+    )
+    task = {
+        "mode": "chapter",
+        "series_id": "paper-cuts",
+        "premise": "A clerk crosses a dangerous market.",
+        "storage_dir": "library",
+        "render_audio": False,
+        "reviews": False,
+        "update_world_state": True,
+        "chapter_contract": {
+            "book": 1,
+            "chapter": 4,
+            "location": "floor_4_market",
+            "scene_type": "apex",
+            "character_focus": ["hero"],
+        },
+    }
+    llm = WorldStateUpdateLLM()
+
+    result = run_litrpg_task_data(task, base_dir=tmp_path, llm=llm)
+    stored = load_world_state(tmp_path / "library", "paper-cuts")
+
+    first_prompt = next(call["prompt"] for call in llm.calls if call["stage"] == "part:cold-open")
+    assert "Scene brief / rendering contract:" in first_prompt
+    assert "sweet copper means flesh constructs" in first_prompt
+    assert result["chapter"]["scene_brief"]["threat_geometry"] == "ambush-friendly aisles"
+    assert result["world_state_update"].startswith("{")
+    assert "ozone under the copper smell" in stored["sensory_hooks"]["floor_4_market"]
+    assert "Market lights flicker before ranged traps arm" in stored["established_rules"]
+
+
+def test_world_state_update_delta_persists_artifact_state_changes(tmp_path):
+    save_world_state(
+        tmp_path / "library",
+        "paper-cuts",
+        {
+            "artifacts": {
+                "stapler_bow": {
+                    "locked_name": "Redline Stapler",
+                    "physical_signature": {"sound_fire": "chunk-thwip"},
+                    "state": {"ammo": 5, "condition": "ready"},
+                }
+            }
+        },
+    )
+    task = {
+        "mode": "chapter",
+        "series_id": "paper-cuts",
+        "premise": "A clerk spends scarce ammo.",
+        "storage_dir": "library",
+        "render_audio": False,
+        "reviews": False,
+        "update_world_state": True,
+        "chapter_contract": {
+            "location": "floor_4_market",
+            "active_artifacts": ["stapler_bow"],
+        },
+    }
+
+    result = run_litrpg_task_data(task, base_dir=tmp_path, llm=ArtifactWorldStateUpdateLLM())
+    stored = load_world_state(tmp_path / "library", "paper-cuts")
+
+    assert result["world_state_update"].startswith("{")
+    assert stored["artifacts"]["stapler_bow"]["state"]["ammo"] == 2
+    assert stored["artifacts"]["stapler_bow"]["state"]["condition"] == "smoking"
+    assert stored["metadata"]["artifact_uses"]["stapler_bow"]["chapter_use"] == "pinned a flesh construct"
+    assert stored["magic_signatures"]["toner_burn"]["signature"] == "blue toner flare"
+    assert stored["visual_budget"]["additions"]["toner_burn"] == "blue toner flare"
