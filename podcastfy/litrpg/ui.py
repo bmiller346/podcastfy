@@ -504,7 +504,61 @@ def series_package_response(series_id: str) -> dict[str, Any]:
     """Return package readiness and saved package content for a series."""
     safe_series_id = _safe_series_id(series_id)
     package = load_series_package(safe_series_id)
+    if package is None:
+        package = load_intake_artifact_workspace(safe_series_id)
+        if package is not None:
+            return _series_package_payload(
+                safe_series_id,
+                package,
+                status="artifact_workspace",
+            )
     return _series_package_payload(safe_series_id, package)
+
+
+def load_intake_artifact_workspace(series_id: str) -> dict[str, Any] | None:
+    """Load premise-intake artifacts as a readable workspace package."""
+    series_root = (DATA_DIR / "series" / _safe_series_id(series_id)).resolve()
+    if not series_root.exists():
+        return None
+    artifacts = {
+        "series_plan": _read_json_if_object(series_root / "series_plan.json"),
+        "series_arc": _read_json_if_any(series_root / "series_arc.json"),
+        "chapter_outline": _read_json_if_any(series_root / "book_1" / "chapter_outline.json"),
+        "story_bible": _read_json_if_object(series_root / "story_bible.json"),
+        "voice_cards": _read_json_if_object(series_root / "voice_cards.json"),
+        "continuity_ledger": _read_json_if_object(series_root / "continuity_ledger.json"),
+        "emotional_arcs": _read_json_if_object(series_root / "emotional_arcs.json"),
+        "world_register": _read_json_if_object(series_root / "world_register.json"),
+        "foreshadow_ledger": _read_json_if_object(series_root / "foreshadow_ledger.json"),
+    }
+    present = {key: value for key, value in artifacts.items() if value not in (None, {}, [])}
+    if not present:
+        return None
+    series_plan = _mapping_or_empty(present.get("series_plan"))
+    story_bible = _mapping_or_empty(present.get("story_bible"))
+    world_register = _mapping_or_empty(present.get("world_register"))
+    return {
+        "schema_version": "artifact-workspace-v1",
+        "series_id": series_id,
+        "metadata": {
+            "source": "premise_intake_artifacts",
+            "artifact_count": len(present),
+            "title": series_plan.get("series_title") or series_plan.get("title") or series_id,
+        },
+        "premise": str(story_bible.get("premise") or ""),
+        **present,
+        "characters": _package_characters_from_story_bible(story_bible),
+        "familiar": _package_familiar_from_story_bible(story_bible),
+        "home_base": _package_home_base_from_world_register(world_register),
+        "floor_rules": {
+            "rules": [
+                item.get("rule") or item.get("name") or item.get("detail")
+                for item in _list_of_dicts(world_register.get("rules"))
+                if item.get("rule") or item.get("name") or item.get("detail")
+            ],
+        },
+        "bestiary": _package_bestiary_from_world_register(world_register),
+    }
 
 
 def save_series_package_request(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1131,6 +1185,100 @@ def _package_collection_count(value: Any) -> int:
     if isinstance(value, dict):
         return len(value)
     return 0
+
+
+def _read_json_if_any(path: Path) -> Any | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _read_json_if_object(path: Path) -> dict[str, Any] | None:
+    value = _read_json_if_any(path)
+    return value if isinstance(value, dict) else None
+
+
+def _mapping_or_empty(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [dict(item) for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        return [dict(item) for item in value.values() if isinstance(item, dict)]
+    return []
+
+
+def _package_characters_from_story_bible(story_bible: dict[str, Any]) -> list[dict[str, Any]]:
+    characters = story_bible.get("characters")
+    items = _list_of_dicts(characters)
+    if isinstance(characters, dict):
+        for key, item in zip(characters.keys(), items):
+            item.setdefault("name", str(key))
+    return [
+        {
+            "name": item.get("name") or item.get("character") or "Unnamed",
+            "voice": "; ".join(str(rule) for rule in item.get("voice_rules", [])[:3])
+            if isinstance(item.get("voice_rules"), list)
+            else str(item.get("voice") or ""),
+            "personality": "; ".join(str(note) for note in item.get("notes", [])[:3])
+            if isinstance(item.get("notes"), list)
+            else "",
+            "arc": "; ".join(str(thread) for thread in item.get("unresolved_promises", [])[:3])
+            if isinstance(item.get("unresolved_promises"), list)
+            else "",
+            "rules": item.get("never_contradict_facts", []),
+            "notes": item.get("running_jokes", []),
+        }
+        for item in items
+        if item.get("name") or item.get("character")
+    ]
+
+
+def _package_familiar_from_story_bible(story_bible: dict[str, Any]) -> dict[str, Any]:
+    for item in _package_characters_from_story_bible(story_bible):
+        name = str(item.get("name") or "")
+        if name.casefold() in {"pedro", "pedro the macaw"} or "pedro" in name.casefold():
+            return {
+                "name": name,
+                "species": "macaw/familiar",
+                "voice": item.get("voice", ""),
+                "rules": item.get("rules", []),
+                "notes": item.get("notes", []),
+            }
+    return {}
+
+
+def _package_home_base_from_world_register(world_register: dict[str, Any]) -> dict[str, Any]:
+    for item in _list_of_dicts(world_register.get("locations")):
+        name = str(item.get("name") or "")
+        tags = " ".join(str(tag) for tag in item.get("tags", [])).casefold() if isinstance(item.get("tags"), list) else ""
+        if "sophie" in name.casefold() or "vehicle" in tags or "home-base" in tags:
+            return {
+                "name": name,
+                "description": item.get("detail") or item.get("description") or "",
+                "rules": [],
+                "notes": item.get("tags", []),
+            }
+    return {}
+
+
+def _package_bestiary_from_world_register(world_register: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": item.get("entity") or item.get("name") or "Unnamed",
+            "entity_type": "world entity",
+            "first_seen": item.get("location") or "",
+            "behavior_rules": [item.get("detail")] if item.get("detail") else [],
+            "notes": item.get("tags", []),
+        }
+        for item in _list_of_dicts(world_register.get("entity_ecology"))
+        if item.get("entity") or item.get("name")
+    ]
 
 
 def _series_package_path(series_id: str) -> Path:

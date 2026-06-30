@@ -226,12 +226,54 @@
             <input name="genre" type="text" placeholder="LitRPG, cozy mystery, space opera, workplace satire">
           </label>
           <label>
+            Book length
+            <select name="book_length_mode">
+              <option value="">default tight</option>
+              <option value="tight">tight</option>
+              <option value="standard">standard</option>
+              <option value="sprawling">sprawling</option>
+            </select>
+          </label>
+          <label>
+            Arc style
+            <select name="arc_style">
+              <option value="">default escalating_floor_survival</option>
+              <option value="escalating_floor_survival">escalating_floor_survival</option>
+              <option value="mystery_box">mystery_box</option>
+              <option value="heist_chain">heist_chain</option>
+              <option value="tournament_ladder">tournament_ladder</option>
+              <option value="settlement_builder">settlement_builder</option>
+              <option value="road_trip">road_trip</option>
+            </select>
+          </label>
+          <label>
+            Power curve
+            <select name="power_curve">
+              <option value="">default logarithmic</option>
+              <option value="logarithmic">logarithmic</option>
+              <option value="linear">linear</option>
+              <option value="explosive">explosive</option>
+              <option value="flat_skill_based">flat_skill_based</option>
+              <option value="social_leverage">social_leverage</option>
+            </select>
+          </label>
+          <label>
             Generation provider
-            <input name="generation_provider" type="text" placeholder="hybrid">
+            <select name="generation_provider">
+              <option value="">settings default</option>
+              <option value="hybrid">hybrid</option>
+              <option value="gemini">gemini</option>
+              <option value="openai">openai</option>
+              <option value="ollama">ollama</option>
+            </select>
           </label>
           <label>
             Generation model
-            <input name="generation_model" type="text" placeholder="gpt-5.4">
+            <select name="generation_model" data-custom-input="generation_model_custom"></select>
+          </label>
+          <label class="custom-field hidden" data-custom-field="generation_model_custom">
+            Custom generation model
+            <input name="generation_model_custom" type="text" placeholder="provider-specific model id">
           </label>
           <label class="toggle">
             <input name="auto_model_routing" type="checkbox" checked>
@@ -239,15 +281,34 @@
           </label>
           <label>
             TTS provider
-            <input name="tts_provider" type="text" placeholder="openai">
+            <select name="tts_provider">
+              <option value="">settings default</option>
+              <option value="edge">edge</option>
+              <option value="openai">openai</option>
+              <option value="elevenlabs">elevenlabs</option>
+              <option value="geminiapi">geminiapi</option>
+              <option value="geminimulti">geminimulti</option>
+            </select>
           </label>
           <label>
             TTS model
-            <input name="tts_model" type="text" placeholder="gpt-4o-mini-tts">
+            <select name="tts_model" data-custom-input="tts_model_custom"></select>
+          </label>
+          <label class="custom-field hidden" data-custom-field="tts_model_custom">
+            Custom TTS model
+            <input name="tts_model_custom" type="text" placeholder="provider-specific voice or model id">
           </label>
           <label>
             TTS format
-            <input name="tts_format" type="text" placeholder="mp3">
+            <select name="tts_format">
+              <option value="">settings default</option>
+              <option value="mp3">mp3</option>
+              <option value="wav">wav</option>
+              <option value="opus">opus</option>
+              <option value="flac">flac</option>
+              <option value="aac">aac</option>
+              <option value="pcm">pcm</option>
+            </select>
           </label>
           <label>
             Result path

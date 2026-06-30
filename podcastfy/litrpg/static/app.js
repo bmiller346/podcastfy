@@ -68,6 +68,64 @@ let lastSyncedPackageSeriesId = "";
 let packageRevision = 0;
 let pendingRevisionProposal = null;
 
+const CUSTOM_OPTION = "__custom__";
+const GENERATION_MODEL_OPTIONS = {
+  hybrid: [
+    ["gemini-2.5-flash", "Gemini 2.5 Flash"],
+    ["gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite"],
+    ["gpt-5.4", "GPT-5.4"],
+    ["gpt-5.4-mini", "GPT-5.4 Mini"],
+  ],
+  gemini: [
+    ["gemini-2.5-flash", "Gemini 2.5 Flash"],
+    ["gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite"],
+    ["gemini-2.5-pro", "Gemini 2.5 Pro"],
+  ],
+  openai: [
+    ["gpt-5.4", "GPT-5.4"],
+    ["gpt-5.4-mini", "GPT-5.4 Mini"],
+    ["gpt-5.4-nano", "GPT-5.4 Nano"],
+  ],
+  ollama: [
+    ["litrpg-writer", "litrpg-writer"],
+    ["dolphin3", "dolphin3"],
+    ["hermes3:latest", "hermes3:latest"],
+    ["llama3.1:8b", "llama3.1:8b"],
+  ],
+  default: [
+    ["gemini-2.5-flash", "Gemini 2.5 Flash"],
+    ["gpt-5.4", "GPT-5.4"],
+    ["litrpg-writer", "litrpg-writer"],
+  ],
+};
+const TTS_MODEL_OPTIONS = {
+  edge: [["edge", "Edge default voice"]],
+  openai: [
+    ["gpt-4o-mini-tts", "GPT-4o Mini TTS"],
+    ["tts-1", "tts-1"],
+    ["tts-1-hd", "tts-1-hd"],
+  ],
+  elevenlabs: [
+    ["eleven_multilingual_v2", "Eleven Multilingual v2"],
+    ["eleven_flash_v2_5", "Eleven Flash v2.5"],
+    ["eleven_turbo_v2_5", "Eleven Turbo v2.5"],
+  ],
+  geminiapi: [
+    ["gemini-2.5-flash-preview-tts", "Gemini 2.5 Flash Preview TTS"],
+    ["gemini-2.5-pro-preview-tts", "Gemini 2.5 Pro Preview TTS"],
+  ],
+  geminimulti: [
+    ["en-US-Studio-MultiSpeaker", "Google Studio MultiSpeaker"],
+    ["en-US-Journey-F", "Google Journey F"],
+    ["en-US-Journey-D", "Google Journey D"],
+  ],
+  default: [
+    ["edge", "Edge default voice"],
+    ["gpt-4o-mini-tts", "GPT-4o Mini TTS"],
+    ["eleven_multilingual_v2", "Eleven Multilingual v2"],
+  ],
+};
+
 async function api(path, options = {}) {
   const { timeoutMs, ...fetchOptions } = options;
   const controller = timeoutMs ? new AbortController() : null;
@@ -369,6 +427,42 @@ function maybeAssign(target, key, value) {
   }
 }
 
+function selectedOrCustomValue(formData, selectName, customName) {
+  const selected = cleanValue(formData.get(selectName));
+  if (selected === CUSTOM_OPTION) {
+    return cleanValue(formData.get(customName));
+  }
+  return selected;
+}
+
+function refreshAdvancedTaskDropdowns() {
+  if (!taskForm) return;
+  const generationProvider = cleanValue(taskForm.elements.generation_provider && taskForm.elements.generation_provider.value) || "default";
+  const ttsProvider = cleanValue(taskForm.elements.tts_provider && taskForm.elements.tts_provider.value) || "default";
+  refreshOptionSelect(taskForm.elements.generation_model, GENERATION_MODEL_OPTIONS[generationProvider] || GENERATION_MODEL_OPTIONS.default);
+  refreshOptionSelect(taskForm.elements.tts_model, TTS_MODEL_OPTIONS[ttsProvider] || TTS_MODEL_OPTIONS.default);
+  refreshCustomField(taskForm.elements.generation_model);
+  refreshCustomField(taskForm.elements.tts_model);
+}
+
+function refreshOptionSelect(select, options) {
+  if (!select) return;
+  const previous = select.value;
+  const knownOptions = [["", "settings/default"], ...options, [CUSTOM_OPTION, "Custom..."]];
+  select.innerHTML = knownOptions
+    .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
+    .join("");
+  select.value = knownOptions.some(([value]) => value === previous) ? previous : "";
+}
+
+function refreshCustomField(select) {
+  if (!select || !select.dataset) return;
+  const customName = select.dataset.customInput;
+  const field = customName ? taskForm.querySelector(`[data-custom-field="${customName}"]`) : null;
+  if (!field) return;
+  field.classList.toggle("hidden", select.value !== CUSTOM_OPTION);
+}
+
 function buildTaskPayload() {
   const formData = new FormData(taskForm);
   const mode = cleanValue(formData.get("mode")) || "episode";
@@ -400,19 +494,24 @@ function buildTaskPayload() {
     task.render_audio = false;
   }
 
+  maybeAssign(task, "book_length_mode", cleanValue(formData.get("book_length_mode")));
+  maybeAssign(task, "arc_style", cleanValue(formData.get("arc_style")));
+  maybeAssign(task, "power_curve", cleanValue(formData.get("power_curve")));
   maybeAssign(task, "genre", cleanValue(formData.get("genre")));
   maybeAssign(task, "result_path", cleanValue(formData.get("result_path")));
   maybeAssign(task, "checkpoint_dir", cleanValue(formData.get("checkpoint_dir")));
 
   const generation = {};
-  maybeAssign(generation, "provider", cleanValue(formData.get("generation_provider")));
-  maybeAssign(generation, "model", cleanValue(formData.get("generation_model")));
+  const generationProvider = cleanValue(formData.get("generation_provider"));
+  const generationModel = selectedOrCustomValue(formData, "generation_model", "generation_model_custom");
+  maybeAssign(generation, "provider", generationProvider);
+  maybeAssign(generation, "model", generationModel);
   if (formData.get("auto_model_routing") === "on" && (generation.provider || generation.model)) {
     Object.assign(
       generation,
       defaultCloudIntentRoutingConfig(
         generation.provider || "hybrid",
-        cleanValue(formData.get("generation_model")),
+        generationModel,
       ),
     );
   }
@@ -422,7 +521,7 @@ function buildTaskPayload() {
 
   const tts = {};
   maybeAssign(tts, "provider", cleanValue(formData.get("tts_provider")));
-  maybeAssign(tts, "model", cleanValue(formData.get("tts_model")));
+  maybeAssign(tts, "model", selectedOrCustomValue(formData, "tts_model", "tts_model_custom"));
   maybeAssign(tts, "format", cleanValue(formData.get("tts_format")));
   if (Object.keys(tts).length) {
     task.tts = tts;
@@ -804,6 +903,19 @@ function renderSeriesPackage(data) {
   renderRoleEditor(data.package || buildPackageDraft());
   renderPackageRadar(summarizeSeriesPackage(data));
   updateDiagnostics();
+}
+
+function loadedSeriesMessage(data) {
+  const seriesId = data && data.series_id ? data.series_id : currentSeriesId();
+  if (!data || !data.available) {
+    return `No saved package or intake artifacts found for ${seriesId}.`;
+  }
+  const packageValue = data.package && typeof data.package === "object" ? data.package : {};
+  const count = packageValue.metadata && packageValue.metadata.artifact_count;
+  if (data.status === "artifact_workspace") {
+    return `Loaded intake artifact workspace for ${seriesId}${count ? ` (${count} artifacts)` : ""}.`;
+  }
+  return `Loaded series package for ${seriesId}.`;
 }
 
 function renderSeriesArtifacts(data) {
@@ -1794,6 +1906,15 @@ taskForm.addEventListener("input", (event) => {
   updateTaskPreview({ syncSeries: event.target && event.target.name === "series_id" });
 });
 
+taskForm.addEventListener("change", (event) => {
+  if (event.target && ["generation_provider", "tts_provider"].includes(event.target.name)) {
+    refreshAdvancedTaskDropdowns();
+  } else if (event.target && ["generation_model", "tts_model"].includes(event.target.name)) {
+    refreshCustomField(event.target);
+  }
+  updateTaskPreview({ syncSeries: event.target && event.target.name === "series_id" });
+});
+
 if (activeSeriesInput) {
   activeSeriesInput.addEventListener("input", () => {
     setActiveSeriesId(activeSeriesInput.value, { syncTask: true, syncPackage: true });
@@ -1806,8 +1927,8 @@ if (seriesSelect) {
     setActiveSeriesId(seriesSelect.value, { syncTask: true, syncPackage: true });
     taskOutput.textContent = "Loading selected series...";
     try {
-      await loadSeriesPackage();
-      taskOutput.textContent = "Series loaded.";
+      const data = await loadSeriesPackage();
+      taskOutput.textContent = loadedSeriesMessage(data);
     } catch (error) {
       taskOutput.textContent = error.message;
     }
@@ -1818,7 +1939,9 @@ if (useTaskSeriesButton) {
   useTaskSeriesButton.addEventListener("click", async () => {
     setActiveSeriesId(buildTaskPayload().series_id, { syncTask: false, syncPackage: true });
     taskOutput.textContent = "Task series selected.";
-    await loadSeriesPackage().catch((error) => {
+    await loadSeriesPackage().then((data) => {
+      taskOutput.textContent = loadedSeriesMessage(data);
+    }).catch((error) => {
       taskOutput.textContent = error.message;
     });
   });
@@ -1829,8 +1952,8 @@ if (loadActiveSeriesButton) {
     setActiveSeriesId(currentSeriesId(), { syncTask: true, syncPackage: true });
     taskOutput.textContent = "Loading series...";
     try {
-      await loadSeriesPackage();
-      taskOutput.textContent = "Series loaded.";
+      const data = await loadSeriesPackage();
+      taskOutput.textContent = loadedSeriesMessage(data);
     } catch (error) {
       taskOutput.textContent = error.message;
     }
@@ -2141,6 +2264,8 @@ async function runQuickAction(action) {
     await copyDiagnostics();
   }
 }
+
+refreshAdvancedTaskDropdowns();
 
 refreshAll().catch((error) => {
   taskOutput.textContent = error.message;

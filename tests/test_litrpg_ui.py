@@ -130,12 +130,29 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="series_promise"' in html
     assert 'name="endgame_direction"' in html
     assert 'name="genre"' in html
+    assert 'name="book_length_mode"' in html
+    assert 'value="tight"' in html
+    assert 'name="arc_style"' in html
+    assert 'value="escalating_floor_survival"' in html
+    assert 'name="power_curve"' in html
+    assert 'value="logarithmic"' in html
     assert 'name="generation_provider"' in html
+    assert 'value="hybrid"' in html
+    assert 'value="gemini"' in html
+    assert 'value="openai"' in html
+    assert 'value="ollama"' in html
     assert 'name="generation_model"' in html
+    assert 'name="generation_model_custom"' in html
     assert 'name="auto_model_routing"' in html
     assert 'name="tts_provider"' in html
+    assert 'value="elevenlabs"' in html
+    assert 'value="geminiapi"' in html
     assert 'name="tts_model"' in html
+    assert 'name="tts_model_custom"' in html
     assert 'name="tts_format"' in html
+    assert 'value="mp3"' in html
+    assert 'value="wav"' in html
+    assert 'value="opus"' in html
     assert 'name="render_audio"' in html
     assert 'name="result_path"' in html
     assert 'name="checkpoint_dir"' in html
@@ -384,6 +401,63 @@ def test_series_package_load_missing_returns_readiness_payload(ui_server):
     assert data["status"] == "missing"
     assert data["package"] is None
     assert data["modules"]["generator"] is True
+
+
+def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roots):
+    series_root = ui_roots / "data" / "litrpg" / "series" / "the-knotty-buoy"
+    (series_root / "book_1").mkdir(parents=True)
+    (series_root / "series_plan.json").write_text(
+        json.dumps({"series_title": "The Knotty Buoy", "chapters_per_book": 30}),
+        encoding="utf-8",
+    )
+    (series_root / "book_1" / "chapter_outline.json").write_text(
+        json.dumps([{"chapter": 1, "title": "Out of the Atlantic", "premise": "Drop."}]),
+        encoding="utf-8",
+    )
+    (series_root / "story_bible.json").write_text(
+        json.dumps(
+            {
+                "premise": "Edward and Kelli sail Sophie II.",
+                "characters": {
+                    "Edward Marsh": {"name": "Edward Marsh", "voice_rules": ["gruff"]},
+                    "Kelli Marsh": {"name": "Kelli Marsh", "voice_rules": ["sharp"]},
+                    "Pedro": {"name": "Pedro", "voice_rules": ["phrase-bank"]},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (series_root / "world_register.json").write_text(
+        json.dumps(
+            {
+                "locations": [{"name": "Sophie II", "detail": "Mobile home base.", "tags": ["vehicle"]}],
+                "rules": [{"rule": "Navigable waters mutate by floor"}],
+                "entity_ecology": [{"entity": "OSHA Wraiths", "detail": "Violation debuffs."}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status, data = request_json(
+        ui_server,
+        "GET",
+        "/api/series-package?series_id=the-knotty-buoy",
+    )
+
+    assert status == 200
+    assert data["available"] is True
+    assert data["status"] == "artifact_workspace"
+    assert data["package"]["series_plan"]["series_title"] == "The Knotty Buoy"
+    assert data["package"]["chapter_outline"][0]["title"] == "Out of the Atlantic"
+    assert data["package"]["story_bible"]["characters"]["Pedro"]["name"] == "Pedro"
+    assert data["package"]["world_register"]["entity_ecology"][0]["entity"] == "OSHA Wraiths"
+    assert [item["name"] for item in data["package"]["characters"]] == [
+        "Edward Marsh",
+        "Kelli Marsh",
+        "Pedro",
+    ]
+    assert data["package"]["home_base"]["name"] == "Sophie II"
+    assert data["package"]["bestiary"][0]["name"] == "OSHA Wraiths"
 
 
 def test_series_package_generate_uses_generator_when_available(
