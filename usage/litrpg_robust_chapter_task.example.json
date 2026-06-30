@@ -1,0 +1,31 @@
+{
+  "mode": "chapter",
+  "series_id": "paper-cuts",
+  "book_number": 1,
+  "chapter_number": 1,
+  "storage_dir": "data/litrpg",
+  "result_path": "data/litrpg/series/paper-cuts/book_1/chapter_001.json",
+  "premise": "A tired office worker discovers the basement is a dungeon.",
+  "chapter_title": "The Copier Has Teeth",
+  "target_minutes": 30,
+  "reviews": true,
+  "rewrite_quarantined": false,
+  "max_rewrite_attempts": 3,
+  "generate_handoff": true,
+  "harness": {
+    "enabled": true,
+    "stages": {
+      "chapter_generation": {"requires_human_approval": true},
+      "chapter_result_write": {"requires_human_approval": false},
+      "audio_render": {"requires_human_approval": true}
+    }
+  },
+  "approved_stages": ["chapter_generation"],
+  "generation": {
+    "provider": "hybrid",
+    "commercial_provider": "openai",
+    "commercial_model": "gpt-5.4",
+    "local_provider": "ollama",
+    "local_model": "hermes3:latest"
+  }
+}

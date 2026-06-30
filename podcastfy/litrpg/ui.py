@@ -21,6 +21,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from podcastfy.litrpg.agent_state import agent_state_path, load_agent_state
+from podcastfy.litrpg.effect_log import effect_log_path, read_effect_log
+from podcastfy.litrpg.handoff import HANDOFF_FILENAME
 from podcastfy.litrpg import library as episode_library
 from podcastfy.litrpg.settings import (
     DEFAULT_SETTINGS_PATH,
@@ -222,6 +225,17 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
             params = parse_qs(parsed.query)
             try:
                 return self._send_json(series_package_response(params.get("series_id", [""])[0]))
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if parsed.path == "/api/robust-state":
+            params = parse_qs(parsed.query)
+            try:
+                return self._send_json(
+                    robust_state_response(
+                        params.get("series_id", [""])[0],
+                        params.get("book_number", ["1"])[0],
+                    )
+                )
             except ValueError as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/audio":
@@ -523,6 +537,52 @@ def series_package_response(series_id: str) -> dict[str, Any]:
                 status="artifact_workspace",
             )
     return _series_package_payload(safe_series_id, package)
+
+
+def robust_state_response(series_id: str, book_number: Any = 1) -> dict[str, Any]:
+    """Return enforceable robust-build state for one series/book."""
+
+    safe_series_id = _safe_series_id(series_id)
+    book = _int_value(book_number, 1)
+    series_root = DATA_DIR / "series" / safe_series_id
+    book_root = series_root / f"book_{book}"
+    state_path = agent_state_path(DATA_DIR, safe_series_id)
+    handoff_path = book_root / HANDOFF_FILENAME
+    quarantine = _quarantine_records(book_root)
+    effects = [entry.to_dict() for entry in read_effect_log(effect_log_path(DATA_DIR, safe_series_id))]
+    return {
+        "ok": True,
+        "series_id": safe_series_id,
+        "book_number": book,
+        "agent_state_path": _display_path(state_path) if state_path.exists() else "",
+        "agent_state": load_agent_state(DATA_DIR, safe_series_id),
+        "blocked": load_agent_state(DATA_DIR, safe_series_id).get("blocked", []),
+        "quarantine": {
+            "records": quarantine,
+            "latest": quarantine[-1] if quarantine else None,
+        },
+        "handoff": {
+            "exists": handoff_path.exists(),
+            "path": _display_path(handoff_path) if handoff_path.exists() else "",
+        },
+        "effect_log": {
+            "path": _display_path(effect_log_path(DATA_DIR, safe_series_id))
+            if effect_log_path(DATA_DIR, safe_series_id).exists()
+            else "",
+            "recent": effects[-10:],
+        },
+    }
+
+
+def _quarantine_records(book_root: Path) -> list[dict[str, Any]]:
+    records = []
+    for path in sorted((book_root / "quarantine").glob("chapter_*_attempt_*.json")):
+        payload = _read_json_if_object(path)
+        if payload is None:
+            continue
+        payload["path"] = _display_path(path)
+        records.append(payload)
+    return records
 
 
 def load_intake_artifact_workspace(series_id: str) -> dict[str, Any] | None:
@@ -906,6 +966,11 @@ def _result_metadata(result: Any) -> dict[str, Any]:
         "audio_path",
         "written_files",
         "artifact_paths",
+        "harness_decision",
+        "quarantine",
+        "blocked",
+        "rewrite_instruction",
+        "scarcity_audit",
     )
     metadata = {key: result[key] for key in keys if key in result}
     for key in ("script_path", "metadata_path", "audio_metadata_path"):

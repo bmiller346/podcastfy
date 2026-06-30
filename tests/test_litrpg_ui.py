@@ -800,6 +800,21 @@ def test_submit_task_job_tracks_success_metadata(
         return {
             "series_id": "paper-cuts",
             "episode_number": 1,
+            "status": "approval_required",
+            "harness_decision": {
+                "stage": "chapter_generation",
+                "allowed": False,
+                "requires_human_approval": True,
+                "approved": False,
+                "estimated_cost_usd": 0.09,
+                "reason": "Stage requires human approval.",
+                "policy": {"requires_human_approval": True},
+            },
+            "quarantine": {
+                "status": "quarantined",
+                "path": "data/litrpg/series/paper-cuts/book_1/quarantine/chapter_001_attempt_001.json",
+                "rewrite_instruction": "Remove the reveal.",
+            },
             "checkpoint_dir": "data/litrpg/checkpoints/paper-cuts",
             "checkpoint_paths": ["part-1.json", "part-1_approved.xml"],
             "ignored_large_payload": "not needed",
@@ -819,6 +834,9 @@ def test_submit_task_job_tracks_success_metadata(
     assert job["status"] in {"queued", "running", "succeeded"}
     assert final_job["result"]["series_id"] == "paper-cuts"
     assert final_job["result"]["episode_number"] == 1
+    assert final_job["result"]["status"] == "approval_required"
+    assert final_job["result"]["harness_decision"]["stage"] == "chapter_generation"
+    assert final_job["result"]["quarantine"]["rewrite_instruction"] == "Remove the reveal."
     assert final_job["result"]["checkpoint_dir"] == "data/litrpg/checkpoints/paper-cuts"
     assert "ignored_large_payload" not in final_job["result"]
     assert final_job["checkpoint_paths"] == [
@@ -830,6 +848,82 @@ def test_submit_task_job_tracks_success_metadata(
     assert final_job["duration_seconds"] is not None
     assert list_status == 200
     assert list_data["jobs"][0]["job_id"] == job["job_id"]
+
+
+def test_robust_state_endpoint_exposes_agent_quarantine_handoff_and_effects(ui_server, ui_roots):
+    from podcastfy.litrpg.effect_log import append_effect_log_entry
+    from podcastfy.litrpg.effect_log import build_effect_log_entry
+    from podcastfy.litrpg.effect_log import effect_log_path
+
+    series_root = ui_roots / "data" / "litrpg" / "series" / "paper-cuts"
+    book_root = series_root / "book_1"
+    quarantine_root = book_root / "quarantine"
+    quarantine_root.mkdir(parents=True)
+    (series_root / "agent_state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "series_id": "paper-cuts",
+                "now": [],
+                "next": [],
+                "blocked": [
+                    {
+                        "id": "blocked:chapter:12",
+                        "kind": "quarantine_blocker",
+                        "summary": "Chapter 12 is blocked by quarantine.",
+                        "source": "quarantine",
+                        "priority": 1,
+                        "metadata": {"chapter_number": 12},
+                    }
+                ],
+                "improve": [],
+                "recurring": [],
+                "updated_at": "2026-06-29T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (quarantine_root / "chapter_012_attempt_004.json").write_text(
+        json.dumps(
+            {
+                "status": "blocked",
+                "chapter_number": 12,
+                "attempt": 4,
+                "rewrite_instruction": "Remove the sponsor reveal.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (book_root / "HANDOFF.md").write_text(
+        "# HANDOFF: Paper Cuts Book 1\n\n## Pending human decisions\n- Fix Chapter 12",
+        encoding="utf-8",
+    )
+    append_effect_log_entry(
+        effect_log_path(ui.DATA_DIR, "paper-cuts"),
+        build_effect_log_entry(
+            series_id="paper-cuts",
+            book_number=1,
+            chapter_number=12,
+            stage="chapter_generation",
+            input_payload={"chapter": 12},
+            output_payload={"status": "blocked"},
+            provider="fake",
+            model="unit",
+        ),
+    )
+
+    status, data = request_json(
+        ui_server,
+        "GET",
+        "/api/robust-state?series_id=paper-cuts&book_number=1",
+    )
+
+    assert status == 200
+    assert data["blocked"][0]["kind"] == "quarantine_blocker"
+    assert data["quarantine"]["latest"]["status"] == "blocked"
+    assert data["quarantine"]["latest"]["rewrite_instruction"] == "Remove the sponsor reveal."
+    assert data["handoff"]["path"] == "data/litrpg/series/paper-cuts/book_1/HANDOFF.md"
+    assert data["effect_log"]["recent"][0]["stage"] == "chapter_generation"
 
 
 def test_submit_inline_task_job_tracks_summary_and_status(

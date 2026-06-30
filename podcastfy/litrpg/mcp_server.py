@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from podcastfy.litrpg.agent_state import load_agent_state
+from podcastfy.litrpg.effect_log import effect_log_path, read_effect_log as read_effect_log_entries
+from podcastfy.litrpg.handoff import HANDOFF_FILENAME
 from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.series_architect import SeriesArchitect
 from podcastfy.litrpg.task import run_litrpg_task, run_litrpg_task_data
@@ -62,6 +65,41 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "task": {"type": "object"},
             "task_path": {"type": "string"},
             "base_dir": {"type": "string"},
+        },
+    },
+    "get_agent_state": {
+        "description": "Return durable agent queues for a LitRPG series.",
+        "required": ["storage_dir", "series_id"],
+        "properties": {
+            "storage_dir": {"type": "string"},
+            "series_id": {"type": "string"},
+        },
+    },
+    "list_quarantine_records": {
+        "description": "List scarcity/quarantine records for one book.",
+        "required": ["storage_dir", "series_id"],
+        "properties": {
+            "storage_dir": {"type": "string"},
+            "series_id": {"type": "string"},
+            "book_number": {"type": "integer", "default": 1},
+        },
+    },
+    "read_effect_log": {
+        "description": "Read recent effect log entries for a LitRPG series.",
+        "required": ["storage_dir", "series_id"],
+        "properties": {
+            "storage_dir": {"type": "string"},
+            "series_id": {"type": "string"},
+            "limit": {"type": "integer", "default": 20},
+        },
+    },
+    "get_book_handoff": {
+        "description": "Return the deterministic HANDOFF.md for one book when present.",
+        "required": ["storage_dir", "series_id"],
+        "properties": {
+            "storage_dir": {"type": "string"},
+            "series_id": {"type": "string"},
+            "book_number": {"type": "integer", "default": 1},
         },
     },
 }
@@ -166,6 +204,68 @@ def run_litrpg_task_tool(
     raise ValueError("run_litrpg_task requires task or task_path")
 
 
+def get_agent_state(*, storage_dir: str, series_id: str) -> dict[str, Any]:
+    """Return durable agent queues for a series."""
+
+    return load_agent_state(storage_dir, series_id)
+
+
+def list_quarantine_records(
+    *,
+    storage_dir: str,
+    series_id: str,
+    book_number: int = 1,
+) -> dict[str, Any]:
+    """List persisted quarantine records for one book."""
+
+    root = Path(storage_dir) / "series" / str(series_id) / f"book_{int(book_number)}" / "quarantine"
+    records = []
+    for path in sorted(root.glob("chapter_*_attempt_*.json")):
+        payload = _read_json_object(path)
+        if payload:
+            payload["path"] = str(path)
+            records.append(payload)
+    return {
+        "series_id": str(series_id),
+        "book_number": int(book_number),
+        "records": records,
+    }
+
+
+def read_effect_log(*, storage_dir: str, series_id: str, limit: int = 20) -> dict[str, Any]:
+    """Read recent effect log entries for a series."""
+
+    entries = [
+        entry.to_dict()
+        for entry in read_effect_log_entries(effect_log_path(storage_dir, series_id))
+    ]
+    bounded = max(0, int(limit))
+    return {
+        "series_id": str(series_id),
+        "path": str(effect_log_path(storage_dir, series_id)),
+        "entries": entries[-bounded:] if bounded else [],
+    }
+
+
+def get_book_handoff(
+    *,
+    storage_dir: str,
+    series_id: str,
+    book_number: int = 1,
+) -> dict[str, Any]:
+    """Return the deterministic HANDOFF.md for one book when present."""
+
+    path = Path(storage_dir) / "series" / str(series_id) / f"book_{int(book_number)}" / HANDOFF_FILENAME
+    exists = path.exists()
+    return {
+        "series_id": str(series_id),
+        "book_number": int(book_number),
+        "path": str(path),
+        "exists": exists,
+        "text": path.read_text(encoding="utf-8") if exists else "",
+    }
+
+
 def create_mcp_server(name: str = "podcastfy-litrpg") -> Any:
     """Create and register the optional MCP server instance."""
 
@@ -176,6 +276,10 @@ def create_mcp_server(name: str = "podcastfy-litrpg") -> Any:
     server.tool()(get_chapter_contract)
     server.tool()(list_series_artifacts)
     server.tool(name="run_litrpg_task")(run_litrpg_task_tool)
+    server.tool()(get_agent_state)
+    server.tool()(list_quarantine_records)
+    server.tool()(read_effect_log)
+    server.tool()(get_book_handoff)
     return server
 
 
@@ -223,6 +327,13 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return dict(payload) if isinstance(payload, Mapping) else {}
 
 
 if __name__ == "__main__":
