@@ -101,6 +101,30 @@ def test_simulation_harness_reports_fake_three_chapter_state_drift(tmp_path):
     assert load_world_state(storage, series_id)["artifacts"]["stamp"]["state"]["charges"] == 1
 
 
+def test_simulation_harness_records_chapter_runner_exception(tmp_path):
+    storage = tmp_path / "library"
+    series_id = "paper-cuts"
+    save_world_state(storage, series_id, {"artifacts": {}, "active_mysteries": {}})
+    save_conspiracy_engine(storage, series_id, {"reader_position": {"must_not_know_yet": []}})
+
+    def runner(task):
+        raise RuntimeError("cold-open rewrite failed")
+
+    report = run_simulation_dry_run(
+        storage_dir=storage,
+        series_id=series_id,
+        chapter_tasks=[{"chapter_number": 1, "chapter_contract": {"scene_type": "cold-open"}}],
+        chapter_runner=runner,
+    )
+
+    assert report["passed"] is False
+    assert report["chapters_run"] == 1
+    issue = next(item for item in report["report"]["issues"] if item["type"] == "chapter_generation_exception")
+    assert issue["type"] == "chapter_generation_exception"
+    assert issue["error_type"] == "RuntimeError"
+    assert "cold-open rewrite failed" in issue["message"]
+
+
 def test_mechanics_threat_and_floor_contracts_are_inspectable():
     floor = build_floor_identity(
         floor=1,

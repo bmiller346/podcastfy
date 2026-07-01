@@ -12,7 +12,10 @@ const robustBookNumberInput = document.querySelector("#robust-book-number");
 const robustStateSummary = document.querySelector("#robust-state-summary");
 const robustEffectHistory = document.querySelector("#robust-effect-history");
 const handoffPreview = document.querySelector("#handoff-preview");
+const dryRunReview = document.querySelector("#dry-run-review");
 const refreshRobustStateButton = document.querySelector("#refresh-robust-state");
+const refreshDryRunsButton = document.querySelector("#refresh-dry-runs");
+const runDryRunButton = document.querySelector("#run-dry-run");
 const approveHarnessStageButton = document.querySelector("#approve-harness-stage");
 const rerunQuarantinedRewriteButton = document.querySelector("#rerun-quarantined-rewrite");
 const openHandoffButton = document.querySelector("#open-handoff");
@@ -91,11 +94,14 @@ let latestLibrary = null;
 let latestJob = null;
 let latestPackage = null;
 let latestRobustState = null;
+let latestSimulationReports = null;
 let latestPromiseForgePreview = null;
 let activeSeriesId = "";
 let lastSyncedPackageSeriesId = "";
 let packageRevision = 0;
 let pendingRevisionProposal = null;
+let selectedSimulationReportIndex = 0;
+let selectedSimulationChapterIndex = 0;
 
 function preferredTheme() {
   const saved = localStorage.getItem(THEME_STORAGE_KEY);
@@ -130,6 +136,7 @@ const QUICK_ACTION_TOOLTIPS = {
   "open-package-json": "Open package JSON for manual bestiary, encounter, or role edits.",
   "queue-text": "Queue the current task with audio disabled for a faster smoke test.",
   "queue-current": "Queue the task exactly as currently previewed.",
+  "run-simulation": "Run a 3-chapter text-only dry run and write a drift report without committing state.",
   "copy-diagnostics": "Copy the current local diagnostics report for troubleshooting.",
 };
 
@@ -599,6 +606,12 @@ function buildTaskPayload() {
   if (mode === "premise_intake") {
     task.render_audio = false;
   }
+  if (mode === "simulation_dry_run") {
+    task.render_audio = false;
+    task.start_chapter = task.chapter_number || 1;
+    task.chapter_count = 3;
+    task.require_intake_artifacts = true;
+  }
   if (mode === "chapter") {
     task.require_intake_artifacts = true;
   }
@@ -638,6 +651,8 @@ function buildTaskPayload() {
   }
   if (Object.keys(generation).length) {
     task.generation = generation;
+  } else if (mode === "simulation_dry_run") {
+    task.generation = defaultGeminiDryRunGenerationConfig();
   }
 
   const tts = {};
@@ -1144,6 +1159,14 @@ function defaultCloudIntentRoutingConfig(provider = "gemini", strongModel = "") 
   };
 }
 
+function defaultGeminiDryRunGenerationConfig() {
+  return {
+    provider: "gemini",
+    model: "gemini-2.5-flash-lite",
+    ...defaultCloudIntentRoutingConfig("gemini", "gemini-2.5-flash-lite"),
+  };
+}
+
 function defaultHybridGenerationConfig() {
   return {
     provider: "hybrid",
@@ -1298,6 +1321,9 @@ async function submitTaskPayload(payload, { statusText = "Queueing generation...
     taskOutput.textContent = JSON.stringify(job, null, 2);
     await refreshAll();
     await loadRobustState({ quiet: true }).catch(() => {});
+    if (payload && payload.mode === "simulation_dry_run") {
+      await loadSimulationReports({ quiet: true }).catch(() => {});
+    }
   } catch (error) {
     taskOutput.textContent = error.message;
   } finally {
@@ -1306,7 +1332,7 @@ async function submitTaskPayload(payload, { statusText = "Queueing generation...
 }
 
 function chapterQueueReadinessIssues(payload) {
-  if (!payload || payload.mode !== "chapter") return [];
+  if (!payload || !["chapter", "simulation_dry_run"].includes(payload.mode)) return [];
   const expectedSeries = payload.series_id || currentSeriesId();
   const loadedSeries = latestPackage && latestPackage.series_id ? latestPackage.series_id : "";
   if (!latestPackage || loadedSeries !== expectedSeries) {
@@ -1407,6 +1433,131 @@ function renderRobustState(data) {
   setButtonEnabled(openHandoffButton, Boolean(handoff.exists));
 }
 
+async function loadSimulationReports({ quiet = false } = {}) {
+  if (!dryRunReview) return null;
+  const seriesId = currentSeriesId();
+  if (!quiet) {
+    taskOutput.textContent = `Loading dry-run reports for ${seriesId}...`;
+  }
+  const data = await api(`/api/simulation-reports?series_id=${encodeURIComponent(seriesId)}`);
+  latestSimulationReports = data;
+  selectedSimulationReportIndex = clampIndex(selectedSimulationReportIndex, data.reports || []);
+  const selectedReport = (data.reports || [])[selectedSimulationReportIndex];
+  selectedSimulationChapterIndex = clampIndex(selectedSimulationChapterIndex, selectedReport ? selectedReport.chapters || [] : []);
+  renderSimulationReports(data);
+  if (!quiet) {
+    taskOutput.textContent = `Dry-run reports loaded for ${seriesId}.`;
+  }
+  return data;
+}
+
+function renderSimulationReports(data) {
+  if (!dryRunReview) return;
+  const reports = data && Array.isArray(data.reports) ? data.reports : [];
+  if (!reports.length) {
+    dryRunReview.innerHTML = `<div class="quiet-box">No dry-run reports found for this series yet.</div>`;
+    return;
+  }
+  const report = reports[clampIndex(selectedSimulationReportIndex, reports)] || reports[0];
+  const chapters = Array.isArray(report.chapters) ? report.chapters : [];
+  const selectedChapter = chapters[clampIndex(selectedSimulationChapterIndex, chapters)] || null;
+  dryRunReview.innerHTML = `
+    <div class="dry-run-layout">
+      <div class="dry-run-list">
+        <div class="dry-run-report-strip">
+          ${reports.slice(0, 4).map((item, index) => renderSimulationReportButton(item, index)).join("")}
+        </div>
+        <div class="dry-run-summary">
+          ${diagnosticsItem("Latest result", report.passed ? "pass" : "needs review")}
+          ${diagnosticsItem("Chapters", `${report.chapter_count || 0}/${report.chapters_run || 0}`)}
+          ${diagnosticsItem("Issues", String(report.issue_count || 0))}
+        </div>
+        <div class="dry-run-chapters">
+          ${chapters.length ? chapters.map((chapter, index) => renderSimulationChapterRow(chapter, index)).join("") : `<div class="quiet-box">Report has no chapter rows.</div>`}
+        </div>
+      </div>
+      <div class="dry-run-detail">
+        ${renderSimulationChapterDetail(selectedChapter)}
+      </div>
+    </div>`;
+}
+
+function renderSimulationReportButton(report, index) {
+  const active = index === selectedSimulationReportIndex ? " active" : "";
+  const status = report.passed ? "pass" : "review";
+  return `<button type="button" class="dry-run-report-button${active}" data-sim-report="${escapeHtml(String(index))}">
+    <strong>${escapeHtml(report.filename || `Report ${index + 1}`)}</strong>
+    <span>${escapeHtml(status)} · ${escapeHtml(String(report.issue_count || 0))} issue${report.issue_count === 1 ? "" : "s"}</span>
+  </button>`;
+}
+
+function renderSimulationChapterRow(chapter, index) {
+  const active = index === selectedSimulationChapterIndex ? " active" : "";
+  const status = chapter.passed ? "pass" : "review";
+  const issueText = chapter.issue_count ? `${chapter.issue_count} issue${chapter.issue_count === 1 ? "" : "s"}` : "no issues";
+  return `<button type="button" class="dry-run-chapter-row${active}" data-sim-chapter="${escapeHtml(String(index))}">
+    <strong>Ch ${escapeHtml(String(chapter.chapter_number || index + 1))}</strong>
+    <span class="dry-run-badge ${escapeClass(status)}">${escapeHtml(status)}</span>
+    <span>${escapeHtml(chapter.result_status || "unknown")}</span>
+    <span>${escapeHtml(issueText)}</span>
+  </button>`;
+}
+
+function renderSimulationChapterDetail(chapter) {
+  if (!chapter) {
+    return `<div class="quiet-box">Select a chapter row to inspect harness checks.</div>`;
+  }
+  const issues = Array.isArray(chapter.issues) ? chapter.issues : [];
+  const warnings = Array.isArray(chapter.warnings) ? chapter.warnings : [];
+  const review = chapter.llm_review && typeof chapter.llm_review === "object" ? chapter.llm_review : null;
+  return `<article>
+    <div class="dry-run-detail-header">
+      <div>
+        <h4>Chapter ${escapeHtml(String(chapter.chapter_number || "?"))}</h4>
+        <p>${escapeHtml(chapter.scene_type || "unspecified scene")} · ${escapeHtml(chapter.result_status || "unknown")}</p>
+      </div>
+      <span class="dry-run-badge ${escapeClass(chapter.passed ? "pass" : "review")}">${escapeHtml(chapter.passed ? "pass" : "review")}</span>
+    </div>
+    <div class="dry-run-checks">
+      ${renderSimulationItems("Harness issues", issues)}
+      ${renderSimulationItems("Warnings", warnings)}
+      ${renderSimulationReview(review)}
+    </div>
+  </article>`;
+}
+
+function renderSimulationItems(title, items) {
+  if (!items.length) {
+    return `<section><h5>${escapeHtml(title)}</h5><p class="muted">None.</p></section>`;
+  }
+  return `<section>
+    <h5>${escapeHtml(title)}</h5>
+    <ul>
+      ${items.map((item) => `<li><strong>${escapeHtml(item.type || "note")}</strong><span>${escapeHtml(item.message || item.detail || "")}</span></li>`).join("")}
+    </ul>
+  </section>`;
+}
+
+function renderSimulationReview(review) {
+  if (!review) {
+    return `<section><h5>LLM review</h5><p class="muted">Not run yet. This slot is ready for the critique pass once chapter text survives the harness.</p></section>`;
+  }
+  const status = review.status || review.verdict || "reviewed";
+  const comments = Array.isArray(review.comments) ? review.comments : [];
+  return `<section>
+    <h5>LLM review</h5>
+    <p><strong>${escapeHtml(status)}</strong></p>
+    ${comments.length ? `<ul>${comments.slice(0, 4).map((comment) => `<li><span>${escapeHtml(String(comment))}</span></li>`).join("")}</ul>` : ""}
+  </section>`;
+}
+
+function clampIndex(index, items) {
+  if (!Array.isArray(items) || !items.length) return 0;
+  const numeric = Number(index);
+  if (!Number.isInteger(numeric)) return 0;
+  return Math.min(items.length - 1, Math.max(0, numeric));
+}
+
 function latestHarnessDecision() {
   const result = latestJob && latestJob.result && typeof latestJob.result === "object" ? latestJob.result : {};
   return result.harness_decision && typeof result.harness_decision === "object"
@@ -1504,12 +1655,51 @@ function renderSeriesPackage(data) {
   ].join("");
   packageSummary.textContent = data.summary || "No saved package summary yet.";
   packageOutput.textContent = JSON.stringify(data.package || {}, null, 2);
+  hydrateIntakeFieldsFromSeries(data);
   renderPersistedIntakeStatus(data);
   renderSeriesArtifacts(data);
   renderRoleEditor(data.package || buildPackageDraft());
   renderPackageRadar(summarizeSeriesPackage(data));
   renderSeriesWorkspace();
+  void loadSimulationReports({ quiet: true }).catch(() => {});
   updateDiagnostics();
+}
+
+function hydrateIntakeFieldsFromSeries(data) {
+  const packageValue = data && data.package && typeof data.package === "object" ? data.package : {};
+  const artifacts = intakeArtifactsFromPackage(packageValue);
+  const plan = artifacts.seriesPlan || {};
+  const intakeSource = plan.intake_source && typeof plan.intake_source === "object" ? plan.intake_source : {};
+  const sourceText = cleanValue(intakeSource.source_text);
+  const shortPremise = cleanValue(intakeSource.short_premise) || derivePremiseFromPackage(packageValue);
+  if (sourceText && messyContextInput) {
+    messyContextInput.value = sourceText;
+    renderMessyContextSummary(analyzeMessyContext(sourceText));
+  }
+  if (shortPremise && taskForm && taskForm.elements.premise) {
+    taskForm.elements.premise.value = shortPremise;
+  }
+  if (plan.series_title && taskForm && taskForm.elements.series_title) {
+    taskForm.elements.series_title.value = plan.series_title;
+  }
+  if (plan.series_promise && taskForm && taskForm.elements.series_promise) {
+    taskForm.elements.series_promise.value = plan.series_promise;
+  }
+  hydratePromisePreviewFromSeriesPlan(plan);
+  updateTaskPreview({ syncSeries: true });
+}
+
+function hydratePromisePreviewFromSeriesPlan(plan) {
+  const forge = plan && plan.promise_forge && typeof plan.promise_forge === "object" ? plan.promise_forge : {};
+  if (!cleanValue(forge.founding_injustice)) return;
+  const hook = forge.source_brief && typeof forge.source_brief === "object" ? forge.source_brief : {};
+  latestPromiseForgePreview = {
+    ok: true,
+    hook_brief: hook,
+    promise_forge: forge,
+    specificity: { passed: true, issues: [] },
+  };
+  renderPromisePreview(latestPromiseForgePreview);
 }
 
 function loadedSeriesMessage(data) {
@@ -2082,6 +2272,10 @@ function buildNextActions(report) {
   if (!report.latest_job || report.latest_job.status !== "running") {
     actions.push({ label: "Queue Current Task", action: "queue-current", tone: "primary" });
   }
+  const packageKeys = report.series_package.package_keys || [];
+  if (report.series_package.available && packageKeys.includes("world_state") && packageKeys.includes("conspiracy_engine")) {
+    actions.push({ label: "3-Chapter Dry Run", action: "run-simulation", tone: "secondary" });
+  }
   actions.push({ label: "Copy Diagnostics", action: "copy-diagnostics", tone: "secondary" });
   return actions.slice(0, 6);
 }
@@ -2639,6 +2833,7 @@ async function refreshAll() {
     });
   }
   await loadRobustState({ quiet: true }).catch(() => {});
+  await loadSimulationReports({ quiet: true }).catch(() => {});
 }
 
 settingsForm.addEventListener("submit", async (event) => {
@@ -2727,6 +2922,37 @@ if (refreshRobustStateButton) {
     loadRobustState().catch((error) => {
       taskOutput.textContent = error.message;
     });
+  });
+}
+
+if (refreshDryRunsButton) {
+  refreshDryRunsButton.addEventListener("click", () => {
+    loadSimulationReports().catch((error) => {
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+if (runDryRunButton) {
+  runDryRunButton.addEventListener("click", () => {
+    runQuickAction("run-simulation").catch((error) => {
+      taskOutput.textContent = error.message;
+    });
+  });
+}
+
+if (dryRunReview) {
+  dryRunReview.addEventListener("click", (event) => {
+    const target = event.target && event.target.closest ? event.target.closest("[data-sim-report], [data-sim-chapter]") : null;
+    if (!target) return;
+    if (target.dataset.simReport !== undefined) {
+      selectedSimulationReportIndex = Number(target.dataset.simReport);
+      selectedSimulationChapterIndex = 0;
+    }
+    if (target.dataset.simChapter !== undefined) {
+      selectedSimulationChapterIndex = Number(target.dataset.simChapter);
+    }
+    renderSimulationReports(latestSimulationReports);
   });
 }
 
@@ -3089,6 +3315,16 @@ async function runQuickAction(action) {
     return;
   }
   if (action === "queue-current") {
+    taskForm.requestSubmit();
+    return;
+  }
+  if (action === "run-simulation") {
+    if (taskForm.elements.mode) taskForm.elements.mode.value = "simulation_dry_run";
+    if (taskForm.elements.render_audio) taskForm.elements.render_audio.checked = false;
+    if (taskForm.elements.chapter_number && !cleanValue(taskForm.elements.chapter_number.value)) {
+      taskForm.elements.chapter_number.value = "1";
+    }
+    updateTaskPreview({ syncSeries: true });
     taskForm.requestSubmit();
     return;
   }

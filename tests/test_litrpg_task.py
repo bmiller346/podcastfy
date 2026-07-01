@@ -275,6 +275,23 @@ def test_llm_from_task_builds_ollama_generator_from_generation_config():
     assert llm.timeout_seconds == 99
 
 
+def test_llm_from_task_defaults_simulation_dry_run_to_gemini_flash_lite(monkeypatch):
+    captured = {}
+
+    def fake_gemini_generator(generation, *, settings):
+        captured["generation"] = dict(generation)
+        captured["settings"] = settings
+        return "gemini"
+
+    monkeypatch.setattr("podcastfy.litrpg.task._gemini_generator_from_config", fake_gemini_generator)
+
+    llm = _llm_from_task({"mode": "simulation_dry_run"}, settings={})
+
+    assert llm == "gemini"
+    assert captured["generation"]["provider"] == "gemini"
+    assert captured["generation"]["model"] == "gemini-2.5-flash-lite"
+
+
 def test_llm_from_task_uses_ollama_base_url_env(monkeypatch):
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11435")
 
@@ -515,6 +532,9 @@ def test_premise_intake_task_persists_approved_promise_forge(tmp_path):
     assert shape.series_promise == forge["series_promise"]
     assert "Kelli and Edward argue over Sophie II's chore board." in llm.calls[0]["prompt"]
     assert "Short debug premise that should not replace source_text." not in llm.calls[0]["prompt"]
+    stored_plan = json.loads((tmp_path / "library" / "series" / "knotty" / "series_plan.json").read_text(encoding="utf-8"))
+    assert stored_plan["intake_source"]["source_text"] == "Kelli and Edward argue over Sophie II's chore board."
+    assert stored_plan["intake_source"]["short_premise"] == "Kelli and Edward argue over Sophie II's chore board."
     assert not (tmp_path / "library" / "series" / "knotty" / "promise_forge.json").exists()
 
 
@@ -613,6 +633,49 @@ def test_strict_chapter_generation_requires_founding_injustice(tmp_path):
             base_dir=tmp_path,
             llm=SmokeChapterLLM(),
         )
+
+
+def test_simulation_dry_run_task_writes_report(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run_simulation_dry_run(**kwargs):
+        captured.update(kwargs)
+        for chapter_task in kwargs["chapter_tasks"]:
+            assert chapter_task["render_audio"] is False
+            assert chapter_task["require_intake_artifacts"] is True
+        return {
+            "passed": True,
+            "series_id": kwargs["series_id"],
+            "commit": kwargs["commit"],
+            "chapters_run": len(kwargs["chapter_tasks"]),
+            "chapters": [],
+            "report": {"issues": [], "warnings": []},
+        }
+
+    monkeypatch.setattr("podcastfy.litrpg.task.run_simulation_dry_run", fake_run_simulation_dry_run)
+
+    result = run_litrpg_task_data(
+        {
+            "mode": "simulation_dry_run",
+            "series_id": "knotty",
+            "storage_dir": "library",
+            "book_number": 1,
+            "chapter_number": 2,
+            "chapter_count": 3,
+            "render_audio": False,
+        },
+        base_dir=tmp_path,
+        llm=SmokeChapterLLM(),
+    )
+
+    report_path = tmp_path / "library" / "series" / "knotty" / "simulation_report_ch002_004.json"
+    assert result["mode"] == "simulation_dry_run"
+    assert result["status"] == "succeeded"
+    assert result["chapters_run"] == 3
+    assert result["report_path"] == str(report_path)
+    assert report_path.exists()
+    assert [task["chapter_number"] for task in captured["chapter_tasks"]] == [2, 3, 4]
+    assert captured["commit"] is False
 
 
 def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(tmp_path, monkeypatch):

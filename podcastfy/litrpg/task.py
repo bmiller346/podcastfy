@@ -60,6 +60,7 @@ from podcastfy.litrpg.settings import get_provider_api_key, load_litrpg_settings
 from podcastfy.litrpg.series_architect import SeriesArchitect, format_chapter_contract_context
 from podcastfy.litrpg.series_architect import load_book_plan, load_series_shape
 from podcastfy.litrpg.showrunner import build_showrunner_payload, format_showrunner_context
+from podcastfy.litrpg.simulation_harness import run_simulation_dry_run, write_simulation_report
 from podcastfy.litrpg.state_delta import apply_delta_to_state, extract_state_delta
 from podcastfy.litrpg.state_store import load_series_state, save_series_state
 from podcastfy.litrpg.voice_cards import format_voice_card_context
@@ -179,6 +180,15 @@ def run_litrpg_task_data(
         )
         return result
 
+    if mode == "simulation_dry_run":
+        result = _run_simulation_dry_run_task(
+            resolved_base_dir,
+            task,
+            llm=resolved_llm,
+        )
+        _write_result_if_requested(resolved_base_dir, task, result)
+        return result
+
     config = _config_from_task(task)
     if bool(task.get("render_audio", True)):
         harness_decision = _check_task_harness_gate(
@@ -255,7 +265,89 @@ def _run_premise_intake_task(
         merge_existing=bool(task.get("merge_existing", True)),
         promise_forge=task.get("promise_forge") if isinstance(task.get("promise_forge"), Mapping) else None,
         hook_brief=task.get("hook_brief") if isinstance(task.get("hook_brief"), Mapping) else None,
+        intake_source=_intake_source_metadata_from_task(task, premise),
     )
+
+
+def _intake_source_metadata_from_task(task: Mapping[str, Any], premise: str) -> dict[str, Any]:
+    metadata = {
+        "source": str(task.get("intake_source") or "premise_intake"),
+        "source_text": premise,
+        "short_premise": str(task.get("short_premise") or premise)[:1200],
+    }
+    if task.get("premise_path"):
+        metadata["premise_path"] = str(task["premise_path"])
+    if task.get("story_seed_path"):
+        metadata["story_seed_path"] = str(task["story_seed_path"])
+    return metadata
+
+
+def _run_simulation_dry_run_task(
+    base_dir: Path,
+    task: Mapping[str, Any],
+    *,
+    llm: Any,
+) -> dict[str, Any]:
+    storage_dir = _resolve_task_path(base_dir, task.get("storage_dir", "data/litrpg"))
+    series_id = str(task.get("series_id") or "default-series")
+    start_chapter = max(1, int(task.get("start_chapter") or task.get("chapter_number") or 1))
+    chapter_count = max(1, int(task.get("chapter_count") or task.get("chapters") or 3))
+    book_number = max(1, int(task.get("book_number") or task.get("book") or 1))
+    commit = bool(task.get("commit"))
+    approved_stages = task.get("approved_stages")
+    if not isinstance(approved_stages, list):
+        approved_stages = ["chapter_generation"]
+    chapter_tasks = []
+    for chapter_number in range(start_chapter, start_chapter + chapter_count):
+        child = {
+            "mode": "chapter",
+            "series_id": series_id,
+            "storage_dir": str(storage_dir),
+            "book_number": book_number,
+            "chapter_number": chapter_number,
+            "render_audio": False,
+            "require_intake_artifacts": True,
+            "approved_stages": list(approved_stages),
+        }
+        for key in ("harness", "generation"):
+            if isinstance(task.get(key), Mapping):
+                child[key] = dict(task[key])
+        chapter_tasks.append(child)
+
+    def runner(chapter_task: Mapping[str, Any]) -> Mapping[str, Any]:
+        return run_litrpg_task_data(chapter_task, base_dir=base_dir, llm=llm)
+
+    report = run_simulation_dry_run(
+        storage_dir=storage_dir,
+        series_id=series_id,
+        chapter_tasks=chapter_tasks,
+        chapter_runner=runner,
+        commit=commit,
+        max_world_state_bytes=int(task.get("max_world_state_bytes") or 120_000),
+    )
+    report_path = task.get("report_path")
+    if report_path:
+        output_path = _resolve_task_path(base_dir, report_path)
+    else:
+        end_chapter = start_chapter + chapter_count - 1
+        output_path = (
+            storage_dir
+            / "series"
+            / series_id
+            / f"simulation_report_ch{start_chapter:03d}_{end_chapter:03d}.json"
+        )
+    write_simulation_report(output_path, report)
+    result = dict(report)
+    result.update(
+        {
+            "mode": "simulation_dry_run",
+            "status": "succeeded" if report.get("passed") else "drift_detected",
+            "series_id": series_id,
+            "report_path": str(output_path),
+            "checkpoint_paths": [str(output_path)],
+        }
+    )
+    return result
 
 
 def _validate_premise_intake_promise_forge(task: Mapping[str, Any]) -> None:
@@ -308,6 +400,15 @@ def _llm_from_task(task: Mapping[str, Any], *, settings: Mapping[str, Any]) -> A
     if outline and script:
         return TaskScriptLLM(outline=outline, script=script)
     generation = dict(task.get("generation") or {})
+    if str(task.get("mode") or "").lower() == "simulation_dry_run" and not generation.get("provider"):
+        generation = {
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
+            "cheap_model": "gemini-2.5-flash-lite",
+            "strong_model": "gemini-2.5-flash-lite",
+            "nano_model": "gemini-2.5-flash-lite",
+            "auto_model_routing": True,
+        }
     provider = str(
         generation.get("provider")
         or settings.get("default_generation_provider")

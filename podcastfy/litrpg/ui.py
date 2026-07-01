@@ -18,7 +18,7 @@ from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from podcastfy.litrpg.agent_state import agent_state_path, load_agent_state
@@ -238,6 +238,12 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
                         params.get("book_number", ["1"])[0],
                     )
                 )
+            except ValueError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if parsed.path == "/api/simulation-reports":
+            params = parse_qs(parsed.query)
+            try:
+                return self._send_json(simulation_reports_response(params.get("series_id", [""])[0]))
             except ValueError as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/audio":
@@ -1048,6 +1054,7 @@ def _result_metadata(result: Any) -> dict[str, Any]:
         "mode",
         "status",
         "result_path",
+        "report_path",
         "bundle_dir",
         "episode_dir",
         "checkpoint_dir",
@@ -1061,6 +1068,8 @@ def _result_metadata(result: Any) -> dict[str, Any]:
         "scarcity_audit",
         "render_feedback",
         "render_loop",
+        "chapters_run",
+        "report",
     )
     metadata = {key: result[key] for key in keys if key in result}
     for key in ("script_path", "metadata_path", "audio_metadata_path"):
@@ -1595,6 +1604,86 @@ def _read_json_if_any(path: Path) -> Any | None:
 def _read_json_if_object(path: Path) -> dict[str, Any] | None:
     value = _read_json_if_any(path)
     return value if isinstance(value, dict) else None
+
+
+def simulation_reports_response(series_id: str) -> dict[str, Any]:
+    """Return compact simulation dry-run reports for one series workspace."""
+    safe_series_id = _safe_series_id(series_id)
+    series_root = (DATA_DIR / "series" / safe_series_id).resolve()
+    data_series_root = (DATA_DIR / "series").resolve()
+    if not _is_relative_to(series_root, data_series_root):
+        raise ValueError(f"Unsafe series path: {series_id}")
+    reports: list[dict[str, Any]] = []
+    if series_root.exists():
+        paths = sorted(
+            series_root.glob("simulation_report_ch*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        reports = [
+            _simulation_report_summary(path, payload)
+            for path in paths[:10]
+            if isinstance((payload := _read_json_if_object(path)), dict)
+        ]
+    return {"ok": True, "series_id": safe_series_id, "reports": reports}
+
+
+def _simulation_report_summary(path: Path, payload: Mapping[str, Any]) -> dict[str, Any]:
+    chapters = [
+        _simulation_chapter_summary(chapter)
+        for chapter in payload.get("chapters", [])
+        if isinstance(chapter, Mapping)
+    ]
+    issue_count = sum(int(chapter.get("issue_count") or 0) for chapter in chapters)
+    warning_count = sum(int(chapter.get("warning_count") or 0) for chapter in chapters)
+    return {
+        "filename": path.name,
+        "path": _display_path(path),
+        "modified_at": path.stat().st_mtime,
+        "passed": bool(payload.get("passed")),
+        "commit": bool(payload.get("commit")),
+        "chapters_run": _int_value(payload.get("chapters_run"), len(chapters)),
+        "chapter_count": len(chapters),
+        "issue_count": issue_count,
+        "warning_count": warning_count,
+        "chapters": chapters,
+    }
+
+
+def _simulation_chapter_summary(chapter: Mapping[str, Any]) -> dict[str, Any]:
+    drift = chapter.get("drift") if isinstance(chapter.get("drift"), Mapping) else {}
+    issues = _simulation_report_items(drift.get("issues"))
+    warnings = _simulation_report_items(drift.get("warnings"))
+    return {
+        "chapter_index": _int_value(chapter.get("chapter_index"), 0),
+        "chapter_number": _int_value(chapter.get("chapter_number"), 0),
+        "scene_type": str(chapter.get("scene_type") or "unspecified"),
+        "result_status": str(chapter.get("result_status") or "unknown"),
+        "passed": bool(drift.get("passed")) and not issues,
+        "issue_count": len(issues),
+        "warning_count": len(warnings),
+        "issues": issues[:8],
+        "warnings": warnings[:8],
+        "llm_review": chapter.get("llm_review") if isinstance(chapter.get("llm_review"), Mapping) else None,
+    }
+
+
+def _simulation_report_items(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    items: list[dict[str, str]] = []
+    for item in value:
+        if isinstance(item, Mapping):
+            items.append(
+                {
+                    "type": str(item.get("type") or item.get("code") or "note"),
+                    "detail": str(item.get("detail") or item.get("message") or item.get("error_type") or ""),
+                    "message": str(item.get("message") or ""),
+                }
+            )
+        elif item:
+            items.append({"type": "note", "detail": str(item), "message": ""})
+    return items
 
 
 def _mapping_or_empty(value: Any) -> dict[str, Any]:

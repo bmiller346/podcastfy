@@ -443,6 +443,44 @@ def test_run_premise_intake_persists_approved_promise_forge_seed(tmp_path):
     assert not (tmp_path / "series" / "knotty-buoy" / "promise_forge.json").exists()
 
 
+def test_approved_promise_forge_requires_modern_artifacts_and_repairs_missing_sections(tmp_path):
+    forge = {
+        "founding_injustice": "Sophie II is registered as Kelli and Edward's disputed mobile guild hall.",
+        "permanent_constraint": "The boat remains protected, valuable, and administratively vulnerable.",
+        "comedic_signal": "Old-married repair arguments become dungeon paperwork.",
+        "series_promise": "A retired couple survives by exploiting maritime bureaucracy.",
+        "reader_buy_button_image": "Sophie II sails through rusted towers under a floating audit notice.",
+    }
+    missing_modern = _payload()
+    missing_modern.pop("world_state", None)
+    missing_modern.pop("conspiracy_engine", None)
+    llm = SequencePremiseLLM([missing_modern, missing_modern])
+
+    result = run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="the-knotty-buoy",
+        premise=_long_knotty_seed(),
+        llm=llm,
+        target_books=1,
+        chapters_per_book=3,
+        series_title="The Knotty Buoy",
+        promise_forge=forge,
+    )
+
+    assert [call["stage"] for call in llm.calls] == ["premise_intake", "premise_intake_repair"]
+    assert any(path.endswith("world_state.json") for path in result.written_files)
+    assert any(path.endswith("conspiracy_engine.json") for path in result.written_files)
+    assert result.payload["_intake_metadata"]["fallback_used"] is True
+
+    world_state = load_world_state(tmp_path, "the-knotty-buoy")
+    conspiracy = load_conspiracy_engine(tmp_path, "the-knotty-buoy")
+    shape = load_series_shape(tmp_path, "the-knotty-buoy")
+    assert world_state["artifacts"]["inspection_pencil"]["locked_name"] == "Red-Tagged Carpenter Pencil"
+    assert world_state["active_mysteries"]["guild_hall_registration"]["status"] == "DO_NOT_SPEND"
+    assert conspiracy["reader_position"]["must_not_know_yet"]
+    assert shape.promise_forge["founding_injustice"] == forge["founding_injustice"]
+
+
 def test_premise_intake_rejects_sparse_long_context_payload():
     premise = (
         "Edward and Kelli sail Sophie II with Pedro while Gallowgate and the "

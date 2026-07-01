@@ -97,6 +97,10 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="rerun-quarantined-rewrite"' in html
     assert 'id="open-handoff"' in html
     assert 'id="handoff-preview"' in html
+    assert 'id="dry-run-panel"' in html
+    assert 'id="dry-run-review"' in html
+    assert 'id="run-dry-run"' in html
+    assert 'id="refresh-dry-runs"' in html
     assert 'id="studio-flow"' in html
     assert 'id="next-actions"' in html
     assert 'id="job-console"' in html
@@ -130,6 +134,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "1. Premise Intake" in html
     assert "2. Intake Status" in html
     assert "3. Series Workspace" in html
+    assert "Dry Run Review" in html
     assert "Advanced Task Builder" in html
     assert "Run Basics" in html
     assert "Book / Chapter" in html
@@ -177,6 +182,7 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'name="premise"' in html
     assert 'name="mode"' in html
     assert 'value="premise_intake"' in html
+    assert 'value="simulation_dry_run"' in html
     assert 'name="series_title"' in html
     assert 'name="premise_path"' in html
     assert 'name="target_books"' in html
@@ -298,6 +304,9 @@ def test_ui_stylesheet_uses_font_and_type_tokens(ui_server):
     assert ':root[data-theme="dark"] .task-section' in css
     assert ':root[data-theme="dark"] .task-section-grid' in css
     assert ':root[data-theme="dark"] .robust-state-panel' in css
+    assert ':root[data-theme="dark"] .dry-run-panel' in css
+    assert ':root[data-theme="dark"] .dry-run-report-button.active' in css
+    assert ':root[data-theme="dark"] .artifact-facts div' in css
     assert ':root[data-theme="dark"] .artifact-empty' in css
     assert ':root[data-theme="dark"] label' in css
     assert ':root[data-theme="dark"] .artifact-tab.active' in css
@@ -542,6 +551,11 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
             {
                 "series_title": "The Knotty Buoy",
                 "chapters_per_book": 30,
+                "intake_source": {
+                    "source": "messy_context",
+                    "source_text": "Full messy source for The Knotty Buoy.",
+                    "short_premise": "Edward and Kelli sail Sophie II.",
+                },
                 "promise_forge": {
                     "founding_injustice": "Sophie II turns Kelli's chore board into binding raid law."
                 },
@@ -617,6 +631,7 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
     assert data["available"] is True
     assert data["status"] == "artifact_workspace"
     assert data["package"]["series_plan"]["series_title"] == "The Knotty Buoy"
+    assert data["package"]["series_plan"]["intake_source"]["source_text"] == "Full messy source for The Knotty Buoy."
     assert data["package"]["chapter_outline"][0]["title"] == "Out of the Atlantic"
     assert data["package"]["story_bible"]["characters"]["Pedro"]["name"] == "Pedro"
     assert data["package"]["world_register"]["entity_ecology"][0]["entity"] == "OSHA Wraiths"
@@ -1128,6 +1143,56 @@ def test_robust_state_endpoint_exposes_agent_quarantine_handoff_and_effects(ui_s
     assert data["effect_log"]["committed_cost_usd"] == 0.13
     assert data["render_feedback"]["recent_review_required"][0]["segment_id"] == "chapter_012_part_001"
     assert data["render_feedback"]["recent_review_required"][0]["human_review_required"] is True
+
+
+def test_simulation_reports_endpoint_lists_chapter_drift(ui_server):
+    series_root = ui.DATA_DIR / "series" / "paper-cuts"
+    series_root.mkdir(parents=True)
+    (series_root / "simulation_report_ch001_003.json").write_text(
+        json.dumps(
+            {
+                "chapters_run": 3,
+                "commit": False,
+                "passed": False,
+                "chapters": [
+                    {
+                        "chapter_index": 1,
+                        "chapter_number": 1,
+                        "scene_type": "cold-open",
+                        "result_status": "failed",
+                        "drift": {
+                            "passed": False,
+                            "issues": [
+                                {
+                                    "type": "chapter_generation_exception",
+                                    "error_type": "RuntimeError",
+                                    "message": "Chapter generation failed for stage 'part:cold-open'",
+                                }
+                            ],
+                            "warnings": [{"type": "repeated_scene_types", "detail": "cold-open repeated"}],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status, data = request_json(ui_server, "GET", "/api/simulation-reports?series_id=paper-cuts")
+
+    assert status == 200
+    assert data["series_id"] == "paper-cuts"
+    assert data["reports"][0]["filename"] == "simulation_report_ch001_003.json"
+    assert data["reports"][0]["chapters_run"] == 3
+    assert data["reports"][0]["passed"] is False
+    assert data["reports"][0]["issue_count"] == 1
+    chapter = data["reports"][0]["chapters"][0]
+    assert chapter["chapter_number"] == 1
+    assert chapter["scene_type"] == "cold-open"
+    assert chapter["result_status"] == "failed"
+    assert chapter["issues"][0]["type"] == "chapter_generation_exception"
+    assert chapter["issues"][0]["message"] == "Chapter generation failed for stage 'part:cold-open'"
+    assert chapter["warnings"][0]["type"] == "repeated_scene_types"
 
 
 def test_static_app_renders_render_loop_controls_and_feedback_summary():

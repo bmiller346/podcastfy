@@ -175,6 +175,58 @@ textarea {
   justify-content: flex-end;
 }
 
+.speed-dial {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 -2px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  padding: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.speed-dial a,
+.package-jumpbar a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  padding: 0 12px;
+  color: var(--color-heading);
+  font-size: var(--type-sm);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.speed-dial a:hover,
+.package-jumpbar a:hover {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+}
+
+#premise-intake,
+#intake-status,
+#series-workspace,
+#advanced-task-builder,
+#diagnostics-panel,
+#series-package,
+#role-package-panel,
+#saved-tasks,
+#library-panel,
+#package-summary,
+#package-output {
+  scroll-margin-top: 72px;
+}
+
 h1,
 h2,
 p {
@@ -968,6 +1020,178 @@ label {
   gap: 8px;
 }
 
+.dry-run-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  border: 1px solid #d9e0e8;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.dry-run-header,
+.dry-run-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dry-run-header h3,
+.dry-run-detail-header h4 {
+  margin: 0;
+  color: #26323d;
+}
+
+.dry-run-header p,
+.dry-run-detail-header p {
+  margin: 4px 0 0;
+  color: #66717d;
+  font-size: var(--type-sm);
+}
+
+.dry-run-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dry-run-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: 12px;
+}
+
+.dry-run-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dry-run-report-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.dry-run-report-button,
+.dry-run-chapter-row {
+  border: 1px solid #d4dae1;
+  border-radius: 6px;
+  background: #fff;
+  color: #26323d;
+  font-family: inherit;
+  text-align: left;
+}
+
+.dry-run-report-button {
+  display: grid;
+  gap: 3px;
+  min-width: 210px;
+  padding: 8px 10px;
+}
+
+.dry-run-report-button span,
+.dry-run-chapter-row span {
+  color: #66717d;
+  font-size: var(--type-sm);
+}
+
+.dry-run-report-button.active,
+.dry-run-chapter-row.active {
+  border-color: #6fbbb1;
+  background: #eefaf7;
+}
+
+.dry-run-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dry-run-chapters {
+  display: grid;
+  gap: 6px;
+  max-height: 230px;
+  overflow: auto;
+}
+
+.dry-run-chapter-row {
+  display: grid;
+  grid-template-columns: 70px 72px minmax(80px, 1fr) minmax(80px, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.dry-run-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 58px;
+  border: 1px solid #d4dae1;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #26323d;
+  font-size: var(--type-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dry-run-badge.pass {
+  border-color: #8fd0a6;
+  background: #eefaf2;
+}
+
+.dry-run-badge.review {
+  border-color: #efc46f;
+  background: #fff8e5;
+}
+
+.dry-run-detail {
+  min-width: 0;
+  border: 1px solid #d4dae1;
+  border-radius: 6px;
+  background: #fff;
+  padding: 12px;
+}
+
+.dry-run-checks {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dry-run-checks h5 {
+  margin: 0 0 6px;
+  color: #26323d;
+  font-size: var(--type-sm);
+}
+
+.dry-run-checks ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dry-run-checks li {
+  display: grid;
+  gap: 2px;
+  border-left: 3px solid #efc46f;
+  padding-left: 8px;
+  color: #495560;
+  font-size: var(--type-sm);
+}
+
+.dry-run-checks li strong {
+  color: #26323d;
+}
+
 .effect-history {
   display: grid;
   gap: 8px;
@@ -1204,6 +1428,13 @@ label {
   margin-top: 14px;
 }
 
+.package-jumpbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .radar-column {
   border: 1px solid #e1e5ea;
   border-radius: 8px;
@@ -1268,17 +1499,24 @@ label {
 }
 
 .editor-actions {
+  position: sticky;
+  top: 52px;
+  z-index: 10;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
   border-top: 1px solid #e7eaee;
+  border-bottom: 1px solid #e7eaee;
+  background: #fbfcfd;
   padding: 12px 14px;
 }
 
 .role-list {
   display: grid;
   gap: 12px;
+  max-height: min(72vh, 920px);
+  overflow: auto;
   padding: 0 14px 14px;
 }
 
@@ -1494,6 +1732,7 @@ audio {
 :root[data-theme="dark"] .story-seed-status,
 :root[data-theme="dark"] .promise-preview,
 :root[data-theme="dark"] .specificity-status,
+:root[data-theme="dark"] .speed-dial,
 :root[data-theme="dark"] .job-status,
 :root[data-theme="dark"] .diagnostic-item,
 :root[data-theme="dark"] .status-item,
@@ -1508,6 +1747,11 @@ audio {
 :root[data-theme="dark"] .artifact-panel,
 :root[data-theme="dark"] .artifact-empty,
 :root[data-theme="dark"] .robust-state-panel,
+:root[data-theme="dark"] .dry-run-panel,
+:root[data-theme="dark"] .dry-run-detail,
+:root[data-theme="dark"] .dry-run-report-button,
+:root[data-theme="dark"] .dry-run-chapter-row,
+:root[data-theme="dark"] .artifact-facts div,
 :root[data-theme="dark"] .effect-row,
 :root[data-theme="dark"] .radar-column,
 :root[data-theme="dark"] .part-status-item,
@@ -1521,6 +1765,7 @@ audio {
 :root[data-theme="dark"] .task-section-grid,
 :root[data-theme="dark"] .artifact-panel-heading,
 :root[data-theme="dark"] .editor-actions,
+:root[data-theme="dark"] .package-jumpbar,
 :root[data-theme="dark"] .episode,
 :root[data-theme="dark"] .radar-column li {
   border-color: var(--color-border);
@@ -1536,17 +1781,41 @@ audio {
 :root[data-theme="dark"] .library-count,
 :root[data-theme="dark"] .badge,
 :root[data-theme="dark"] .quick-action.secondary,
+:root[data-theme="dark"] .speed-dial a,
+:root[data-theme="dark"] .package-jumpbar a,
 :root[data-theme="dark"] .secondary-button {
   border-color: var(--color-border-strong);
   background: var(--color-surface-subtle);
   color: var(--color-heading);
 }
 
+:root[data-theme="dark"] .editor-actions {
+  background: var(--color-surface-subtle);
+}
+
 :root[data-theme="dark"] .artifact-tab.active,
-:root[data-theme="dark"] .artifact-tab:hover {
+:root[data-theme="dark"] .artifact-tab:hover,
+:root[data-theme="dark"] .dry-run-report-button.active,
+:root[data-theme="dark"] .dry-run-chapter-row.active {
   border-color: var(--color-accent-border);
   background: #18332f;
   color: var(--color-heading);
+}
+
+:root[data-theme="dark"] .dry-run-badge {
+  border-color: var(--color-border-strong);
+  background: #27302e;
+  color: var(--color-heading);
+}
+
+:root[data-theme="dark"] .dry-run-badge.pass {
+  border-color: #4d8f64;
+  background: #173323;
+}
+
+:root[data-theme="dark"] .dry-run-badge.review {
+  border-color: #9f7a2d;
+  background: #332916;
 }
 
 :root[data-theme="dark"] button {
@@ -1564,6 +1833,11 @@ audio {
 :root[data-theme="dark"] .promise-preview-header h3,
 :root[data-theme="dark"] .editor-size-controls button,
 :root[data-theme="dark"] .robust-state-header h3,
+:root[data-theme="dark"] .dry-run-header h3,
+:root[data-theme="dark"] .dry-run-detail-header h4,
+:root[data-theme="dark"] .dry-run-checks h5,
+:root[data-theme="dark"] .dry-run-checks li strong,
+:root[data-theme="dark"] .artifact-facts dd,
 :root[data-theme="dark"] .artifact-panel-heading h3,
 :root[data-theme="dark"] .role-card-header strong,
 :root[data-theme="dark"] .series-header h3 {
@@ -1579,6 +1853,11 @@ audio {
 :root[data-theme="dark"] .part-detail,
 :root[data-theme="dark"] .output-header p,
 :root[data-theme="dark"] .promise-preview-header p,
+:root[data-theme="dark"] .dry-run-header p,
+:root[data-theme="dark"] .dry-run-detail-header p,
+:root[data-theme="dark"] .dry-run-report-button span,
+:root[data-theme="dark"] .dry-run-chapter-row span,
+:root[data-theme="dark"] .artifact-facts dt,
 :root[data-theme="dark"] .artifact-panel-heading span,
 :root[data-theme="dark"] .artifact-copy,
 :root[data-theme="dark"] .artifact-card p,
@@ -1677,11 +1956,20 @@ audio {
     display: grid;
   }
 
+  .speed-dial {
+    margin-right: -16px;
+    margin-left: -16px;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
   .grid-form,
   .task-section,
   .task-section-grid,
   .series-workspace,
   .robust-state-header,
+  .dry-run-layout,
   .primary-flow,
   .story-file-bar,
   .story-workshop-layout,
@@ -1709,6 +1997,13 @@ audio {
     grid-template-columns: 1fr;
   }
 
+  .dry-run-header,
+  .dry-run-detail-header,
+  .dry-run-chapter-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .task-form .toggle,
   .task-actions,
   .package-actions {
@@ -1717,16 +2012,28 @@ audio {
 
   .series-actions,
   .robust-actions,
+  .dry-run-actions,
   .intake-actions,
-  .package-actions {
+  .package-actions,
+  .package-jumpbar {
     justify-content: stretch;
   }
 
   .series-actions button,
   .robust-actions button,
+  .dry-run-actions button,
   .intake-actions button,
   .package-actions button,
+  .package-jumpbar a,
   .editor-actions button {
     width: 100%;
+  }
+
+  .editor-actions {
+    position: static;
+  }
+
+  .role-list {
+    max-height: none;
   }
 }

@@ -54,7 +54,16 @@ def run_simulation_dry_run(
         for index, raw_task in enumerate(chapter_tasks, 1):
             task = _simulation_task(raw_task, run_storage, series_id)
             scene_types.append(_scene_type(task))
-            result = dict(chapter_runner(task))
+            runner_error = None
+            try:
+                result = dict(chapter_runner(task))
+            except Exception as exc:  # pragma: no cover - covered through integration behavior.
+                runner_error = {
+                    "type": "chapter_generation_exception",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                }
+                result = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
             current = _snapshot(run_storage, series_id)
             drift = detect_state_drift(
                 previous,
@@ -65,6 +74,9 @@ def run_simulation_dry_run(
                 chapter_number=int(task.get("chapter_number") or task.get("chapter") or index),
                 max_world_state_bytes=max_world_state_bytes,
             )
+            if runner_error:
+                drift["issues"].append(runner_error)
+                drift["passed"] = False
             reports.append(
                 {
                     "chapter_index": index,
@@ -74,6 +86,8 @@ def run_simulation_dry_run(
                     "drift": drift,
                 }
             )
+            if runner_error:
+                break
             previous = current
         summary = {
             "passed": not any(item["drift"]["issues"] for item in reports),

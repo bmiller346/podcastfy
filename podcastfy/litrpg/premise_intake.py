@@ -279,6 +279,7 @@ def run_premise_intake(
     merge_existing: bool = True,
     promise_forge: Mapping[str, Any] | None = None,
     hook_brief: Mapping[str, Any] | None = None,
+    intake_source: Mapping[str, Any] | None = None,
 ) -> PremiseIntakeResult:
     """Generate and persist story-engine artifacts from a loose premise dump."""
 
@@ -335,6 +336,7 @@ def run_premise_intake(
             series_promise=series_promise,
             endgame_direction=endgame_direction,
             power_curve=power_curve,
+            intake_source=intake_source,
         )
     try:
         payload = _with_locked_promise_forge(
@@ -371,6 +373,7 @@ def run_premise_intake(
             series_promise=series_promise,
             endgame_direction=endgame_direction,
             power_curve=power_curve,
+            intake_source=intake_source,
         )
     try:
         payload = _with_locked_promise_forge(payload, approved_promise_forge)
@@ -406,6 +409,7 @@ def run_premise_intake(
                 series_promise=series_promise,
                 endgame_direction=endgame_direction,
                 power_curve=power_curve,
+                intake_source=intake_source,
             )
         repair_prompt = build_premise_intake_repair_prompt(
             premise=premise,
@@ -449,6 +453,7 @@ def run_premise_intake(
                 series_promise=series_promise,
                 endgame_direction=endgame_direction,
                 power_curve=power_curve,
+                intake_source=intake_source,
             )
         try:
             payload = _with_locked_promise_forge(
@@ -485,6 +490,7 @@ def run_premise_intake(
                 series_promise=series_promise,
                 endgame_direction=endgame_direction,
                 power_curve=power_curve,
+                intake_source=intake_source,
             )
         try:
             payload = _with_locked_promise_forge(payload, approved_promise_forge)
@@ -519,6 +525,7 @@ def run_premise_intake(
         series_promise=series_promise,
         endgame_direction=endgame_direction,
         power_curve=power_curve,
+        intake_source=intake_source,
     )
 
 
@@ -536,6 +543,7 @@ def _save_premise_intake_result(
     series_promise: str,
     endgame_direction: str,
     power_curve: str,
+    intake_source: Mapping[str, Any] | None = None,
 ) -> PremiseIntakeResult:
     return save_premise_intake_payload(
         storage_dir=storage_dir,
@@ -552,6 +560,7 @@ def _save_premise_intake_result(
             "endgame_direction": endgame_direction,
             "power_curve": power_curve,
         },
+        intake_source=intake_source,
     )
 
 
@@ -779,6 +788,8 @@ def build_deterministic_premise_intake_payload(
                 },
             ],
         },
+        "conspiracy_engine": _deterministic_conspiracy_engine(text, series_id, mysteries),
+        "world_state": _deterministic_world_state(text, series_id, mysteries),
     }
 
 
@@ -789,6 +800,7 @@ def save_premise_intake_payload(
     payload: Mapping[str, Any],
     merge_existing: bool = True,
     fallback_shape: Mapping[str, Any] | None = None,
+    intake_source: Mapping[str, Any] | None = None,
 ) -> PremiseIntakeResult:
     """Persist a previously generated premise intake payload."""
 
@@ -835,6 +847,9 @@ def save_premise_intake_payload(
         str(architect.root / "series_plan.json"),
         str(architect.root / "series_arc.json"),
     ]
+    source_metadata = _intake_source_metadata(intake_source)
+    if source_metadata:
+        _merge_series_plan_metadata(architect.root / "series_plan.json", {"intake_source": source_metadata})
     for book_number, outline in _book_outline_items(data.get("book_outlines")):
         save_chapter_outline(storage, series_key, book_number, outline)
         written.append(str(architect.root / f"book_{book_number}" / "chapter_outline.json"))
@@ -927,6 +942,34 @@ def save_premise_intake_payload(
     )
 
 
+def _intake_source_metadata(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    source_text = str(value.get("source_text") or value.get("premise") or "").strip()
+    if not source_text:
+        return {}
+    metadata = {
+        "source": str(value.get("source") or value.get("intake_source") or "premise_intake"),
+        "source_text": source_text,
+        "short_premise": str(value.get("short_premise") or _compact_text(source_text, 1200)),
+    }
+    for key in ("premise_path", "story_seed_path"):
+        if value.get(key):
+            metadata[key] = str(value[key])
+    return metadata
+
+
+def _merge_series_plan_metadata(path: Path, updates: Mapping[str, Any]) -> None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+    data.update(dict(updates))
+    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+
 def extract_premise_intake_json(text: str) -> dict[str, Any]:
     """Extract a JSON object from raw LLM output or fenced markdown."""
 
@@ -952,6 +995,12 @@ def validate_premise_intake_payload(
 
     if not isinstance(payload, Mapping):
         raise ValueError("Premise intake output must be a JSON object")
+    modern_issues = _modern_intake_artifact_issues(payload)
+    if modern_issues:
+        raise ValueError(
+            "Premise intake output missing required modern artifacts; "
+            + "; ".join(modern_issues)
+        )
     premise_text = str(premise or "")
     serialized = json.dumps(payload, ensure_ascii=False).casefold()
     source_markers = [
@@ -987,6 +1036,29 @@ def validate_premise_intake_payload(
                 "Premise intake output is too sparse or generic; "
                 + "; ".join(issues)
             )
+
+
+def _modern_intake_artifact_issues(payload: Mapping[str, Any]) -> list[str]:
+    shape = _mapping(payload.get("series_shape"))
+    forge = _mapping(shape.get("promise_forge"))
+    if not str(forge.get("founding_injustice") or "").strip():
+        return []
+    issues = []
+    world_state = _mapping(payload.get("world_state"))
+    if not world_state:
+        issues.append("include non-empty world_state")
+    else:
+        for key in ("locations", "artifacts", "active_mysteries"):
+            if not _mapping(world_state.get(key)):
+                issues.append(f"world_state.{key} must be non-empty")
+    conspiracy = _mapping(payload.get("conspiracy_engine"))
+    if not conspiracy:
+        issues.append("include non-empty conspiracy_engine")
+    else:
+        for key in ("truth_document", "revelation_ladder", "reader_position", "factions"):
+            if not _mapping(conspiracy.get(key)):
+                issues.append(f"conspiracy_engine.{key} must be non-empty")
+    return issues
 
 
 def _outline_chapter_count(value: Any) -> int:
@@ -1213,6 +1285,224 @@ def _deterministic_world_register(text: str, series_id: str) -> dict[str, Any]:
                 "tags": ["scarcity", "repair"],
             },
         ],
+    }
+
+
+def _deterministic_conspiracy_engine(text: str, series_id: str, mysteries: Sequence[str]) -> dict[str, Any]:
+    return {
+        "series_id": series_id,
+        "truth_document": {
+            "classification": "EYES_ONLY",
+            "actual_reality": {
+                "dungeon_true_purpose": "Gallowgate profits from disputed mobile-asset registrations, repair debt, and broadcast leverage.",
+                "system_true_architect": "DO_NOT_REVEAL",
+                "endgame_event": "Edward, Kelli, and Pedro discover why Sophie II was classified as a guild-hall asset and who benefits from keeping it contested.",
+                "who_knows_what": {
+                    "Edward Marsh": [
+                        "knows: Sophie II has impossible legal protection",
+                        "does_not_know: why the registration cannot be cleanly reversed",
+                    ],
+                    "Kelli Marsh": [
+                        "knows: Gallowgate can weaponize family guilt",
+                        "does_not_know: whether the adult kids are directly threatened",
+                    ],
+                    "reader": [
+                        "suspects: the guild-hall registration was not random",
+                        "does_not_know: who benefits from the classification",
+                    ],
+                },
+            },
+        },
+        "revelation_ladder": {
+            "guild_hall_registration": {
+                "truth": "Sophie II's guild-hall status exposes a loophole in Gallowgate's asset rules.",
+                "current_reader_knowledge": "the boat has conditional legal protection and dangerous administrative value",
+                "hints_deployed": [],
+                "next_hint_window": "ch_2_to_5",
+                "hint_type_next": "bureaucratic anomaly",
+                "earliest_partial_reveal": "book_1_midpoint",
+                "full_reveal": "book_2",
+                "DO_NOT_ACCELERATE": True,
+            },
+            "adult_children_leverage": {
+                "truth": "The System can imply family danger more easily than it can prove it.",
+                "current_reader_knowledge": "the kids are off-boat and emotionally weaponized",
+                "hints_deployed": [],
+                "next_hint_window": "ch_5_to_9",
+                "hint_type_next": "misleading bidder tag",
+                "earliest_partial_reveal": "book_1_late",
+                "full_reveal": "book_3",
+                "DO_NOT_ACCELERATE": True,
+            },
+        },
+        "reader_position": {
+            "confirmed_knows": ["Sophie II is protected as a disputed mobile guild hall"],
+            "strongly_suspects": ["Gallowgate benefits from keeping the classification unstable"],
+            "correctly_suspects_but_has_wrong_reason": [
+                "suspects the registration was a simple mistake; correct that it is abnormal, wrong about the mechanism"
+            ],
+            "must_not_know_yet": [
+                "who benefits most from Sophie II's classification",
+                "whether the adult children are physically endangered",
+                *list(mysteries[:2]),
+            ],
+        },
+        "factions": {
+            "gallowgate": {
+                "name": "Gallowgate",
+                "true_goal": "TRUTH_DOC_ONLY",
+                "apparent_goal": "collect fees, enforce registration, and profit from maritime dungeon broadcasts",
+                "operational_rules": [
+                    "cannot freely enter guild-hall interiors without an administrative cause",
+                    "must present penalties as fees, audits, zoning rulings, or safety findings",
+                    "profits when registered assets require repeated repair and recertification",
+                ],
+                "vulnerabilities": [
+                    "Sophie II's mistaken classification creates protection Gallowgate cannot openly revoke",
+                    "Edward can exploit inspection language and structural-code loopholes",
+                ],
+                "current_moves": [
+                    {
+                        "book": 1,
+                        "action": "pressure the crew through fees, audits, and disputed safe-zone rulings",
+                        "protagonist_awareness": "partial",
+                    }
+                ],
+            }
+        },
+    }
+
+
+def _deterministic_world_state(text: str, series_id: str, mysteries: Sequence[str]) -> dict[str, Any]:
+    return {
+        "series_id": series_id,
+        "characters": {
+            "Edward Marsh": {
+                "appearance": ["salt-stiff work shirt", "sunburned neck", "improvised tool belt"],
+                "signature_behaviors": ["checks load-bearing points first", "treats danger as failed compliance"],
+                "emotional_tells": {"fear": "gets clipped and practical", "pain": "rubs his bad knee"},
+                "owned_artifacts": ["inspection_pencil"],
+            },
+            "Kelli Marsh": {
+                "appearance": ["oversized polarized sunglasses", "wedding ring she taps before going all-in"],
+                "signature_behaviors": ["reads risk like a casino table", "corrects people as affection"],
+                "emotional_tells": {"fear": "goes quiet before committing", "anger": "gets warmer and more precise"},
+                "owned_artifacts": ["galley_knife"],
+            },
+            "Pedro": {
+                "appearance": ["bright macaw plumage", "too-alert familiar stare"],
+                "signature_behaviors": ["job-site heckling", "repeats phrases at impossible timing"],
+                "emotional_tells": {"warning": "switches from mimicry to prophecy"},
+            },
+        },
+        "locations": {
+            "sophie_ii": {
+                "name": "Sophie II",
+                "sensory": {
+                    "visual": "white fiberglass bruised by rust stains and dungeon patchwork",
+                    "audio": "halyards ticking, bilge pump coughs, water slapping the twin hulls",
+                    "smell": "salt, diesel, wet rope, hot fiberglass",
+                    "spatial": "two narrow hulls, open aft deck, cockpit table, mast shadow across everything",
+                },
+                "threat_geometry": "low railings, slick deck, two hulls that can be attacked separately",
+            },
+            "drowned_scaffolding": {
+                "name": "The Drowned Scaffolding",
+                "sensory": {
+                    "visual": "bioluminescent water under rusted towers and half-sunk work platforms",
+                    "audio": "metal groans, distant crane bells, water moving through rebar",
+                    "smell": "brine, rust, ozone, old concrete dust",
+                    "spatial": "vertical hazards above a deceptively open ocean floor",
+                },
+                "threat_geometry": "flying rebar predators above, hull-eating mimics below, inspectors through the middle",
+            },
+        },
+        "artifacts": {
+            "inspection_pencil": {
+                "type": "tool",
+                "owner": "Edward Marsh",
+                "locked_name": "Red-Tagged Carpenter Pencil",
+                "aliases_forbidden": ["magic pencil", "system pen"],
+                "physical_signature": {
+                    "appearance": "stubby red carpenter pencil with bite marks and salt in the grain",
+                    "weight": "nearly weightless until a violation is nearby",
+                    "sound_fire": "dry graphite snap",
+                    "primary_sense": "sound",
+                },
+                "behavioral_rules": [
+                    "marks temporary fault lines in unsafe structures",
+                    "only works when Edward can name the practical failure",
+                ],
+                "power_ceiling": {
+                    "can_do": ["tag weak points", "turn a real structural flaw into a small exploit"],
+                    "cannot_do": ["invent weaknesses", "solve boss fights alone", "repair Sophie II"],
+                    "narrative_cost": "breaks shorter with each abusive use",
+                    "DO_NOT_ESCALATE_BEYOND": "inspection comedy plus practical leverage",
+                },
+                "state": {"condition": "stubby", "charges": 3, "ammo": None, "location": "Edward's tool belt"},
+                "emotional_resonance": "Edward's old authority reduced to a ridiculous but useful stub.",
+            },
+            "galley_knife": {
+                "type": "tool",
+                "owner": "Kelli Marsh",
+                "locked_name": "House-Edge Galley Knife",
+                "aliases_forbidden": ["magic dagger", "casino blade"],
+                "physical_signature": {
+                    "appearance": "cheap galley knife polished bright from years of use",
+                    "weight": "familiar, domestic, uncomfortable",
+                    "sound_fire": "a table-tap click before the cut",
+                    "primary_sense": "tactile",
+                },
+                "behavioral_rules": [
+                    "cuts better after Kelli correctly reads an opponent's risk pattern",
+                    "fails when used as straightforward hero gear",
+                ],
+                "power_ceiling": {
+                    "can_do": ["punish a bad bet", "cut binding forms or soft targets"],
+                    "cannot_do": ["become a legendary weapon", "replace Kelli's social read"],
+                    "narrative_cost": "draws attention from predatory auditors",
+                    "DO_NOT_ESCALATE_BEYOND": "risk-read utility and domestic menace",
+                },
+                "state": {"condition": "sharp but ordinary", "charges": 2, "ammo": None, "location": "Sophie II galley"},
+                "emotional_resonance": "A household object made dangerous by exactly how Kelli pays attention.",
+            },
+        },
+        "system_items": {
+            "mobile_guild_hall_notice": {
+                "display_name": "Mobile Guild Hall Registration",
+                "system_description": "Temporary maritime asset classification pending audit.",
+                "actual_behavior": "Protects Sophie II conditionally while making it valuable and legally vulnerable.",
+                "irony_flag": True,
+            }
+        },
+        "magic_signatures": {
+            "gallowgate_notice": {
+                "visual": "blue-white stamped forms hanging in wet air",
+                "audio": "pleasant chime followed by fine print",
+                "tactile": "pressure behind the eyes like a clerk waiting",
+            }
+        },
+        "active_mysteries": {
+            "guild_hall_registration": {
+                "question": "Why was Sophie II classified as a guild hall?",
+                "status": "DO_NOT_SPEND",
+                "reader_position": "suspects the classification is useful to someone",
+            },
+            "adult_children_leverage": {
+                "question": "Are Edward and Kelli's adult children truly endangered or just useful pressure?",
+                "status": "DO_NOT_CONFIRM",
+                "reader_position": "knows the uncertainty hurts the marriage",
+            },
+        },
+        "established_rules": [
+            "Sophie II must stay vulnerable and resource-constrained.",
+            "Gallowgate pressure appears as fees, audits, registrations, and safety findings.",
+            "Artifacts must keep locked names, physical signatures, and resource state.",
+        ],
+        "sensory_hooks": {
+            "sophie_ii": ["halyards ticking", "bilge pump cough", "salt and hot fiberglass"],
+            "gallowgate": ["pleasant chime", "floating fine print", "wet paper smell"],
+        },
     }
 
 

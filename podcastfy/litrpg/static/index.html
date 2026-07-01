@@ -22,6 +22,16 @@
         </div>
       </header>
 
+      <nav class="speed-dial" aria-label="Workspace shortcuts">
+        <a href="#premise-intake">Intake</a>
+        <a href="#intake-status">Status</a>
+        <a href="#series-workspace">Workspace</a>
+        <a href="#advanced-task-builder">Chapter Task</a>
+        <a href="#series-package">Package</a>
+        <a href="#role-package-panel">Roles</a>
+        <a href="#diagnostics-panel">Diagnostics</a>
+      </nav>
+
       <details class="panel settings-panel">
         <summary>
           <span>Provider Settings</span>
@@ -95,7 +105,7 @@
         <div id="settings-status" class="status-list"></div>
       </details>
 
-      <section class="panel messy-intake-panel">
+      <section id="premise-intake" class="panel messy-intake-panel">
         <div class="section-heading">
           <h2>1. Premise Intake</h2>
           <p>Start here: paste or load the full story dump, save the markdown seed, then run intake once to create the structured series workspace.</p>
@@ -219,7 +229,7 @@
         <div id="messy-context-summary" class="diagnostics-grid" aria-live="polite"></div>
       </section>
 
-      <section class="panel command-center">
+      <section id="intake-status" class="panel command-center">
         <div class="section-heading">
           <h2>2. Intake Status</h2>
           <p>After queueing intake, watch generation state and inspect what artifacts were written.</p>
@@ -240,7 +250,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section id="series-workspace" class="panel">
         <div class="section-heading">
           <h2>3. Series Workspace</h2>
           <p>Use this after intake to inspect a generated series, package, or saved audio. It is not the first step for creating a seed.</p>
@@ -280,10 +290,23 @@
           <div id="robust-effect-history" class="effect-history"></div>
           <pre id="handoff-preview" class="output handoff-preview" aria-live="polite"></pre>
         </div>
+        <div id="dry-run-panel" class="dry-run-panel" aria-live="polite">
+          <div class="dry-run-header">
+            <div>
+              <h3>Dry Run Review</h3>
+              <p>Compact chapter checks from the latest simulation harness reports.</p>
+            </div>
+            <div class="actions dry-run-actions">
+              <button id="run-dry-run" class="has-tooltip" type="button" data-tooltip="Run a 3-chapter text-only simulation for the active series." title="Run a 3-chapter text-only simulation for the active series.">3-Chapter Dry Run</button>
+              <button id="refresh-dry-runs" class="secondary-button has-tooltip" type="button" data-tooltip="Reload saved simulation reports for the active series." title="Reload saved simulation reports for the active series.">Refresh Dry Runs</button>
+            </div>
+          </div>
+          <div id="dry-run-review" class="dry-run-review"></div>
+        </div>
         <div id="series-artifacts" class="series-artifacts" aria-live="polite"></div>
       </section>
 
-      <section class="panel">
+      <section id="advanced-task-builder" class="panel">
         <div class="section-heading">
           <h2>Advanced Task Builder</h2>
           <p>Manual task controls for overrides, debugging, and chapter/audio runs after the story seed exists.</p>
@@ -300,6 +323,7 @@
               <select name="mode">
                 <option value="episode">episode</option>
                 <option value="chapter">chapter</option>
+                <option value="simulation_dry_run">simulation_dry_run</option>
                 <option value="premise_intake">premise_intake</option>
               </select>
             </label>
@@ -548,7 +572,7 @@
         <pre id="task-preview" class="output" aria-live="polite"></pre>
       </section>
 
-      <section class="panel">
+      <section id="diagnostics-panel" class="panel">
         <div class="section-heading">
           <h2>Diagnostics</h2>
           <p>Copy this when you want help reading a run.</p>
@@ -561,7 +585,7 @@
         <pre id="diagnostics-output" class="output diagnostics-output" aria-live="polite"></pre>
       </section>
 
-      <section class="panel">
+      <section id="series-package" class="panel">
         <div class="section-heading">
           <h2>Series Package</h2>
           <p>Build or review reusable story context before chapter generation.</p>
@@ -584,6 +608,12 @@
         </form>
         <div id="package-status" class="status-list"></div>
         <div id="package-radar" class="package-radar" aria-live="polite"></div>
+        <div class="package-jumpbar" aria-label="Package shortcuts">
+          <a href="#role-package-panel">Role cards</a>
+          <a href="#package-summary">Summary</a>
+          <a href="#package-output">Raw JSON</a>
+          <a href="#advanced-task-builder">Chapter task</a>
+        </div>
         <details id="role-package-panel" class="editor-panel" open>
           <summary>
             <span>Role Package Editor</span>
@@ -610,7 +640,7 @@
         </details>
       </section>
 
-      <section class="panel">
+      <section id="saved-tasks" class="panel">
         <h2>Tasks</h2>
         <div class="task-row">
           <select id="task-select"></select>
@@ -619,7 +649,7 @@
         <pre id="task-output" class="output" aria-live="polite"></pre>
       </section>
 
-      <section class="panel">
+      <section id="library-panel" class="panel">
         <div class="section-heading">
           <h2>Episode Library</h2>
           <p>Saved episodes replay from cached audio only.</p>
