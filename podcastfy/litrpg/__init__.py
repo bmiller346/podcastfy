@@ -86,8 +86,11 @@ from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
 from podcastfy.litrpg.promise_forge import build_hook_brief_prompt
 from podcastfy.litrpg.promise_forge import build_promise_forge_prompt
+from podcastfy.litrpg.promise_forge import extract_hook_brief_json
+from podcastfy.litrpg.promise_forge import extract_promise_forge_json
 from podcastfy.litrpg.promise_forge import format_promise_forge_context
 from podcastfy.litrpg.promise_forge import normalize_promise_forge
+from podcastfy.litrpg.promise_forge import run_promise_forge_intake
 from podcastfy.litrpg.promise_forge import validate_promise_forge_specificity
 from podcastfy.litrpg.prompts import build_series_anchor_block
 from podcastfy.litrpg.quarantine import QuarantineRecord
@@ -256,7 +259,9 @@ __all__ = [
     "estimate_stage_cost",
     "export_voices_for_litrpg_config",
     "extract_mechanics_events",
+    "extract_hook_brief_json",
     "extract_premise_intake_json",
+    "extract_promise_forge_json",
     "extract_state_delta",
     "extract_series_package_json",
     "find_bundle_by_cache_key",
@@ -340,6 +345,7 @@ __all__ = [
     "record_quarantine_blocker",
     "run_litrpg_task",
     "run_premise_intake",
+    "run_promise_forge_intake",
     "roll_wandering_event",
     "save_asset_manifest_file",
     "save_agent_state",

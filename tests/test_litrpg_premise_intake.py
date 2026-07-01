@@ -10,7 +10,7 @@ from podcastfy.litrpg.premise_intake import extract_premise_intake_json
 from podcastfy.litrpg.premise_intake import run_premise_intake
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
 from podcastfy.litrpg.premise_intake import validate_premise_intake_payload
-from podcastfy.litrpg.series_architect import SeriesArchitect, load_chapter_outline
+from podcastfy.litrpg.series_architect import SeriesArchitect, load_chapter_outline, load_series_shape
 from podcastfy.litrpg.task import run_litrpg_task_data
 from podcastfy.litrpg.voice_cards import load_voice_cards
 from podcastfy.litrpg.world_state import load_world_state
@@ -404,6 +404,43 @@ def test_run_premise_intake_writes_story_engine_artifacts(tmp_path):
         "The Familiar's First Words",
         "Decompression",
     ]
+
+
+def test_run_premise_intake_persists_approved_promise_forge_seed(tmp_path):
+    forge = {
+        "founding_injustice": "The system turns Kelli's old chore-board authority into binding party commands aboard Sophie II.",
+        "permanent_constraint": "Sophie II enforces family chore logic as raid logistics.",
+        "comedic_signal": "Old-married chores become lethal bureaucracy.",
+        "series_promise": "A retired family crew survives by weaponizing unfair domestic paperwork.",
+        "reader_buy_button_image": "Kelli points at Sophie II's chore board and the dungeon obeys.",
+        "originality_locks": ["the founding injustice must come from this family and boat premise"],
+        "source_brief": {"specificity_anchors": ["Kelli", "Sophie II", "chore-board authority"]},
+    }
+    payload = _payload()
+    payload["series_shape"] = {
+        "series_title": "The Knotty Buoy",
+        "chapters_per_book": 3,
+        "series_promise": "",
+    }
+    llm = FakePremiseLLM(payload)
+
+    run_premise_intake(
+        storage_dir=tmp_path,
+        series_id="knotty-buoy",
+        premise="Kelli and Edward sail Sophie II with a chore-board authority problem.",
+        llm=llm,
+        target_books=1,
+        chapters_per_book=3,
+        series_title="The Knotty Buoy",
+        series_promise="",
+        promise_forge=forge,
+    )
+
+    shape = load_series_shape(tmp_path, "knotty-buoy")
+    assert shape.promise_forge["founding_injustice"] == forge["founding_injustice"]
+    assert shape.series_promise == forge["series_promise"]
+    assert "already approved and locked" in llm.calls[0]["prompt"]
+    assert not (tmp_path / "series" / "knotty-buoy" / "promise_forge.json").exists()
 
 
 def test_premise_intake_rejects_sparse_long_context_payload():

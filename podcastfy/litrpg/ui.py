@@ -33,6 +33,7 @@ from podcastfy.litrpg.settings import (
     redacted_litrpg_settings_status,
     save_litrpg_settings,
 )
+from podcastfy.litrpg.promise_forge import run_promise_forge_intake
 from podcastfy.litrpg.task import _llm_from_task, run_litrpg_task, run_litrpg_task_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -271,6 +272,9 @@ class LitRPGUIHandler(SimpleHTTPRequestHandler):
                 return self._send_json(save_story_seed_request(payload))
             if parsed.path == "/api/story-seed/propose":
                 return self._send_json(propose_story_seed_revision_request(payload))
+            if parsed.path == "/api/promise-forge/generate":
+                result = generate_promise_forge_request(payload)
+                return self._send_json(result)
             if parsed.path == "/api/series-package":
                 result = save_series_package_request(payload)
                 return self._send_json(result)
@@ -407,6 +411,34 @@ def propose_story_seed_revision_request(payload: dict[str, Any]) -> dict[str, An
         or generation.get("local_model")
         or generation.get("model")
         or "",
+    }
+
+
+def generate_promise_forge_request(payload: dict[str, Any]) -> dict[str, Any]:
+    """Generate hook brief and promise forge preview data without saving artifacts."""
+
+    series_id = _safe_series_id(str(payload.get("series_id") or ""))
+    raw_context = str(payload.get("raw_context") or payload.get("premise") or "").strip()
+    if not raw_context:
+        raise ValueError("raw_context is required")
+    generation = payload.get("generation")
+    if not isinstance(generation, dict):
+        generation = _default_story_revision_generation()
+    settings = load_litrpg_settings(SETTINGS_PATH)
+    llm = _llm_from_task({"generation": generation}, settings=settings)
+    result = run_promise_forge_intake(
+        raw_context=raw_context,
+        llm=llm,
+        genre=str(payload.get("genre") or "").strip(),
+        desired_tone=str(payload.get("desired_tone") or payload.get("world_tone") or "").strip(),
+        existing_seed=payload.get("existing_seed") if isinstance(payload.get("existing_seed"), dict) else None,
+    )
+    return {
+        "ok": bool(result.get("ok")),
+        "series_id": series_id,
+        "hook_brief": result.get("hook_brief") if isinstance(result.get("hook_brief"), dict) else {},
+        "promise_forge": result.get("promise_forge") if isinstance(result.get("promise_forge"), dict) else {},
+        "specificity": result.get("specificity") if isinstance(result.get("specificity"), dict) else {},
     }
 
 

@@ -1178,6 +1178,52 @@ def test_submit_premise_intake_job_routes_to_task_data(ui_server, monkeypatch):
     ]
 
 
+def test_generate_promise_forge_request_returns_preview_without_saving(ui_roots, monkeypatch):
+    captured = {}
+
+    class FakeLLM:
+        pass
+
+    def fake_llm_from_task(task, *, settings):
+        captured["task"] = task
+        captured["settings"] = settings
+        return FakeLLM()
+
+    def fake_run_promise_forge_intake(**kwargs):
+        captured["runner"] = kwargs
+        return {
+            "ok": True,
+            "hook_brief": {"logline": "Chores become raid law."},
+            "promise_forge": {
+                "founding_injustice": "Kelli's chore board binds Sophie II.",
+                "source_brief": {"logline": "Chores become raid law."},
+            },
+            "specificity": {"passed": True},
+        }
+
+    monkeypatch.setattr(ui, "_llm_from_task", fake_llm_from_task)
+    monkeypatch.setattr(ui, "run_promise_forge_intake", fake_run_promise_forge_intake)
+
+    result = ui.generate_promise_forge_request(
+        {
+            "series_id": "knotty",
+            "raw_context": "Kelli and Sophie II.",
+            "genre": "LitRPG",
+            "desired_tone": "maritime comedy",
+            "generation": {"provider": "fake"},
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["series_id"] == "knotty"
+    assert result["hook_brief"]["logline"] == "Chores become raid law."
+    assert result["specificity"]["passed"] is True
+    assert captured["runner"]["raw_context"] == "Kelli and Sophie II."
+    assert isinstance(captured["runner"]["llm"], FakeLLM)
+    assert not (ui.DATA_DIR / "series" / "knotty" / "promise_forge.json").exists()
+    assert not (ui.DATA_DIR / "series" / "knotty" / "series_plan.json").exists()
+
+
 def test_submit_task_job_exposes_running_status(
     ui_server, ui_roots, monkeypatch
 ):

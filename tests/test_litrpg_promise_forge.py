@@ -6,11 +6,79 @@ from podcastfy.litrpg.premise_intake import build_premise_intake_prompt
 from podcastfy.litrpg.premise_intake import save_premise_intake_payload
 from podcastfy.litrpg.promise_forge import build_hook_brief_prompt
 from podcastfy.litrpg.promise_forge import build_promise_forge_prompt
+from podcastfy.litrpg.promise_forge import extract_hook_brief_json
+from podcastfy.litrpg.promise_forge import extract_promise_forge_json
 from podcastfy.litrpg.promise_forge import format_promise_forge_context
+from podcastfy.litrpg.promise_forge import run_promise_forge_intake
 from podcastfy.litrpg.promise_forge import validate_promise_forge_specificity
 from podcastfy.litrpg.series_architect import SeriesShape
 from podcastfy.litrpg.series_architect import bootstrap_series
 from podcastfy.litrpg.series_architect import load_series_shape
+
+
+class FakePromiseForgeLLM:
+    def __init__(self, hook_brief, promise_forge):
+        self.hook_brief = hook_brief
+        self.promise_forge = promise_forge
+        self.calls = []
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        if stage == "hook_brief":
+            return "```json\n" + json.dumps(self.hook_brief) + "\n```"
+        if stage == "promise_forge":
+            return json.dumps(self.promise_forge)
+        raise AssertionError(f"unexpected stage {stage}")
+
+
+def test_run_promise_forge_intake_calls_hook_then_forge_and_embeds_source_brief():
+    hook = _hook_brief()
+    forge = _promise_forge()
+    llm = FakePromiseForgeLLM(hook, forge)
+
+    result = run_promise_forge_intake(
+        raw_context=(
+            "Kelli Marsh and Edward Marsh are aboard Sophie II when Kelli's "
+            "old chore-board authority becomes binding party commands."
+        ),
+        llm=llm,
+        genre="LitRPG",
+        desired_tone="unfair maritime comedy",
+    )
+
+    assert [call["stage"] for call in llm.calls] == ["hook_brief", "promise_forge"]
+    assert "Hook Brief intake pass" in llm.calls[0]["prompt"]
+    assert "Promise Forge intake pass" in llm.calls[1]["prompt"]
+    assert result["ok"] is True
+    assert result["hook_brief"] == hook
+    assert result["promise_forge"]["source_brief"] == hook
+    assert result["specificity"]["passed"] is True
+
+
+def test_run_promise_forge_intake_marks_generic_forge_not_ok():
+    hook = _hook_brief()
+    llm = FakePromiseForgeLLM(
+        hook,
+        {
+            "founding_injustice": "The protagonist is forced to accept responsibility.",
+            "permanent_constraint": "The dungeon follows them.",
+            "reader_buy_button_image": "A hero sees a system window.",
+        },
+    )
+
+    result = run_promise_forge_intake(
+        raw_context="Kelli Marsh sails Sophie II with Edward Marsh.",
+        llm=llm,
+    )
+
+    assert result["ok"] is False
+    assert result["specificity"]["passed"] is False
+    assert any("generic" in issue for issue in result["specificity"]["issues"])
+
+
+def test_promise_forge_json_extractors_accept_fenced_output():
+    assert extract_hook_brief_json("```json\n" + json.dumps(_hook_brief()) + "\n```")["logline"]
+    assert extract_promise_forge_json("Result:\n" + json.dumps(_promise_forge()))["founding_injustice"]
 
 
 def test_series_shape_round_trips_promise_forge_through_series_plan(tmp_path):
@@ -176,4 +244,17 @@ def _promise_forge():
             "specificity_anchors": ["Kelli", "Sophie II", "chore-board authority"],
             "do_not_smooth_out": ["old chores become binding commands"],
         },
+    }
+
+
+def _hook_brief():
+    return {
+        "logline": "A retired family crew survives when old chores become raid law.",
+        "back_cover_seed": "Kelli's chore-board authority turns Sophie II into a command center.",
+        "founding_injustice_candidate": "Kelli's old chore-board authority becomes binding party commands aboard Sophie II.",
+        "permanent_constraint_candidate": "Sophie II treats family chores as enforceable raid logistics.",
+        "comedic_signal": "Old-married domestic paperwork becomes lethal system bureaucracy.",
+        "reader_buy_button_image": "Kelli points at Sophie II's chore board and the dungeon obeys.",
+        "specificity_anchors": ["Kelli", "Edward Marsh", "Sophie II", "chore-board authority"],
+        "do_not_smooth_out": ["old chores become binding commands"],
     }

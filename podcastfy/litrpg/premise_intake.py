@@ -84,16 +84,23 @@ def build_premise_intake_prompt(
     series_promise: str = "",
     endgame_direction: str = "",
     power_curve: str = "logarithmic",
+    promise_forge: Mapping[str, Any] | None = None,
+    hook_brief: Mapping[str, Any] | None = None,
 ) -> str:
     """Build the extraction prompt that converts a premise dump into JSON state."""
 
+    approved_promise = normalize_promise_forge(promise_forge if isinstance(promise_forge, Mapping) else None)
+    if hook_brief and not approved_promise.get("source_brief"):
+        approved_promise["source_brief"] = dict(hook_brief)
+    resolved_series_promise = series_promise or str(approved_promise.get("series_promise") or "")
     shape_hint = {
         "target_books": target_books,
         "book_length_mode": book_length_mode,
         "chapters_per_book": chapters_per_book,
         "arc_style": arc_style,
         "series_title": series_title or "Infer from premise",
-        "series_promise": series_promise or "Infer from premise",
+        "series_promise": resolved_series_promise or "Infer from premise",
+        "promise_forge": approved_promise,
         "endgame_direction": endgame_direction or "Infer a long-term endgame",
         "power_curve": power_curve,
     }
@@ -164,6 +171,10 @@ Extraction rules:
 - The intake must not imitate DCC names, voice, class names, system cadence, or terminology.
 - Keep originality_locks distinct from must_not_become: must_not_become prevents
   planning drift; originality_locks are prose-level prohibitions.
+- If the Series shape hint includes a non-empty promise_forge, treat
+  series_shape.promise_forge as already approved and locked. Intake may
+  elaborate other artifacts, but must not replace the founding injustice with a
+  generic one. Preserve that approved object in the returned series_shape.
 
 Reusable prompt policy:
 {format_mystery_lock_discipline()}
@@ -266,11 +277,18 @@ def run_premise_intake(
     endgame_direction: str = "",
     power_curve: str = "logarithmic",
     merge_existing: bool = True,
+    promise_forge: Mapping[str, Any] | None = None,
+    hook_brief: Mapping[str, Any] | None = None,
 ) -> PremiseIntakeResult:
     """Generate and persist story-engine artifacts from a loose premise dump."""
 
     if llm is None or not hasattr(llm, "generate"):
         raise ValueError("run_premise_intake requires an llm with generate(prompt=..., stage=...)")
+    approved_promise_forge = normalize_promise_forge(promise_forge if isinstance(promise_forge, Mapping) else None)
+    if hook_brief and not approved_promise_forge.get("source_brief"):
+        approved_promise_forge["source_brief"] = dict(hook_brief)
+    if not series_promise and approved_promise_forge.get("series_promise"):
+        series_promise = str(approved_promise_forge["series_promise"])
     prompt = build_premise_intake_prompt(
         premise=premise,
         series_id=series_id,
@@ -282,6 +300,8 @@ def run_premise_intake(
         series_promise=series_promise,
         endgame_direction=endgame_direction,
         power_curve=power_curve,
+        promise_forge=approved_promise_forge,
+        hook_brief=hook_brief,
     )
     try:
         raw = llm.generate(prompt=prompt, stage="premise_intake")
@@ -300,6 +320,7 @@ def run_premise_intake(
             power_curve=power_curve,
             fallback_reason=f"Skipped AI intake because generation failed: {type(exc).__name__}: {exc}",
         )
+        payload = _with_locked_promise_forge(payload, approved_promise_forge)
         validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
         return _save_premise_intake_result(
             storage_dir=storage_dir,
@@ -316,7 +337,10 @@ def run_premise_intake(
             power_curve=power_curve,
         )
     try:
-        payload = extract_premise_intake_json(str(raw))
+        payload = _with_locked_promise_forge(
+            extract_premise_intake_json(str(raw)),
+            approved_promise_forge,
+        )
     except ValueError as exc:
         payload = repair_sparse_premise_intake_payload(
             {},
@@ -332,6 +356,7 @@ def run_premise_intake(
             power_curve=power_curve,
             fallback_reason=f"Skipped AI repair because intake JSON was malformed: {exc}",
         )
+        payload = _with_locked_promise_forge(payload, approved_promise_forge)
         validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
         return _save_premise_intake_result(
             storage_dir=storage_dir,
@@ -348,6 +373,7 @@ def run_premise_intake(
             power_curve=power_curve,
         )
     try:
+        payload = _with_locked_promise_forge(payload, approved_promise_forge)
         validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     except ValueError as exc:
         if is_obvious_empty_intake_shell(payload, premise=premise, chapters_per_book=chapters_per_book):
@@ -365,6 +391,7 @@ def run_premise_intake(
                 power_curve=power_curve,
                 fallback_reason=f"Skipped AI repair for empty intake shell: {exc}",
             )
+            payload = _with_locked_promise_forge(payload, approved_promise_forge)
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
             return _save_premise_intake_result(
                 storage_dir=storage_dir,
@@ -407,6 +434,7 @@ def run_premise_intake(
                     f"{type(repair_exc).__name__}: {repair_exc}"
                 ),
             )
+            payload = _with_locked_promise_forge(payload, approved_promise_forge)
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
             return _save_premise_intake_result(
                 storage_dir=storage_dir,
@@ -423,7 +451,10 @@ def run_premise_intake(
                 power_curve=power_curve,
             )
         try:
-            payload = extract_premise_intake_json(str(repaired_raw))
+            payload = _with_locked_promise_forge(
+                extract_premise_intake_json(str(repaired_raw)),
+                approved_promise_forge,
+            )
         except ValueError as repair_exc:
             payload = repair_sparse_premise_intake_payload(
                 payload,
@@ -439,6 +470,7 @@ def run_premise_intake(
                 power_curve=power_curve,
                 fallback_reason=f"AI repair returned malformed JSON: {repair_exc}",
             )
+            payload = _with_locked_promise_forge(payload, approved_promise_forge)
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
             return _save_premise_intake_result(
                 storage_dir=storage_dir,
@@ -455,6 +487,7 @@ def run_premise_intake(
                 power_curve=power_curve,
             )
         try:
+            payload = _with_locked_promise_forge(payload, approved_promise_forge)
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
         except ValueError:
             payload = repair_sparse_premise_intake_payload(
@@ -471,6 +504,7 @@ def run_premise_intake(
                 power_curve=power_curve,
                 fallback_reason="AI premise intake remained sparse after repair pass.",
             )
+            payload = _with_locked_promise_forge(payload, approved_promise_forge)
             validate_premise_intake_payload(payload, premise=premise, chapters_per_book=chapters_per_book)
     return _save_premise_intake_result(
         storage_dir=storage_dir,
@@ -519,6 +553,22 @@ def _save_premise_intake_result(
             "power_curve": power_curve,
         },
     )
+
+
+def _with_locked_promise_forge(
+    payload: Mapping[str, Any],
+    promise_forge: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    data = dict(payload)
+    approved = normalize_promise_forge(promise_forge if isinstance(promise_forge, Mapping) else None)
+    if not any(approved.get(key) for key in approved if key != "source_brief"):
+        return data
+    shape = dict(_mapping(data.get("series_shape")))
+    shape["promise_forge"] = approved
+    if not shape.get("series_promise") and approved.get("series_promise"):
+        shape["series_promise"] = approved["series_promise"]
+    data["series_shape"] = shape
+    return data
 
 
 def repair_sparse_premise_intake_payload(

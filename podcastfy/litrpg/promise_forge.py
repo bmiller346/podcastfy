@@ -104,6 +104,59 @@ Raw premise:
 """
 
 
+def run_promise_forge_intake(
+    *,
+    raw_context: str,
+    llm: Any,
+    genre: str = "",
+    desired_tone: str = "",
+    existing_seed: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the seed-time hook brief and promise forge preview workflow."""
+
+    if llm is None or not hasattr(llm, "generate"):
+        raise ValueError("run_promise_forge_intake requires an llm with generate(prompt=..., stage=...)")
+    hook_prompt = build_hook_brief_prompt(
+        raw_context=raw_context,
+        genre=genre,
+        desired_tone=desired_tone,
+    )
+    hook_raw = llm.generate(prompt=hook_prompt, stage="hook_brief")
+    hook_brief = extract_hook_brief_json(str(hook_raw))
+    seed = {**dict(existing_seed or {}), **hook_brief}
+    forge_prompt = build_promise_forge_prompt(
+        raw_premise=raw_context,
+        genre=genre,
+        world_tone=desired_tone,
+        existing_seed=seed,
+    )
+    forge_raw = llm.generate(prompt=forge_prompt, stage="promise_forge")
+    promise_forge = normalize_promise_forge(extract_promise_forge_json(str(forge_raw)))
+    promise_forge["source_brief"] = hook_brief
+    specificity = validate_promise_forge_specificity(
+        promise_forge=promise_forge,
+        raw_premise=raw_context,
+    )
+    return {
+        "hook_brief": hook_brief,
+        "promise_forge": promise_forge,
+        "specificity": specificity,
+        "ok": bool(specificity.get("passed")),
+    }
+
+
+def extract_hook_brief_json(text: str) -> dict[str, Any]:
+    """Extract a hook brief JSON object from raw LLM output."""
+
+    return _extract_json_object(text, "Hook brief")
+
+
+def extract_promise_forge_json(text: str) -> dict[str, Any]:
+    """Extract a promise forge JSON object from raw LLM output."""
+
+    return _extract_json_object(text, "Promise forge")
+
+
 def normalize_promise_forge(value: Mapping[str, Any] | None) -> dict[str, Any]:
     """Return a stable promise_forge dict with expected keys and list shapes."""
 
@@ -236,6 +289,27 @@ def _generic_issues(found_injustice: str) -> list[str]:
     if any(pattern in text for pattern in generic_patterns):
         return ["founding_injustice is generic enough to apply unchanged to another LitRPG protagonist"]
     return []
+
+
+def _extract_json_object(text: str, label: str) -> dict[str, Any]:
+    stripped = str(text or "").strip()
+    if not stripped:
+        raise ValueError(f"{label} LLM returned empty output")
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        parsed = json.loads(_json_object_slice(stripped))
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{label} output must be a JSON object")
+    return parsed
+
+
+def _json_object_slice(text: str) -> str:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError("No JSON object found")
+    return text[start : end + 1]
 
 
 def _string_list(value: Any) -> list[str]:
