@@ -282,8 +282,10 @@ def test_ui_app_script_supports_theme_toggle(ui_server):
     assert status == 200
     assert content_type == "application/javascript"
     assert "litrpg-studio-theme" in script
+    assert "litrpg-studio-active-series" in script
     assert 'document.documentElement.dataset.theme = normalized' in script
     assert 'themeToggleButton.setAttribute("aria-pressed"' in script
+    assert "restoreActiveSeriesId()" in script
     assert 'window.matchMedia("(prefers-color-scheme: dark)")' in script
 
 

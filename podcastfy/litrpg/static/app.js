@@ -46,6 +46,16 @@ const library = document.querySelector("#library");
 const runTaskButton = document.querySelector("#run-task");
 const refreshButton = document.querySelector("#refresh");
 const themeToggleButton = document.querySelector("#theme-toggle");
+const viewTabs = Array.from(document.querySelectorAll("[data-view]"));
+const viewPanels = Array.from(document.querySelectorAll("[data-view-panel]"));
+const viewTargetButtons = Array.from(document.querySelectorAll("[data-view-target]"));
+const globalActiveSeries = document.querySelector("#global-active-series");
+const globalJobStatus = document.querySelector("#global-job-status");
+const globalQuickActionButton = document.querySelector("#global-quick-action");
+const workspaceIntakeSummary = document.querySelector("#workspace-intake-summary");
+const workspaceDryRunTeaser = document.querySelector("#workspace-dry-run-teaser");
+const workspaceJobSummary = document.querySelector("#workspace-job-summary");
+const workspaceNextAction = document.querySelector("#workspace-next-action");
 const messyContextInput = document.querySelector("#messy-context");
 const revisionChatLog = document.querySelector("#revision-chat-log");
 const revisionChatInput = document.querySelector("#revision-chat-input");
@@ -87,6 +97,34 @@ const promiseFields = {
 };
 const defaultStorySeedPath = "usage/litrpg_messy_context_seed.md";
 const THEME_STORAGE_KEY = "litrpg-studio-theme";
+const ACTIVE_SERIES_STORAGE_KEY = "litrpg-studio-active-series";
+const DEFAULT_VIEW_WITH_SERIES = "workspace";
+const DEFAULT_VIEW_WITHOUT_SERIES = "intake";
+const VIEW_ALIASES = {
+  "premise-intake": "intake",
+  "promise-preview": "intake",
+  "intake": "intake",
+  "workspace": "workspace",
+  "series-workspace": "workspace",
+  "intake-status": "workspace",
+  "simulation": "simulation",
+  "simulation-review": "simulation",
+  "dry-run-panel": "simulation",
+  "dry-run-review": "simulation",
+  "chapter-build": "chapter-build",
+  "advanced-task-builder": "chapter-build",
+  "artifacts": "artifacts",
+  "series-artifacts": "artifacts",
+  "package": "package",
+  "series-package": "package",
+  "role-package-panel": "package",
+  "package-summary": "package",
+  "package-output": "package",
+  "diagnostics": "diagnostics",
+  "diagnostics-panel": "diagnostics",
+  "saved-tasks": "diagnostics",
+  "library-panel": "workspace",
+};
 
 let latestSettings = null;
 let latestTasks = null;
@@ -102,6 +140,7 @@ let packageRevision = 0;
 let pendingRevisionProposal = null;
 let selectedSimulationReportIndex = 0;
 let selectedSimulationChapterIndex = 0;
+let activeView = "";
 
 function preferredTheme() {
   const saved = localStorage.getItem(THEME_STORAGE_KEY);
@@ -123,6 +162,51 @@ function setTheme(theme) {
   const normalized = theme === "dark" ? "dark" : "light";
   localStorage.setItem(THEME_STORAGE_KEY, normalized);
   applyTheme(normalized);
+}
+
+function defaultView() {
+  const seriesId = currentSeriesId();
+  return seriesId && seriesId !== "local-series" ? DEFAULT_VIEW_WITH_SERIES : DEFAULT_VIEW_WITHOUT_SERIES;
+}
+
+function normalizeView(value) {
+  const clean = cleanValue(value).replace(/^#/, "");
+  return VIEW_ALIASES[clean] || clean || defaultView();
+}
+
+function switchView(viewName, { updateHash = true, focusPanel = false } = {}) {
+  const nextView = normalizeView(viewName);
+  const knownView = viewPanels.some((panel) => panel.dataset.viewPanel === nextView);
+  const targetView = knownView ? nextView : defaultView();
+  activeView = targetView;
+  for (const panel of viewPanels) {
+    const active = panel.dataset.viewPanel === targetView;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  }
+  for (const tab of viewTabs) {
+    const active = tab.dataset.view === targetView;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  }
+  if (globalQuickActionButton) {
+    globalQuickActionButton.dataset.viewTarget = targetView === "workspace" ? "chapter-build" : "workspace";
+    globalQuickActionButton.textContent = targetView === "workspace" ? "Open Chapter Build" : "Open Workspace";
+  }
+  if (updateHash) {
+    const nextHash = `#${targetView}`;
+    if (window.location.hash !== nextHash) {
+      history.replaceState(null, "", nextHash);
+    }
+  }
+  if (focusPanel) {
+    const panel = viewPanels.find((item) => item.dataset.viewPanel === targetView);
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function syncViewFromHash() {
+  switchView(window.location.hash || defaultView(), { updateHash: false });
 }
 
 applyTheme(preferredTheme());
@@ -316,6 +400,7 @@ function currentSeriesId() {
 function setActiveSeriesId(seriesId, { syncTask = true, syncPackage = true } = {}) {
   const cleanSeries = cleanValue(seriesId) || "local-series";
   activeSeriesId = cleanSeries;
+  localStorage.setItem(ACTIVE_SERIES_STORAGE_KEY, cleanSeries);
   if (activeSeriesInput) activeSeriesInput.value = cleanSeries;
   if (syncTask && taskForm && taskForm.elements.series_id) {
     taskForm.elements.series_id.value = cleanSeries;
@@ -325,6 +410,16 @@ function setActiveSeriesId(seriesId, { syncTask = true, syncPackage = true } = {
     seriesSelect.value = cleanSeries;
   }
   renderSeriesWorkspace();
+  updateGlobalHeader();
+}
+
+function restoreActiveSeriesId() {
+  const savedSeries = cleanValue(localStorage.getItem(ACTIVE_SERIES_STORAGE_KEY));
+  if (savedSeries) {
+    setActiveSeriesId(savedSeries, { syncTask: true, syncPackage: true });
+    return true;
+  }
+  return false;
 }
 
 async function loadSelectedSeriesPackage() {
@@ -401,6 +496,60 @@ function renderSeriesWorkspace() {
     diagnosticsItem("Bestiary", String(bestiaryCount)),
     diagnosticsItem("Generated Encounters", String(encounterCount)),
   ].join("");
+  renderWorkspaceDashboard({ selectedSeries, libraryItem, packageState, roleCount, bestiaryCount, encounterCount });
+  updateGlobalHeader();
+}
+
+function renderWorkspaceDashboard({ selectedSeries, libraryItem, packageState, roleCount, bestiaryCount, encounterCount }) {
+  const packageReady = packageState && packageState !== "missing";
+  if (workspaceIntakeSummary) {
+    workspaceIntakeSummary.innerHTML = [
+      diagnosticsItem("Series", selectedSeries || "none"),
+      diagnosticsItem("Package", packageState || "missing"),
+      diagnosticsItem("Artifacts", packageReady ? `${roleCount + bestiaryCount + encounterCount} indexed items` : "not ready"),
+    ].join("");
+  }
+  if (workspaceJobSummary) {
+    workspaceJobSummary.innerHTML = latestJob
+      ? [
+          diagnosticsItem("Status", latestJob.status || "unknown"),
+          diagnosticsItem("Mode", latestJob.mode || latestJob.task_mode || "task"),
+        ].join("")
+      : diagnosticsItem("Status", "Idle");
+  }
+  if (workspaceNextAction) {
+    const next = packageReady
+      ? "Run a dry run or queue the next chapter build."
+      : libraryItem
+        ? "Load or generate the series package."
+        : "Run full premise intake or load an existing series.";
+    workspaceNextAction.innerHTML = `<div class="quiet-box">${escapeHtml(next)}</div>`;
+  }
+  if (workspaceDryRunTeaser) {
+    workspaceDryRunTeaser.innerHTML = renderDryRunTeaser();
+  }
+}
+
+function renderDryRunTeaser() {
+  const reports = latestSimulationReports && Array.isArray(latestSimulationReports.reports)
+    ? latestSimulationReports.reports
+    : [];
+  if (!reports.length) return diagnosticsItem("Report", "none loaded");
+  const report = reports[clampIndex(selectedSimulationReportIndex, reports)] || reports[0];
+  return [
+    diagnosticsItem("Latest result", report.passed ? "pass" : "needs review"),
+    diagnosticsItem("Chapters", `${report.chapter_count || 0}/${report.chapters_run || 0}`),
+    diagnosticsItem("Issues", String(report.issue_count || 0)),
+  ].join("");
+}
+
+function updateGlobalHeader() {
+  if (globalActiveSeries) globalActiveSeries.textContent = currentSeriesId();
+  if (globalJobStatus) {
+    globalJobStatus.textContent = latestJob
+      ? [latestJob.status || "unknown", latestJob.mode || latestJob.task_mode].filter(Boolean).join(" / ")
+      : "Idle";
+  }
 }
 
 function renderEpisode(episode) {
@@ -1456,6 +1605,7 @@ function renderSimulationReports(data) {
   const reports = data && Array.isArray(data.reports) ? data.reports : [];
   if (!reports.length) {
     dryRunReview.innerHTML = `<div class="quiet-box">No dry-run reports found for this series yet.</div>`;
+    if (workspaceDryRunTeaser) workspaceDryRunTeaser.innerHTML = renderDryRunTeaser();
     return;
   }
   const report = reports[clampIndex(selectedSimulationReportIndex, reports)] || reports[0];
@@ -1480,6 +1630,7 @@ function renderSimulationReports(data) {
         ${renderSimulationChapterDetail(selectedChapter)}
       </div>
     </div>`;
+  if (workspaceDryRunTeaser) workspaceDryRunTeaser.innerHTML = renderDryRunTeaser();
 }
 
 function renderSimulationReportButton(report, index) {
@@ -2834,6 +2985,8 @@ async function refreshAll() {
   }
   await loadRobustState({ quiet: true }).catch(() => {});
   await loadSimulationReports({ quiet: true }).catch(() => {});
+  renderSeriesWorkspace();
+  updateGlobalHeader();
 }
 
 settingsForm.addEventListener("submit", async (event) => {
@@ -3135,6 +3288,20 @@ if (themeToggleButton) {
   });
 }
 
+for (const tab of viewTabs) {
+  tab.addEventListener("click", () => {
+    switchView(tab.dataset.view, { updateHash: true, focusPanel: true });
+  });
+}
+
+for (const targetButton of viewTargetButtons) {
+  targetButton.addEventListener("click", () => {
+    switchView(targetButton.dataset.viewTarget, { updateHash: true, focusPanel: true });
+  });
+}
+
+window.addEventListener("hashchange", syncViewFromHash);
+
 refreshDiagnosticsButton.addEventListener("click", () => {
   updateDiagnostics();
 });
@@ -3334,11 +3501,15 @@ async function runQuickAction(action) {
 }
 
 function initializeApp() {
+  const restoredSeries = restoreActiveSeriesId();
   refreshAdvancedTaskDropdowns();
+  syncViewFromHash();
   refreshAll().catch((error) => {
     taskOutput.textContent = error.message;
+  }).finally(() => {
+    if (!window.location.hash) switchView(defaultView(), { updateHash: true });
   });
-  updateTaskPreview({ syncSeries: true });
+  updateTaskPreview({ syncSeries: !restoredSeries });
   updateDiagnostics();
 }
 

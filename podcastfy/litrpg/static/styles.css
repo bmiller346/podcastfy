@@ -175,11 +175,46 @@ textarea {
   justify-content: flex-end;
 }
 
+.global-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.global-status > div {
+  min-width: 0;
+}
+
+.global-label {
+  display: block;
+  color: var(--color-muted);
+  font-size: var(--type-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.global-status strong {
+  display: block;
+  overflow: hidden;
+  color: var(--color-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-tabs,
 .speed-dial {
   position: sticky;
   top: 0;
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   overflow-x: auto;
   margin: 0 -2px 18px;
@@ -190,6 +225,7 @@ textarea {
   box-shadow: var(--shadow-sm);
 }
 
+.view-tabs button,
 .speed-dial a,
 .package-jumpbar a {
   display: inline-flex;
@@ -207,10 +243,56 @@ textarea {
   white-space: nowrap;
 }
 
+.view-tabs button.active,
+.view-tabs button:hover,
 .speed-dial a:hover,
 .package-jumpbar a:hover {
   border-color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+}
+
+.app-view {
+  display: none;
+}
+
+.app-view.active {
+  display: block;
+}
+
+.workspace-grid,
+.diagnostics-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.workspace-card,
+.diagnostics-layout > section {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  padding: 14px;
+}
+
+.workspace-card h3,
+.diagnostics-layout h3 {
+  margin: 0 0 10px;
+  color: var(--color-heading);
+  font-size: var(--type-title);
+}
+
+.workspace-card .status-list {
+  margin-bottom: 12px;
+}
+
+.workspace-command-center {
+  margin-top: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  padding: 14px;
 }
 
 #premise-intake,
@@ -1721,6 +1803,10 @@ audio {
 }
 
 :root[data-theme="dark"] .command-center,
+:root[data-theme="dark"] .global-status,
+:root[data-theme="dark"] .view-tabs,
+:root[data-theme="dark"] .workspace-card,
+:root[data-theme="dark"] .diagnostics-layout > section,
 :root[data-theme="dark"] .messy-intake-panel,
 :root[data-theme="dark"] .task-section,
 :root[data-theme="dark"] .task-section-primary,
@@ -1778,6 +1864,7 @@ audio {
 
 :root[data-theme="dark"] .task-section-collapsible summary:hover,
 :root[data-theme="dark"] .artifact-tab,
+:root[data-theme="dark"] .view-tabs button,
 :root[data-theme="dark"] .library-count,
 :root[data-theme="dark"] .badge,
 :root[data-theme="dark"] .quick-action.secondary,
@@ -1794,6 +1881,8 @@ audio {
 }
 
 :root[data-theme="dark"] .artifact-tab.active,
+:root[data-theme="dark"] .view-tabs button.active,
+:root[data-theme="dark"] .view-tabs button:hover,
 :root[data-theme="dark"] .artifact-tab:hover,
 :root[data-theme="dark"] .dry-run-report-button.active,
 :root[data-theme="dark"] .dry-run-chapter-row.active {
@@ -1956,6 +2045,11 @@ audio {
     display: grid;
   }
 
+  .global-status {
+    grid-template-columns: 1fr;
+  }
+
+  .view-tabs,
   .speed-dial {
     margin-right: -16px;
     margin-left: -16px;
@@ -1964,10 +2058,16 @@ audio {
     border-radius: 0;
   }
 
+  .view-tabs {
+    flex-wrap: nowrap;
+  }
+
   .grid-form,
   .task-section,
   .task-section-grid,
   .series-workspace,
+  .workspace-grid,
+  .diagnostics-layout,
   .robust-state-header,
   .dry-run-layout,
   .primary-flow,
