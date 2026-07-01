@@ -102,14 +102,15 @@
         </div>
         <ol class="primary-flow">
           <li><strong>Load</strong> `usage/litrpg_messy_context_seed.md`.</li>
-          <li><strong>Edit or chat</strong> until the markdown says what you mean.</li>
-          <li><strong>Save</strong> the markdown so you can close and return later.</li>
-          <li><strong>Run Premise Intake</strong> to generate the structured series workspace.</li>
+          <li><strong>Dump messy context</strong>: family dynamics, embarrassing details, objects, places, debts, grudges, obligations, tone, and details not to smooth out.</li>
+          <li><strong>Generate Promise</strong> to forge the hook brief and series promise.</li>
+          <li><strong>Approve and Run Full Intake</strong> to generate the structured series workspace.</li>
         </ol>
         <div class="actions intake-actions workshop-actions">
           <button id="load-story-seed" class="has-tooltip" type="button" data-tooltip="Load the markdown seed file into the editor without running AI." title="Load the markdown seed file into the editor without running AI.">Load Seed Markdown</button>
           <button id="save-story-seed" class="has-tooltip" type="button" data-tooltip="Save the current markdown back to the selected story file." title="Save the current markdown back to the selected story file.">Save Seed Markdown</button>
-          <button id="queue-premise-intake" class="has-tooltip" type="button" data-tooltip="Run the intake job that turns the markdown seed into series artifacts." title="Run the intake job that turns the markdown seed into series artifacts.">Run Premise Intake</button>
+          <button id="generate-promise" class="has-tooltip" type="button" data-tooltip="Turn the messy context into a hook brief and promise forge preview." title="Turn the messy context into a hook brief and promise forge preview.">Generate Promise</button>
+          <button id="approve-run-intake" class="has-tooltip" type="button" data-tooltip="Run full intake with the approved promise forge locked into the series plan." title="Run full intake with the approved promise forge locked into the series plan.">Approve and Run Full Intake</button>
           <button id="copy-mcp-context" class="has-tooltip" type="button" data-tooltip="Copy a payload for an external MCP/agent workflow; it does not change the story." title="Copy a payload for an external MCP/agent workflow; it does not change the story.">Copy MCP Payload</button>
           <button id="apply-messy-context" class="has-tooltip" type="button" data-tooltip="Browser-only helper that guesses a few fields. It is not the real intake pass." title="Browser-only helper that guesses a few fields. It is not the real intake pass.">Optional Rough Autofill</button>
         </div>
@@ -121,6 +122,10 @@
           <label>
             Story file
             <input id="story-seed-path" type="text" value="usage/litrpg_messy_context_seed.md">
+          </label>
+          <label>
+            Desired tone
+            <input id="promise-desired-tone" type="text" placeholder="funny, unfair, specific, maritime family chaos">
           </label>
           <div id="story-seed-status" class="story-seed-status" aria-live="polite">Not loaded yet.</div>
         </div>
@@ -160,10 +165,57 @@
                 <button id="markdown-full" class="has-tooltip" type="button" data-tooltip="Expand the markdown editor to a taller full-workspace view." title="Expand the markdown editor to a taller full-workspace view.">Full</button>
               </span>
             </span>
-            <textarea id="messy-context" rows="18" spellcheck="true" placeholder="Paste or edit the full story seed markdown here. Premise intake reads this raw text directly; you do not need to split it into fields first."></textarea>
+            <textarea id="messy-context" rows="18" spellcheck="true" placeholder="Paste the messy story dump here. Include family dynamics, embarrassing details, objects, places, debts, grudges, obligations, tone, weird jokes, and details the system must not smooth out."></textarea>
           </label>
         </div>
-        <p class="field-note">This markdown is the readable source of truth. Run Premise Intake derives structured JSON/artifacts from it; Optional Rough Autofill only guesses title, series id, and a short premise in the browser.</p>
+        <section id="promise-preview" class="promise-preview hidden" aria-live="polite">
+          <div class="promise-preview-header">
+            <div>
+              <h3>Promise Preview</h3>
+              <p>Review and edit the generated promise before full intake. Keep it strange, specific, and hard to swap into another LitRPG.</p>
+            </div>
+            <div id="promise-specificity" class="specificity-status" data-state="empty">No promise generated.</div>
+          </div>
+          <div class="promise-grid">
+            <label class="wide">
+              Logline
+              <textarea id="promise-logline" rows="2"></textarea>
+            </label>
+            <label class="wide">
+              Back cover seed
+              <textarea id="promise-back-cover-seed" rows="3"></textarea>
+            </label>
+            <label class="wide">
+              Founding injustice
+              <textarea id="promise-founding-injustice" rows="3"></textarea>
+            </label>
+            <label>
+              Permanent constraint
+              <textarea id="promise-permanent-constraint" rows="3"></textarea>
+            </label>
+            <label>
+              Comedic signal
+              <textarea id="promise-comedic-signal" rows="3"></textarea>
+            </label>
+            <label class="wide">
+              Reader-buy-button image
+              <textarea id="promise-reader-buy-button-image" rows="2"></textarea>
+            </label>
+            <label>
+              Must recur
+              <textarea id="promise-must-recur" rows="4"></textarea>
+            </label>
+            <label>
+              Must not become
+              <textarea id="promise-must-not-become" rows="4"></textarea>
+            </label>
+            <label class="wide">
+              Originality locks
+              <textarea id="promise-originality-locks" rows="4"></textarea>
+            </label>
+          </div>
+        </section>
+        <p class="field-note">This markdown is the readable source of truth. Full intake receives the original messy context plus the approved promise. Optional Rough Autofill only guesses title, series id, and a short premise in the browser.</p>
         <div id="messy-context-summary" class="diagnostics-grid" aria-live="polite"></div>
       </section>
 

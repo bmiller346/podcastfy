@@ -113,13 +113,19 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert 'id="markdown-focus"' in html
     assert 'id="markdown-full"' in html
     assert 'id="story-seed-path"' in html
+    assert 'id="promise-desired-tone"' in html
     assert 'id="story-seed-status"' in html
     assert 'id="load-story-seed"' in html
     assert 'id="save-story-seed"' in html
+    assert 'id="generate-promise"' in html
+    assert 'id="approve-run-intake"' in html
     assert 'id="apply-messy-context"' in html
-    assert 'id="queue-premise-intake"' in html
     assert 'id="copy-mcp-context"' in html
     assert 'id="premise-intake-result"' in html
+    assert 'id="promise-preview"' in html
+    assert 'id="promise-specificity"' in html
+    assert 'id="promise-founding-injustice"' in html
+    assert 'id="promise-originality-locks"' in html
     assert 'id="messy-context-summary"' in html
     assert "1. Premise Intake" in html
     assert "2. Intake Status" in html
@@ -144,9 +150,12 @@ def test_index_page_exposes_task_creation_form(ui_server):
     assert "Discard" in html
     assert "Load Seed Markdown" in html
     assert "Save Seed Markdown" in html
-    assert "Run Premise Intake" in html
+    assert "Generate Promise" in html
+    assert "Approve and Run Full Intake" in html
     assert "Copy MCP Payload" in html
     assert "Optional Rough Autofill" in html
+    assert "family dynamics, embarrassing details, objects, places, debts, grudges, obligations, tone" in html
+    assert "No promise generated." in html
     assert "readable source of truth" in html
     assert "Premise intake has not run in this session." in html
     assert "Short premise override" in html
@@ -288,6 +297,12 @@ def test_ui_stylesheet_uses_font_and_type_tokens(ui_server):
     assert ".secondary-button" in css
     assert ':root[data-theme="dark"] .task-section' in css
     assert ':root[data-theme="dark"] .task-section-grid' in css
+    assert ':root[data-theme="dark"] .robust-state-panel' in css
+    assert ':root[data-theme="dark"] .artifact-empty' in css
+    assert ':root[data-theme="dark"] label' in css
+    assert ':root[data-theme="dark"] .artifact-tab.active' in css
+    assert ':root[data-theme="dark"] .command-layout h3' in css
+    assert ':root[data-theme="dark"] .flow-step span' in css
 
 
 def test_favicon_request_is_ignored_without_404_noise(ui_server):
@@ -1178,6 +1193,49 @@ def test_submit_premise_intake_job_routes_to_task_data(ui_server, monkeypatch):
     ]
 
 
+def test_submit_approved_promise_forge_job_routes_to_task_data(ui_server, monkeypatch):
+    captured = []
+    forge = {
+        "founding_injustice": "Edited Kelli chore-board injustice aboard Sophie II.",
+        "series_promise": "Edited promise.",
+        "source_brief": {"logline": "Edited logline."},
+    }
+
+    def fake_run_litrpg_task_data(task, *, base_dir, llm=None, tts=None):
+        captured.append(task)
+        return {
+            "series_id": task["series_id"],
+            "mode": task["mode"],
+            "written_files": ["data/litrpg/series/knotty/series_plan.json"],
+        }
+
+    monkeypatch.setattr(ui, "run_litrpg_task_data", fake_run_litrpg_task_data)
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/jobs",
+        {
+            "task": {
+                "mode": "premise_intake",
+                "series_id": "knotty",
+                "source_text": "Original messy context with Kelli and Sophie II.",
+                "promise_forge": forge,
+                "hook_brief": {"logline": "Edited logline."},
+                "chapters_per_book": 1,
+            }
+        },
+    )
+
+    final_job = wait_for_job(ui_server, data["job"]["job_id"], "succeeded")
+
+    assert status == 202
+    assert captured[0]["source_text"] == "Original messy context with Kelli and Sophie II."
+    assert captured[0]["promise_forge"]["founding_injustice"].startswith("Edited Kelli")
+    assert captured[0]["hook_brief"]["logline"] == "Edited logline."
+    assert final_job["checkpoint_paths"] == ["data/litrpg/series/knotty/series_plan.json"]
+
+
 def test_generate_promise_forge_request_returns_preview_without_saving(ui_roots, monkeypatch):
     captured = {}
 
@@ -1222,6 +1280,46 @@ def test_generate_promise_forge_request_returns_preview_without_saving(ui_roots,
     assert isinstance(captured["runner"]["llm"], FakeLLM)
     assert not (ui.DATA_DIR / "series" / "knotty" / "promise_forge.json").exists()
     assert not (ui.DATA_DIR / "series" / "knotty" / "series_plan.json").exists()
+
+
+def test_promise_forge_preview_route_does_not_save_full_intake_artifacts(ui_server, monkeypatch):
+    class FakeLLM:
+        pass
+
+    monkeypatch.setattr(ui, "_llm_from_task", lambda task, *, settings: FakeLLM())
+    monkeypatch.setattr(
+        ui,
+        "run_promise_forge_intake",
+        lambda **kwargs: {
+            "ok": False,
+            "hook_brief": {"logline": "Generic hook."},
+            "promise_forge": {"founding_injustice": "The protagonist is forced to accept responsibility."},
+            "specificity": {
+                "passed": False,
+                "issues": ["founding_injustice is generic enough to apply unchanged"],
+            },
+        },
+    )
+
+    status, data = request_json(
+        ui_server,
+        "POST",
+        "/api/promise-forge/generate",
+        {
+            "series_id": "knotty",
+            "raw_context": "Kelli and Sophie II.",
+            "genre": "LitRPG",
+            "desired_tone": "maritime comedy",
+        },
+    )
+
+    assert status == 200
+    assert data["ok"] is False
+    assert data["series_id"] == "knotty"
+    assert data["specificity"]["passed"] is False
+    assert "generic" in data["specificity"]["issues"][0]
+    assert not (ui.DATA_DIR / "series" / "knotty" / "series_plan.json").exists()
+    assert not (ui.DATA_DIR / "series" / "knotty" / "promise_forge.json").exists()
 
 
 def test_submit_task_job_exposes_running_status(

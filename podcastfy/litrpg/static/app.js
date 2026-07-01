@@ -58,14 +58,30 @@ const markdownWideButton = document.querySelector("#markdown-wide");
 const markdownFocusButton = document.querySelector("#markdown-focus");
 const markdownFullButton = document.querySelector("#markdown-full");
 const storySeedPathInput = document.querySelector("#story-seed-path");
+const promiseDesiredToneInput = document.querySelector("#promise-desired-tone");
 const storySeedStatus = document.querySelector("#story-seed-status");
 const loadStorySeedButton = document.querySelector("#load-story-seed");
 const saveStorySeedButton = document.querySelector("#save-story-seed");
+const generatePromiseButton = document.querySelector("#generate-promise");
+const approveRunIntakeButton = document.querySelector("#approve-run-intake");
 const applyMessyContextButton = document.querySelector("#apply-messy-context");
 const queuePremiseIntakeButton = document.querySelector("#queue-premise-intake");
 const copyMcpContextButton = document.querySelector("#copy-mcp-context");
 const messyContextSummary = document.querySelector("#messy-context-summary");
 const premiseIntakeResult = document.querySelector("#premise-intake-result");
+const promisePreview = document.querySelector("#promise-preview");
+const promiseSpecificity = document.querySelector("#promise-specificity");
+const promiseFields = {
+  logline: document.querySelector("#promise-logline"),
+  back_cover_seed: document.querySelector("#promise-back-cover-seed"),
+  founding_injustice: document.querySelector("#promise-founding-injustice"),
+  permanent_constraint: document.querySelector("#promise-permanent-constraint"),
+  comedic_signal: document.querySelector("#promise-comedic-signal"),
+  reader_buy_button_image: document.querySelector("#promise-reader-buy-button-image"),
+  must_recur: document.querySelector("#promise-must-recur"),
+  must_not_become: document.querySelector("#promise-must-not-become"),
+  originality_locks: document.querySelector("#promise-originality-locks"),
+};
 const defaultStorySeedPath = "usage/litrpg_messy_context_seed.md";
 const THEME_STORAGE_KEY = "litrpg-studio-theme";
 
@@ -75,6 +91,7 @@ let latestLibrary = null;
 let latestJob = null;
 let latestPackage = null;
 let latestRobustState = null;
+let latestPromiseForgePreview = null;
 let activeSeriesId = "";
 let lastSyncedPackageSeriesId = "";
 let packageRevision = 0;
@@ -865,6 +882,12 @@ function buildMessyContextIntakeTask() {
   task.series_id = cleanValue(taskForm.elements.series_id && taskForm.elements.series_id.value) || analysis.series_id || "local-series";
   task.target_books = task.target_books || 1;
   task.chapters_per_book = task.chapters_per_book || 30;
+  const approved = buildApprovedPromiseForgeFromPreview();
+  if (approved) {
+    task.promise_forge = approved.promise_forge;
+    task.hook_brief = approved.hook_brief;
+    task.series_promise = task.series_promise || approved.promise_forge.series_promise || "";
+  }
   if (!task.generation || !task.generation.provider) {
     task.generation = defaultHybridGenerationConfig();
   } else if (["openai", "gemini", "geminiapi", "google", "hybrid"].includes(task.generation.provider)) {
@@ -875,6 +898,160 @@ function buildMessyContextIntakeTask() {
   }
   renderMessyContextSummary(analysis);
   return task;
+}
+
+function promiseForgeGenerationPayload() {
+  const raw = cleanValue(messyContextInput && messyContextInput.value);
+  if (!raw) {
+    throw new Error("Paste messy context first.");
+  }
+  const analysis = analyzeMessyContext(raw);
+  const task = buildTaskPayload();
+  return {
+    series_id: cleanValue(taskForm.elements.series_id && taskForm.elements.series_id.value) || analysis.series_id || "local-series",
+    raw_context: raw,
+    genre: task.genre || "",
+    desired_tone: cleanValue(promiseDesiredToneInput && promiseDesiredToneInput.value) || task.endgame_direction || "",
+    generation: task.generation || defaultHybridGenerationConfig(),
+  };
+}
+
+async function generatePromiseForgePreview() {
+  if (!generatePromiseButton) return;
+  generatePromiseButton.disabled = true;
+  if (promisePreview) promisePreview.classList.remove("hidden");
+  renderPromiseSpecificity({ passed: false, issues: ["Generating promise preview..."] }, "loading");
+  try {
+    const payload = promiseForgeGenerationPayload();
+    const data = await api("/api/promise-forge/generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    latestPromiseForgePreview = data;
+    renderPromisePreview(data);
+    taskOutput.textContent = data.ok
+      ? "Promise generated. Review, edit if needed, then approve full intake."
+      : "Promise generated but specificity needs attention before full intake.";
+  } catch (error) {
+    renderPromiseSpecificity({ passed: false, issues: [error.message] }, "failed");
+    taskOutput.textContent = error.message;
+  } finally {
+    generatePromiseButton.disabled = false;
+  }
+}
+
+function renderPromisePreview(data) {
+  const hook = data && data.hook_brief && typeof data.hook_brief === "object" ? data.hook_brief : {};
+  const forge = data && data.promise_forge && typeof data.promise_forge === "object" ? data.promise_forge : {};
+  if (promisePreview) promisePreview.classList.remove("hidden");
+  setPromiseField("logline", hook.logline);
+  setPromiseField("back_cover_seed", hook.back_cover_seed);
+  setPromiseField("founding_injustice", forge.founding_injustice);
+  setPromiseField("permanent_constraint", forge.permanent_constraint);
+  setPromiseField("comedic_signal", forge.comedic_signal);
+  setPromiseField("reader_buy_button_image", forge.reader_buy_button_image);
+  setPromiseField("must_recur", listToLines(forge.must_recur));
+  setPromiseField("must_not_become", listToLines(forge.must_not_become));
+  setPromiseField("originality_locks", listToLines(forge.originality_locks));
+  renderPromiseSpecificity(data ? data.specificity : null, data && data.ok ? "passed" : "failed");
+}
+
+function setPromiseField(key, value) {
+  const field = promiseFields[key];
+  if (field) field.value = cleanValue(value);
+}
+
+function listToLines(value) {
+  if (Array.isArray(value)) return value.join("\n");
+  return cleanValue(value);
+}
+
+function linesToList(value) {
+  return String(value || "")
+    .split(/\n|;/)
+    .map((item) => cleanValue(item))
+    .filter(Boolean);
+}
+
+function buildApprovedPromiseForgeFromPreview() {
+  if (!latestPromiseForgePreview || !promisePreview || promisePreview.classList.contains("hidden")) return null;
+  const sourceHook = latestPromiseForgePreview.hook_brief && typeof latestPromiseForgePreview.hook_brief === "object"
+    ? latestPromiseForgePreview.hook_brief
+    : {};
+  const hookBrief = {
+    ...sourceHook,
+    logline: cleanValue(promiseFields.logline && promiseFields.logline.value),
+    back_cover_seed: cleanValue(promiseFields.back_cover_seed && promiseFields.back_cover_seed.value),
+  };
+  const promiseForge = {
+    ...(latestPromiseForgePreview.promise_forge || {}),
+    founding_injustice: cleanValue(promiseFields.founding_injustice && promiseFields.founding_injustice.value),
+    permanent_constraint: cleanValue(promiseFields.permanent_constraint && promiseFields.permanent_constraint.value),
+    comedic_signal: cleanValue(promiseFields.comedic_signal && promiseFields.comedic_signal.value),
+    reader_buy_button_image: cleanValue(promiseFields.reader_buy_button_image && promiseFields.reader_buy_button_image.value),
+    must_recur: linesToList(promiseFields.must_recur && promiseFields.must_recur.value),
+    must_not_become: linesToList(promiseFields.must_not_become && promiseFields.must_not_become.value),
+    originality_locks: linesToList(promiseFields.originality_locks && promiseFields.originality_locks.value),
+    source_brief: hookBrief,
+  };
+  promiseForge.series_promise = cleanValue(promiseForge.series_promise) || hookBrief.logline || "";
+  return { hook_brief: hookBrief, promise_forge: promiseForge };
+}
+
+function localPromiseSpecificityIssues(approved) {
+  const raw = cleanValue(messyContextInput && messyContextInput.value);
+  const forge = approved ? approved.promise_forge || {} : {};
+  const required = [
+    ["founding_injustice", "founding injustice"],
+    ["permanent_constraint", "permanent constraint"],
+    ["reader_buy_button_image", "reader-buy-button image"],
+  ];
+  const issues = required
+    .filter(([key]) => !cleanValue(forge[key]))
+    .map(([, label]) => `${label} is required.`);
+  const combined = `${forge.founding_injustice || ""} ${forge.permanent_constraint || ""} ${forge.reader_buy_button_image || ""}`.toLowerCase();
+  const generic = /protagonist is forced|forced to accept responsibility|must survive the dungeon|generic dungeon survival|chosen by the system/.test(combined);
+  if (generic) issues.push("Promise still reads generic; add names, relationships, places, objects, obligations, or unusual world details from the messy context.");
+  const anchors = Array.from(new Set((raw.match(/\b[A-Z][a-z]+(?:\s+(?:II|III|IV|[A-Z][a-z]+))*\b/g) || []).map((item) => item.toLowerCase())));
+  if (anchors.length && !anchors.some((anchor) => combined.includes(anchor))) {
+    issues.push("Promise should reference a concrete anchor from the messy context.");
+  }
+  return issues;
+}
+
+function renderPromiseSpecificity(specificity, state = "") {
+  if (!promiseSpecificity) return;
+  const passed = Boolean(specificity && specificity.passed);
+  const issues = Array.isArray(specificity && specificity.issues) ? specificity.issues : [];
+  promiseSpecificity.dataset.state = state || (passed ? "passed" : "failed");
+  if (passed) {
+    promiseSpecificity.textContent = "Specificity passed. The promise is ready for approval.";
+    return;
+  }
+  promiseSpecificity.innerHTML = `<strong>Specificity needs attention.</strong>${issues.length ? `<ul>${issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("")}</ul>` : ""}`;
+}
+
+async function approveAndRunFullIntake() {
+  const approved = buildApprovedPromiseForgeFromPreview();
+  if (!approved) {
+    renderPromiseSpecificity({ passed: false, issues: ["Generate a promise before approving full intake."] }, "failed");
+    return;
+  }
+  const issues = localPromiseSpecificityIssues(approved);
+  if (issues.length) {
+    renderPromiseSpecificity({ passed: false, issues }, "failed");
+    taskOutput.textContent = "Promise specificity needs attention before full intake.";
+    return;
+  }
+  const task = buildMessyContextIntakeTask();
+  task.promise_forge = approved.promise_forge;
+  task.hook_brief = approved.hook_brief;
+  task.source_text = cleanValue(messyContextInput && messyContextInput.value);
+  task.premise = task.premise || task.source_text.slice(0, 1200);
+  await submitTaskPayload(task, {
+    statusText: "Running full intake with approved promise...",
+    button: approveRunIntakeButton,
+  });
 }
 
 function buildMcpContextPayload(task = null) {
@@ -2671,6 +2848,14 @@ if (saveStorySeedButton) {
       taskOutput.textContent = error.message;
     });
   });
+}
+
+if (generatePromiseButton) {
+  generatePromiseButton.addEventListener("click", generatePromiseForgePreview);
+}
+
+if (approveRunIntakeButton) {
+  approveRunIntakeButton.addEventListener("click", approveAndRunFullIntake);
 }
 
 if (applyMessyContextButton) {

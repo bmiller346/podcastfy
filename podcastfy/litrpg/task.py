@@ -252,6 +252,8 @@ def _run_premise_intake_task(
         endgame_direction=str(task.get("endgame_direction") or ""),
         power_curve=str(task.get("power_curve") or "logarithmic"),
         merge_existing=bool(task.get("merge_existing", True)),
+        promise_forge=task.get("promise_forge") if isinstance(task.get("promise_forge"), Mapping) else None,
+        hook_brief=task.get("hook_brief") if isinstance(task.get("hook_brief"), Mapping) else None,
     )
 
 

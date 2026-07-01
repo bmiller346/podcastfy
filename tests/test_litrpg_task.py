@@ -13,7 +13,7 @@ from podcastfy.litrpg.continuity import save_emotional_arcs, save_world_register
 from podcastfy.litrpg.foreshadowing import ForeshadowEntry, ForeshadowLedger
 from podcastfy.litrpg.foreshadowing import save_foreshadow_ledger
 from podcastfy.litrpg.models import CharacterState, SeriesState
-from podcastfy.litrpg.series_architect import ChapterOutlineEntry, SeriesShape
+from podcastfy.litrpg.series_architect import ChapterOutlineEntry, SeriesShape, load_series_shape
 from podcastfy.litrpg.series_architect import bootstrap_series, save_chapter_outline
 from podcastfy.litrpg.state_store import save_series_state
 from podcastfy.litrpg.task import load_litrpg_task, run_litrpg_task, run_litrpg_task_data
@@ -156,6 +156,16 @@ class ArtifactWorldStateUpdateLLM(SmokeChapterLLM):
                 }
             )
         return super().generate(prompt=prompt, stage=stage)
+
+
+class PremiseIntakeLLM:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    def generate(self, *, prompt, stage):
+        self.calls.append({"prompt": prompt, "stage": stage})
+        return json.dumps(self.payload)
 
 
 def _write_task(tmp_path, **overrides):
@@ -465,6 +475,47 @@ def test_run_litrpg_task_data_uses_base_dir_for_relative_outputs(tmp_path):
     assert len(tts.calls) == 1
     assert result_path.exists()
     assert json.loads(result_path.read_text(encoding="utf-8"))["series_id"] == "paper-cuts"
+
+
+def test_premise_intake_task_persists_approved_promise_forge(tmp_path):
+    forge = {
+        "founding_injustice": "The system turns Kelli's chore board into binding commands aboard Sophie II.",
+        "permanent_constraint": "Sophie II enforces family chores as raid logistics.",
+        "comedic_signal": "Old-married chores become lethal bureaucracy.",
+        "series_promise": "A family crew survives by weaponizing unfair chores.",
+        "reader_buy_button_image": "Kelli points at Sophie II's chore board and the dungeon obeys.",
+        "source_brief": {"logline": "Chores become raid law."},
+    }
+    llm = PremiseIntakeLLM(
+        {
+            "series_shape": {"series_title": "The Knotty Buoy", "chapters_per_book": 1},
+            "book_outlines": {"1": [{"chapter": 1, "title": "Wake", "premise": "Sophie II wakes."}]},
+        }
+    )
+
+    result = run_litrpg_task_data(
+        {
+            "mode": "premise_intake",
+            "series_id": "knotty",
+            "storage_dir": "library",
+            "source_text": "Kelli and Edward argue over Sophie II's chore board.",
+            "premise": "Short debug premise that should not replace source_text.",
+            "chapters_per_book": 1,
+            "promise_forge": forge,
+            "hook_brief": {"logline": "Edited hook brief."},
+        },
+        base_dir=tmp_path,
+        llm=llm,
+    )
+
+    shape = load_series_shape(tmp_path / "library", "knotty")
+    assert result["series_id"] == "knotty"
+    assert shape.promise_forge["founding_injustice"] == forge["founding_injustice"]
+    assert shape.promise_forge["source_brief"]["logline"] == forge["source_brief"]["logline"]
+    assert shape.series_promise == forge["series_promise"]
+    assert "Kelli and Edward argue over Sophie II's chore board." in llm.calls[0]["prompt"]
+    assert "Short debug premise that should not replace source_text." not in llm.calls[0]["prompt"]
+    assert not (tmp_path / "library" / "series" / "knotty" / "promise_forge.json").exists()
 
 
 def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(tmp_path, monkeypatch):

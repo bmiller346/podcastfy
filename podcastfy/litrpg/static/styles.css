@@ -451,7 +451,7 @@ h2 {
 
 .story-file-bar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.85fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.85fr) minmax(220px, 0.85fr);
   gap: 12px;
   align-items: end;
   margin-bottom: 14px;
@@ -484,6 +484,80 @@ h2 {
   border-color: #e2a29a;
   background: #fff1ef;
   color: #8a3328;
+}
+
+.promise-preview {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0;
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.promise-preview.hidden {
+  display: none;
+}
+
+.promise-preview-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.65fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.promise-preview-header h3,
+.promise-preview-header p {
+  margin: 0;
+}
+
+.promise-preview-header p {
+  margin-top: 4px;
+  color: #526170;
+  font-size: var(--type-sm);
+}
+
+.promise-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.promise-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.specificity-status {
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  background: #fff;
+  padding: 10px;
+  color: #526170;
+  font-size: var(--type-sm);
+}
+
+.specificity-status[data-state="passed"] {
+  border-color: #9ac8a6;
+  background: #eef8f0;
+  color: #286237;
+}
+
+.specificity-status[data-state="failed"] {
+  border-color: #dbaaa3;
+  background: #fff6f4;
+  color: #8a3328;
+}
+
+.specificity-status[data-state="loading"] {
+  border-color: #e0c47a;
+  background: #fff8dc;
+  color: #715a13;
+}
+
+.specificity-status ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
 }
 
 .chat-actions {
@@ -776,7 +850,7 @@ h2 {
 label {
   display: grid;
   gap: 6px;
-  color: #38424c;
+  color: var(--color-subtle);
   font-size: var(--type-md);
 }
 
@@ -1409,9 +1483,13 @@ audio {
 :root[data-theme="dark"] .role-card,
 :root[data-theme="dark"] .artifact-card,
 :root[data-theme="dark"] .artifact-panel,
+:root[data-theme="dark"] .artifact-empty,
+:root[data-theme="dark"] .robust-state-panel,
 :root[data-theme="dark"] .effect-row,
 :root[data-theme="dark"] .radar-column,
-:root[data-theme="dark"] .part-status-item {
+:root[data-theme="dark"] .part-status-item,
+:root[data-theme="dark"] .chapter-outline-card,
+:root[data-theme="dark"] .part-status-card {
   border-color: var(--color-border);
   background: var(--color-surface-subtle);
   color: var(--color-text);
@@ -1436,14 +1514,35 @@ audio {
   color: var(--color-heading);
 }
 
+:root[data-theme="dark"] .artifact-tab.active,
+:root[data-theme="dark"] .artifact-tab:hover {
+  border-color: var(--color-accent-border);
+  background: #18332f;
+  color: var(--color-heading);
+}
+
+:root[data-theme="dark"] button {
+  color: #09221e;
+}
+
+:root[data-theme="dark"] button:disabled {
+  color: #3a4744;
+}
+
 :root[data-theme="dark"] .primary-flow strong,
 :root[data-theme="dark"] .revision-chat h3,
+:root[data-theme="dark"] .command-layout h3,
+:root[data-theme="dark"] .radar-column h3,
 :root[data-theme="dark"] .editor-size-controls button,
 :root[data-theme="dark"] .robust-state-header h3,
 :root[data-theme="dark"] .artifact-panel-heading h3,
 :root[data-theme="dark"] .role-card-header strong,
 :root[data-theme="dark"] .series-header h3 {
   color: var(--color-heading);
+}
+
+:root[data-theme="dark"] label {
+  color: var(--color-muted);
 }
 
 :root[data-theme="dark"] .field-note,
@@ -1454,11 +1553,19 @@ audio {
 :root[data-theme="dark"] .artifact-copy,
 :root[data-theme="dark"] .artifact-card p,
 :root[data-theme="dark"] .chapter-outline-card p,
+:root[data-theme="dark"] .flow-step span,
+:root[data-theme="dark"] .flow-step p,
+:root[data-theme="dark"] .radar-column li span,
+:root[data-theme="dark"] .radar-overflow,
 :root[data-theme="dark"] .episode-prompt,
 :root[data-theme="dark"] .episode-path,
 :root[data-theme="dark"] .audio-meta,
 :root[data-theme="dark"] .muted,
-:root[data-theme="dark"] .empty-radar span {
+:root[data-theme="dark"] .empty-radar span,
+:root[data-theme="dark"] .artifact-empty,
+:root[data-theme="dark"] .artifact-panel-heading span,
+:root[data-theme="dark"] .artifact-card span,
+:root[data-theme="dark"] .chapter-outline-card span {
   color: var(--color-muted);
 }
 
