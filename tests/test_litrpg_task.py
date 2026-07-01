@@ -518,6 +518,103 @@ def test_premise_intake_task_persists_approved_promise_forge(tmp_path):
     assert not (tmp_path / "library" / "series" / "knotty" / "promise_forge.json").exists()
 
 
+def test_messy_context_premise_intake_requires_approved_promise_forge(tmp_path):
+    llm = PremiseIntakeLLM(
+        {
+            "series_shape": {"series_title": "The Knotty Buoy", "chapters_per_book": 1},
+            "book_outlines": {"1": [{"chapter": 1, "title": "Wake", "premise": "Sophie II wakes."}]},
+        }
+    )
+
+    with pytest.raises(ValueError, match="approved promise_forge"):
+        run_litrpg_task_data(
+            {
+                "mode": "premise_intake",
+                "intake_source": "messy_context",
+                "series_id": "knotty",
+                "storage_dir": "library",
+                "source_text": "Kelli and Edward argue over Sophie II's chore board.",
+                "promise_forge": {"founding_injustice": ""},
+            },
+            base_dir=tmp_path,
+            llm=llm,
+        )
+
+
+def test_messy_context_premise_intake_allows_explicit_legacy_basic_path(tmp_path):
+    llm = PremiseIntakeLLM(
+        {
+            "series_shape": {"series_title": "The Knotty Buoy", "chapters_per_book": 1},
+            "book_outlines": {"1": [{"chapter": 1, "title": "Wake", "premise": "Sophie II wakes."}]},
+        }
+    )
+
+    result = run_litrpg_task_data(
+        {
+            "mode": "premise_intake",
+            "intake_source": "messy_context",
+            "legacy_basic_intake": True,
+            "series_id": "knotty",
+            "storage_dir": "library",
+            "source_text": "Kelli and Edward argue over Sophie II's chore board.",
+            "promise_forge": {"founding_injustice": ""},
+        },
+        base_dir=tmp_path,
+        llm=llm,
+    )
+
+    assert result["series_id"] == "knotty"
+
+
+def test_strict_chapter_generation_blocks_missing_intake_artifacts(tmp_path):
+    series_root = tmp_path / "library" / "series" / "knotty"
+    series_root.mkdir(parents=True)
+    (series_root / "series_plan.json").write_text(
+        json.dumps(
+            {
+                "series_title": "The Knotty Buoy",
+                "promise_forge": {"founding_injustice": "Sophie II's chore board becomes binding raid law."},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="missing world_state.json, conspiracy_engine.json"):
+        run_litrpg_task_data(
+            {
+                "mode": "chapter",
+                "series_id": "knotty",
+                "storage_dir": "library",
+                "require_intake_artifacts": True,
+            },
+            base_dir=tmp_path,
+            llm=SmokeChapterLLM(),
+        )
+
+
+def test_strict_chapter_generation_requires_founding_injustice(tmp_path):
+    series_root = tmp_path / "library" / "series" / "knotty"
+    series_root.mkdir(parents=True)
+    (series_root / "series_plan.json").write_text(
+        json.dumps({"series_title": "The Knotty Buoy", "promise_forge": {"founding_injustice": ""}}),
+        encoding="utf-8",
+    )
+    (series_root / "world_state.json").write_text(json.dumps({"artifacts": {}}), encoding="utf-8")
+    (series_root / "conspiracy_engine.json").write_text(json.dumps({"reader_position": {}}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="promise_forge.founding_injustice"):
+        run_litrpg_task_data(
+            {
+                "mode": "chapter",
+                "series_id": "knotty",
+                "storage_dir": "library",
+                "require_intake_artifacts": True,
+            },
+            base_dir=tmp_path,
+            llm=SmokeChapterLLM(),
+        )
+
+
 def test_run_litrpg_task_injects_story_bible_and_mechanics_context_for_chapters(tmp_path, monkeypatch):
     storage_dir = tmp_path / "library"
     series_dir = storage_dir / "series" / "paper-cuts"

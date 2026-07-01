@@ -303,6 +303,11 @@ def test_ui_stylesheet_uses_font_and_type_tokens(ui_server):
     assert ':root[data-theme="dark"] .artifact-tab.active' in css
     assert ':root[data-theme="dark"] .command-layout h3' in css
     assert ':root[data-theme="dark"] .flow-step span' in css
+    assert ':root[data-theme="dark"] .editor-panel' in css
+    assert ':root[data-theme="dark"] .editor-panel summary' in css
+    assert ':root[data-theme="dark"] .promise-preview' in css
+    assert ':root[data-theme="dark"] .promise-preview-header h3' in css
+    assert ':root[data-theme="dark"] .specificity-status[data-state="loading"]' in css
 
 
 def test_favicon_request_is_ignored_without_404_noise(ui_server):
@@ -533,7 +538,15 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
     series_root = ui_roots / "data" / "litrpg" / "series" / "the-knotty-buoy"
     (series_root / "book_1").mkdir(parents=True)
     (series_root / "series_plan.json").write_text(
-        json.dumps({"series_title": "The Knotty Buoy", "chapters_per_book": 30}),
+        json.dumps(
+            {
+                "series_title": "The Knotty Buoy",
+                "chapters_per_book": 30,
+                "promise_forge": {
+                    "founding_injustice": "Sophie II turns Kelli's chore board into binding raid law."
+                },
+            }
+        ),
         encoding="utf-8",
     )
     (series_root / "book_1" / "chapter_outline.json").write_text(
@@ -621,6 +634,42 @@ def test_series_package_load_returns_intake_artifact_workspace(ui_server, ui_roo
     assert data["package"]["home_base"]["name"] == "Sophie II"
     assert data["package"]["bestiary"][0]["name"] == "OSHA Wraiths"
     assert set(data["package"]["metadata"]["derived_artifacts"]) >= {"voice_cards", "foreshadow_ledger"}
+    intake_status = data["package"]["metadata"]["intake_status"]
+    assert intake_status["required_artifacts"] == {
+        "series_plan.json": True,
+        "world_state.json": True,
+        "conspiracy_engine.json": True,
+    }
+    assert intake_status["founding_injustice_present"] is True
+    assert intake_status["complete"] is True
+
+
+def test_series_package_load_reports_incomplete_intake_artifacts(ui_server, ui_roots):
+    series_root = ui_roots / "data" / "litrpg" / "series" / "the-knotty-buoy"
+    series_root.mkdir(parents=True)
+    (series_root / "series_plan.json").write_text(
+        json.dumps(
+            {
+                "series_title": "The Knotty Buoy",
+                "promise_forge": {"founding_injustice": "Sophie II's chore board becomes binding raid law."},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status, data = request_json(
+        ui_server,
+        "GET",
+        "/api/series-package?series_id=the-knotty-buoy",
+    )
+
+    assert status == 200
+    assert data["available"] is True
+    intake_status = data["package"]["metadata"]["intake_status"]
+    assert intake_status["required_artifacts"]["series_plan.json"] is True
+    assert intake_status["required_artifacts"]["world_state.json"] is False
+    assert intake_status["required_artifacts"]["conspiracy_engine.json"] is False
+    assert intake_status["message"] == "Intake incomplete; rerun full intake."
 
 
 def test_series_package_generate_uses_generator_when_available(

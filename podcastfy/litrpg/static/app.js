@@ -572,6 +572,7 @@ function buildTaskPayload() {
   maybeAssign(task, "premise_path", cleanValue(formData.get("premise_path")));
   if (mode === "premise_intake" && messyContext) {
     task.source_text = messyContext;
+    task.intake_source = "messy_context";
   }
   maybeAssign(task, "series_title", cleanValue(formData.get("series_title")));
   maybeAssign(task, "series_promise", cleanValue(formData.get("series_promise")));
@@ -598,6 +599,9 @@ function buildTaskPayload() {
   if (mode === "premise_intake") {
     task.render_audio = false;
   }
+  if (mode === "chapter") {
+    task.require_intake_artifacts = true;
+  }
   if (formData.get("harness_enabled") === "on") {
     task.harness = { enabled: true };
   }
@@ -606,6 +610,9 @@ function buildTaskPayload() {
   }
   if (formData.get("generate_handoff") === "on") {
     task.generate_handoff = true;
+  }
+  if (formData.get("legacy_basic_intake") === "on") {
+    task.legacy_basic_intake = true;
   }
 
   maybeAssign(task, "book_length_mode", cleanValue(formData.get("book_length_mode")));
@@ -878,6 +885,7 @@ function buildMessyContextIntakeTask() {
   task.mode = "premise_intake";
   task.render_audio = false;
   task.source_text = raw;
+  task.intake_source = "messy_context";
   task.premise = task.premise || analysis.premise || raw.slice(0, 1200);
   task.series_id = cleanValue(taskForm.elements.series_id && taskForm.elements.series_id.value) || analysis.series_id || "local-series";
   task.target_books = task.target_books || 1;
@@ -887,6 +895,9 @@ function buildMessyContextIntakeTask() {
     task.promise_forge = approved.promise_forge;
     task.hook_brief = approved.hook_brief;
     task.series_promise = task.series_promise || approved.promise_forge.series_promise || "";
+  }
+  if (!task.legacy_basic_intake && !approvedPromiseForgeIsReady(approved)) {
+    throw new Error("Full premise intake from messy context requires an approved Promise Preview with a non-empty founding injustice. Use Allow legacy/basic intake only for the explicit basic path.");
   }
   if (!task.generation || !task.generation.provider) {
     task.generation = defaultHybridGenerationConfig();
@@ -1019,6 +1030,13 @@ function localPromiseSpecificityIssues(approved) {
   return issues;
 }
 
+function approvedPromiseForgeIsReady(approved) {
+  const forge = approved && approved.promise_forge && typeof approved.promise_forge === "object"
+    ? approved.promise_forge
+    : {};
+  return Boolean(cleanValue(forge.founding_injustice));
+}
+
 function renderPromiseSpecificity(specificity, state = "") {
   if (!promiseSpecificity) return;
   const passed = Boolean(specificity && specificity.passed);
@@ -1035,6 +1053,11 @@ async function approveAndRunFullIntake() {
   const approved = buildApprovedPromiseForgeFromPreview();
   if (!approved) {
     renderPromiseSpecificity({ passed: false, issues: ["Generate a promise before approving full intake."] }, "failed");
+    return;
+  }
+  if (!approvedPromiseForgeIsReady(approved)) {
+    renderPromiseSpecificity({ passed: false, issues: ["founding injustice is required before full intake."] }, "failed");
+    taskOutput.textContent = "Approve a non-empty Promise Preview before full intake.";
     return;
   }
   const issues = localPromiseSpecificityIssues(approved);
@@ -1282,6 +1305,39 @@ async function submitTaskPayload(payload, { statusText = "Queueing generation...
   }
 }
 
+function chapterQueueReadinessIssues(payload) {
+  if (!payload || payload.mode !== "chapter") return [];
+  const expectedSeries = payload.series_id || currentSeriesId();
+  const loadedSeries = latestPackage && latestPackage.series_id ? latestPackage.series_id : "";
+  if (!latestPackage || loadedSeries !== expectedSeries) {
+    return [`Load ${expectedSeries} before chapter generation so intake artifacts can be verified.`];
+  }
+  const status = intakeStatusFromPackage(latestPackage);
+  if (!status.available) {
+    return [`Load ${expectedSeries} before chapter generation so intake artifacts can be verified.`];
+  }
+  const missing = Object.entries(status.requiredArtifacts)
+    .filter(([, exists]) => !exists)
+    .map(([name]) => name);
+  const issues = [];
+  if (missing.length) {
+    issues.push(`Intake incomplete; rerun full intake. Missing: ${missing.join(", ")}.`);
+  }
+  if (!status.foundingInjusticePresent) {
+    issues.push("series_plan.json.promise_forge.founding_injustice must be non-empty before chapter generation.");
+  }
+  return issues;
+}
+
+function renderChapterQueueBlock(issues) {
+  const message = issues.join(" ");
+  taskOutput.textContent = message;
+  if (premiseIntakeResult) {
+    premiseIntakeResult.dataset.state = "failed";
+    premiseIntakeResult.innerHTML = `<strong>Chapter generation blocked.</strong><span>${escapeHtml(message)}</span>`;
+  }
+}
+
 function renderPremiseIntakeResult(job) {
   if (!premiseIntakeResult) return;
   const status = job && (job.error ? "failed" : job.status || "unknown");
@@ -1448,6 +1504,7 @@ function renderSeriesPackage(data) {
   ].join("");
   packageSummary.textContent = data.summary || "No saved package summary yet.";
   packageOutput.textContent = JSON.stringify(data.package || {}, null, 2);
+  renderPersistedIntakeStatus(data);
   renderSeriesArtifacts(data);
   renderRoleEditor(data.package || buildPackageDraft());
   renderPackageRadar(summarizeSeriesPackage(data));
@@ -1466,6 +1523,78 @@ function loadedSeriesMessage(data) {
     return `Loaded intake artifact workspace for ${seriesId}${count ? ` (${count} artifacts)` : ""}.`;
   }
   return `Loaded series package for ${seriesId}.`;
+}
+
+function renderPersistedIntakeStatus(data) {
+  if (!premiseIntakeResult) return;
+  const status = intakeStatusFromPackage(data);
+  if (!status.available) {
+    premiseIntakeResult.dataset.state = "missing";
+    premiseIntakeResult.innerHTML = `<strong>Premise intake has not run for ${escapeHtml(status.seriesId)}.</strong><span>No persisted intake artifacts were found on disk.</span>`;
+    return;
+  }
+  premiseIntakeResult.dataset.state = status.complete ? "succeeded" : "failed";
+  const rows = Object.entries(status.requiredArtifacts)
+    .map(([name, exists]) => `<li><strong>${escapeHtml(name)}</strong><span>${exists ? "present" : "missing"}</span></li>`)
+    .join("");
+  const promiseState = status.foundingInjusticePresent ? "present" : "missing";
+  premiseIntakeResult.innerHTML = `
+    <strong>${escapeHtml(status.message)}</strong>
+    <span>Persisted intake state for ${escapeHtml(status.seriesId)}.</span>
+    <ul class="intake-artifact-status">
+      ${rows}
+      <li><strong>series_plan.json.promise_forge.founding_injustice</strong><span>${promiseState}</span></li>
+    </ul>`;
+}
+
+function intakeStatusFromPackage(data) {
+  const seriesId = data && data.series_id ? data.series_id : currentSeriesId();
+  const packageValue = data && data.package && typeof data.package === "object" ? data.package : {};
+  const metadata = packageValue.metadata && typeof packageValue.metadata === "object" ? packageValue.metadata : {};
+  const stored = metadata.intake_status && typeof metadata.intake_status === "object" ? metadata.intake_status : null;
+  if (stored) {
+    const required = stored.required_artifacts && typeof stored.required_artifacts === "object"
+      ? stored.required_artifacts
+      : {};
+    return {
+      available: Boolean(data && data.available),
+      seriesId,
+      complete: Boolean(stored.complete),
+      message: cleanValue(stored.message) || (stored.complete ? "Persisted full intake artifacts are ready." : "Intake incomplete; rerun full intake."),
+      requiredArtifacts: {
+        "series_plan.json": Boolean(required["series_plan.json"]),
+        "world_state.json": Boolean(required["world_state.json"]),
+        "conspiracy_engine.json": Boolean(required["conspiracy_engine.json"]),
+      },
+      foundingInjusticePresent: Boolean(stored.founding_injustice_present),
+    };
+  }
+  const artifacts = intakeArtifactsFromPackage(packageValue);
+  const requiredArtifacts = {
+    "series_plan.json": hasArtifact(artifacts.seriesPlan),
+    "world_state.json": hasArtifact(artifacts.worldState),
+    "conspiracy_engine.json": hasArtifact(artifacts.conspiracyEngine),
+  };
+  const forge = artifacts.seriesPlan && typeof artifacts.seriesPlan.promise_forge === "object"
+    ? artifacts.seriesPlan.promise_forge
+    : {};
+  const foundingInjusticePresent = Boolean(cleanValue(forge.founding_injustice));
+  const hasAny = Object.values(requiredArtifacts).some(Boolean);
+  const complete = Object.values(requiredArtifacts).every(Boolean) && foundingInjusticePresent;
+  let message = "Persisted full intake artifacts are ready.";
+  if (!requiredArtifacts["world_state.json"] || !requiredArtifacts["conspiracy_engine.json"]) {
+    message = "Intake incomplete; rerun full intake.";
+  } else if (!foundingInjusticePresent) {
+    message = "Intake incomplete; approve a non-empty Promise Preview before chapter generation.";
+  }
+  return {
+    available: Boolean(data && data.available && hasAny),
+    seriesId,
+    complete,
+    message,
+    requiredArtifacts,
+    foundingInjusticePresent,
+  };
 }
 
 function renderSeriesArtifacts(data) {
@@ -2069,6 +2198,8 @@ function intakeArtifactsFromPackage(packageValue) {
     chapterOutline: firstArrayOrObject(source.chapter_outline, source.chapterOutline, source.chapters, source.book_outline),
     storyBible: firstObject(source.story_bible, source.storyBible, source.bible),
     worldRegister: firstObject(source.world_register, source.worldRegister, source.continuity_register),
+    worldState: firstObject(source.world_state, source.worldState),
+    conspiracyEngine: firstObject(source.conspiracy_engine, source.conspiracyEngine),
     voiceCards: firstObject(source.voice_cards, source.voiceCards, source.voice_card_deck),
     foreshadowLedger: firstObject(source.foreshadow_ledger, source.foreshadowLedger, source.foreshadowing),
   };
@@ -2740,6 +2871,11 @@ if (saveRolesButton) {
 taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = buildTaskPayload();
+  const readinessIssues = chapterQueueReadinessIssues(payload);
+  if (readinessIssues.length) {
+    renderChapterQueueBlock(readinessIssues);
+    return;
+  }
   const submitButton = document.querySelector("#submit-task");
   await submitTaskPayload(payload, { button: submitButton });
 });

@@ -238,6 +238,7 @@ def _run_premise_intake_task(
         premise = premise_path.read_text(encoding="utf-8").strip()
     if not premise:
         raise ValueError("premise_intake mode requires premise, source_text, premise_dump, or premise_path")
+    _validate_premise_intake_promise_forge(task)
     return run_premise_intake(
         storage_dir=_resolve_task_path(base_dir, task.get("storage_dir", "data/litrpg")),
         series_id=str(task.get("series_id") or "default-series"),
@@ -255,6 +256,29 @@ def _run_premise_intake_task(
         promise_forge=task.get("promise_forge") if isinstance(task.get("promise_forge"), Mapping) else None,
         hook_brief=task.get("hook_brief") if isinstance(task.get("hook_brief"), Mapping) else None,
     )
+
+
+def _validate_premise_intake_promise_forge(task: Mapping[str, Any]) -> None:
+    """Require an approved durable promise for the full messy-context intake path."""
+
+    source = str(task.get("intake_source") or "").strip().lower().replace("-", "_")
+    if source not in {"messy_context", "story_seed", "promise_preview"}:
+        return
+    if _truthy(task.get("legacy_basic_intake")) or _truthy(task.get("allow_basic_intake")):
+        return
+    forge = task.get("promise_forge")
+    if not isinstance(forge, Mapping) or not str(forge.get("founding_injustice") or "").strip():
+        raise ValueError(
+            "Full premise intake from messy context requires an approved promise_forge "
+            "with a non-empty founding_injustice. Choose legacy_basic_intake only for "
+            "the explicit basic intake path."
+        )
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _performance_directives_from_task(task: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -560,6 +584,8 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
         else None
     )
     series_id = str(task.get("series_id") or "default-series")
+    if storage_dir is not None and _truthy(task.get("require_intake_artifacts")):
+        _validate_chapter_intake_ready(storage_dir, series_id)
     reuse_path = task.get("reuse_ready_parts_from") or task.get("lock_ready_parts_from")
     if reuse_path:
         resolved_reuse_path = _resolve_task_path(base_dir, reuse_path)
@@ -687,6 +713,38 @@ def _chapter_task_with_paths(base_dir: Path, task: Mapping[str, Any]) -> dict[st
             **dict(explicit_mechanics or {}),
         }
     return chapter_task
+
+
+def _validate_chapter_intake_ready(storage_dir: Path, series_id: str) -> None:
+    series_root = storage_dir / "series" / series_id
+    required = {
+        "series_plan.json": series_root / "series_plan.json",
+        "world_state.json": series_root / "world_state.json",
+        "conspiracy_engine.json": series_root / "conspiracy_engine.json",
+    }
+    missing = [name for name, path in required.items() if not path.exists()]
+    founding_injustice = ""
+    if not missing:
+        try:
+            data = json.loads(required["series_plan.json"].read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError("Chapter generation requires valid series_plan.json") from exc
+        if not isinstance(data, Mapping):
+            raise ValueError("Chapter generation requires series_plan.json to contain a JSON object")
+        forge = data.get("promise_forge")
+        if isinstance(forge, Mapping):
+            founding_injustice = str(forge.get("founding_injustice") or "").strip()
+    if missing:
+        raise ValueError(
+            "Chapter generation requires completed premise intake artifacts: missing "
+            + ", ".join(missing)
+            + ". Intake incomplete; rerun full intake."
+        )
+    if not founding_injustice:
+        raise ValueError(
+            "Chapter generation requires series_plan.json.promise_forge.founding_injustice "
+            "to be non-empty. Rerun full intake or approve a Promise Preview first."
+        )
 
 
 def _story_engine_context_from_storage(

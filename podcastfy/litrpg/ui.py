@@ -633,18 +633,31 @@ def load_intake_artifact_workspace(series_id: str) -> dict[str, Any] | None:
     series_root = (DATA_DIR / "series" / _safe_series_id(series_id)).resolve()
     if not series_root.exists():
         return None
+    artifact_paths = {
+        "series_plan": series_root / "series_plan.json",
+        "series_arc": series_root / "series_arc.json",
+        "chapter_outline": series_root / "book_1" / "chapter_outline.json",
+        "story_bible": series_root / "story_bible.json",
+        "voice_cards": series_root / "voice_cards.json",
+        "continuity_ledger": series_root / "continuity_ledger.json",
+        "emotional_arcs": series_root / "emotional_arcs.json",
+        "world_register": series_root / "world_register.json",
+        "foreshadow_ledger": series_root / "foreshadow_ledger.json",
+        "conspiracy_engine": series_root / "conspiracy_engine.json",
+        "world_state": series_root / "world_state.json",
+    }
     artifacts = {
-        "series_plan": _read_json_if_object(series_root / "series_plan.json"),
-        "series_arc": _read_json_if_any(series_root / "series_arc.json"),
-        "chapter_outline": _read_json_if_any(series_root / "book_1" / "chapter_outline.json"),
-        "story_bible": _read_json_if_object(series_root / "story_bible.json"),
-        "voice_cards": _read_json_if_object(series_root / "voice_cards.json"),
-        "continuity_ledger": _read_json_if_object(series_root / "continuity_ledger.json"),
-        "emotional_arcs": _read_json_if_object(series_root / "emotional_arcs.json"),
-        "world_register": _read_json_if_object(series_root / "world_register.json"),
-        "foreshadow_ledger": _read_json_if_object(series_root / "foreshadow_ledger.json"),
-        "conspiracy_engine": _read_json_if_object(series_root / "conspiracy_engine.json"),
-        "world_state": _read_json_if_object(series_root / "world_state.json"),
+        "series_plan": _read_json_if_object(artifact_paths["series_plan"]),
+        "series_arc": _read_json_if_any(artifact_paths["series_arc"]),
+        "chapter_outline": _read_json_if_any(artifact_paths["chapter_outline"]),
+        "story_bible": _read_json_if_object(artifact_paths["story_bible"]),
+        "voice_cards": _read_json_if_object(artifact_paths["voice_cards"]),
+        "continuity_ledger": _read_json_if_object(artifact_paths["continuity_ledger"]),
+        "emotional_arcs": _read_json_if_object(artifact_paths["emotional_arcs"]),
+        "world_register": _read_json_if_object(artifact_paths["world_register"]),
+        "foreshadow_ledger": _read_json_if_object(artifact_paths["foreshadow_ledger"]),
+        "conspiracy_engine": _read_json_if_object(artifact_paths["conspiracy_engine"]),
+        "world_state": _read_json_if_object(artifact_paths["world_state"]),
     }
     present = {key: value for key, value in artifacts.items() if value not in (None, {}, [])}
     if not present:
@@ -662,12 +675,14 @@ def load_intake_artifact_workspace(series_id: str) -> dict[str, Any] | None:
     present["world_register"] = world_register
     present["voice_cards"] = voice_cards
     present["foreshadow_ledger"] = foreshadow_ledger
+    intake_status = _intake_status_from_artifacts(artifacts, artifact_paths=artifact_paths)
     return {
         "schema_version": "artifact-workspace-v1",
         "series_id": series_id,
         "metadata": {
             "source": "premise_intake_artifacts",
             "artifact_count": len(present),
+            "intake_status": intake_status,
             "derived_artifacts": _derived_artifact_names(
                 voice_cards=voice_cards,
                 world_register=world_register,
@@ -688,6 +703,34 @@ def load_intake_artifact_workspace(series_id: str) -> dict[str, Any] | None:
             ],
         },
         "bestiary": _package_bestiary_from_world_register(world_register),
+    }
+
+
+def _intake_status_from_artifacts(artifacts: dict[str, Any], *, artifact_paths: dict[str, Path]) -> dict[str, Any]:
+    required = {
+        "series_plan.json": artifact_paths["series_plan"],
+        "world_state.json": artifact_paths["world_state"],
+        "conspiracy_engine.json": artifact_paths["conspiracy_engine"],
+    }
+    present = {name: path.exists() for name, path in required.items()}
+    series_plan = _mapping_or_empty(artifacts.get("series_plan"))
+    promise_forge = _mapping_or_empty(series_plan.get("promise_forge"))
+    founding_injustice_present = bool(str(promise_forge.get("founding_injustice") or "").strip())
+    complete = all(present.values()) and founding_injustice_present
+    missing = [name for name, exists in present.items() if not exists]
+    if missing:
+        message = "Intake incomplete; rerun full intake."
+    elif not founding_injustice_present:
+        message = "Intake incomplete; approve a non-empty Promise Preview before chapter generation."
+    else:
+        message = "Persisted full intake artifacts are ready."
+    return {
+        "required_artifacts": present,
+        "missing_artifacts": missing,
+        "promise_forge_found": bool(promise_forge),
+        "founding_injustice_present": founding_injustice_present,
+        "complete": complete,
+        "message": message,
     }
 
 

@@ -1139,6 +1139,26 @@ label {
   font-size: var(--type-sm);
 }
 
+.intake-artifact-status {
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.intake-artifact-status li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text);
+}
+
+.intake-artifact-status span {
+  color: var(--muted);
+}
+
 .status-item {
   border: 1px solid #e1e5ea;
   border-radius: 6px;
@@ -1472,6 +1492,8 @@ audio {
 :root[data-theme="dark"] .revision-chat-log,
 :root[data-theme="dark"] .editor-size-controls button,
 :root[data-theme="dark"] .story-seed-status,
+:root[data-theme="dark"] .promise-preview,
+:root[data-theme="dark"] .specificity-status,
 :root[data-theme="dark"] .job-status,
 :root[data-theme="dark"] .diagnostic-item,
 :root[data-theme="dark"] .status-item,
@@ -1480,6 +1502,7 @@ audio {
 :root[data-theme="dark"] .output,
 :root[data-theme="dark"] .package-output,
 :root[data-theme="dark"] .small-output,
+:root[data-theme="dark"] .editor-panel,
 :root[data-theme="dark"] .role-card,
 :root[data-theme="dark"] .artifact-card,
 :root[data-theme="dark"] .artifact-panel,
@@ -1501,6 +1524,11 @@ audio {
 :root[data-theme="dark"] .episode,
 :root[data-theme="dark"] .radar-column li {
   border-color: var(--color-border);
+}
+
+:root[data-theme="dark"] .editor-panel summary {
+  border-color: var(--color-border);
+  color: var(--color-heading);
 }
 
 :root[data-theme="dark"] .task-section-collapsible summary:hover,
@@ -1533,6 +1561,7 @@ audio {
 :root[data-theme="dark"] .revision-chat h3,
 :root[data-theme="dark"] .command-layout h3,
 :root[data-theme="dark"] .radar-column h3,
+:root[data-theme="dark"] .promise-preview-header h3,
 :root[data-theme="dark"] .editor-size-controls button,
 :root[data-theme="dark"] .robust-state-header h3,
 :root[data-theme="dark"] .artifact-panel-heading h3,
@@ -1549,6 +1578,7 @@ audio {
 :root[data-theme="dark"] .part-path,
 :root[data-theme="dark"] .part-detail,
 :root[data-theme="dark"] .output-header p,
+:root[data-theme="dark"] .promise-preview-header p,
 :root[data-theme="dark"] .artifact-panel-heading span,
 :root[data-theme="dark"] .artifact-copy,
 :root[data-theme="dark"] .artifact-card p,
@@ -1561,6 +1591,7 @@ audio {
 :root[data-theme="dark"] .episode-path,
 :root[data-theme="dark"] .audio-meta,
 :root[data-theme="dark"] .muted,
+:root[data-theme="dark"] .editor-panel summary small,
 :root[data-theme="dark"] .empty-radar span,
 :root[data-theme="dark"] .artifact-empty,
 :root[data-theme="dark"] .artifact-panel-heading span,
@@ -1572,6 +1603,7 @@ audio {
 :root[data-theme="dark"] .revision-proposal,
 :root[data-theme="dark"] .intake-result,
 :root[data-theme="dark"] .story-seed-status[data-state="missing"],
+:root[data-theme="dark"] .specificity-status[data-state="loading"],
 :root[data-theme="dark"] .part-regen .part-state {
   border-color: #7a6940;
   background: #2b261a;
@@ -1591,6 +1623,7 @@ audio {
 :root[data-theme="dark"] .intake-result[data-state="succeeded"],
 :root[data-theme="dark"] .story-seed-status[data-state="loaded"],
 :root[data-theme="dark"] .story-seed-status[data-state="saved"],
+:root[data-theme="dark"] .specificity-status[data-state="passed"],
 :root[data-theme="dark"] .part-passed .part-state {
   border-color: #4e8e73;
   background: #17281f;
@@ -1599,6 +1632,7 @@ audio {
 
 :root[data-theme="dark"] .intake-result[data-state="failed"],
 :root[data-theme="dark"] .story-seed-status[data-state="error"],
+:root[data-theme="dark"] .specificity-status[data-state="failed"],
 :root[data-theme="dark"] .part-failed .part-state,
 :root[data-theme="dark"] .job-error {
   border-color: #8f5148;
